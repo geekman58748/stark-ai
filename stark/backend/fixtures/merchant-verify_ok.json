@@ -1,0 +1,12 @@
+{
+  "code": "000",
+  "response_description": "000",
+  "content": {
+    "Customer_Name": "TUNDE AREMU",
+    "Meter_Number": "04512345678",
+    "Address": "12 OGUN STREET, IKEJA",
+    "Customer_Number": "07123456789",
+    "Tariff": "R2",
+    "Business_Unit": "IKEJA ELECTRICITY"
+  }
+}
