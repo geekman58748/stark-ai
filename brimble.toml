@@ -6,6 +6,10 @@
 # The JS apps build from the repository root because they depend on workspace packages
 # (packages/*) through bun workspaces. To add a project, copy a block and adjust the paths.
 #
+# bun.lock is lockfileVersion 2, which only bun 1.4+ can read, and the builder's bun is older. So
+# each JS build installs the bun pinned in package.json#packageManager into .tools and puts it
+# first on PATH. Bump the version here when packageManager changes.
+#
 # Each service publishes its own URL as PUBLIC_URL and the others reference it, so a custom
 # domain is a one-line change. Static builds bake VITE_* in at build time: after changing a
 # URL here, redeploy the apps that read it.
@@ -38,9 +42,9 @@ type = "static"
 
 [services.stark-dashboard.build]
 runtime = { node = "24" }
-install = "bun install --frozen-lockfile"
+install = "npm install --no-save --no-package-lock --prefix .tools bun@1.4.2 && export PATH=\"$PWD/.tools/node_modules/.bin:$PATH\" && bun install --frozen-lockfile"
 # TanStack Start names the SPA shell _shell.html; Brimble's SPA fallback serves index.html.
-command = "bun run build:dashboard && cp apps/dashboard/dist/client/_shell.html apps/dashboard/dist/client/index.html"
+command = "export PATH=\"$PWD/.tools/node_modules/.bin:$PATH\" && bun run build:dashboard && cp apps/dashboard/dist/client/_shell.html apps/dashboard/dist/client/index.html"
 output = "apps/dashboard/dist/client"
 watch = [
   "apps/dashboard/**",
@@ -62,8 +66,8 @@ type = "static"
 
 [services.stark-website.build]
 runtime = { node = "24" }
-install = "bun install --frozen-lockfile"
-command = "bun run build:website"
+install = "npm install --no-save --no-package-lock --prefix .tools bun@1.4.2 && export PATH=\"$PWD/.tools/node_modules/.bin:$PATH\" && bun install --frozen-lockfile"
+command = "export PATH=\"$PWD/.tools/node_modules/.bin:$PATH\" && bun run build:website"
 output = "apps/website/build/client"
 watch = [
   "apps/website/**",

@@ -25,3 +25,6 @@ apps/backend/stark.db-shm
 
 # Rust / cargo. A near-sdk build is ~1 GB — never commit it.
 target/
+
+# bun installed by Brimble builds (see brimble.toml)
+.tools
