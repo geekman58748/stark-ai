@@ -1,6 +1,6 @@
 import { errorCopy } from "@stark/api";
-import { Button } from "@stark/ui/button";
-import { Card } from "@stark/ui/card";
+import { Button } from "@stark/ui/components/button";
+import { Card } from "@stark/ui/components/card";
 import { useQueryErrorResetBoundary } from "@tanstack/react-query";
 import { type ErrorComponentProps, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";

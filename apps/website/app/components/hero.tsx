@@ -1,4 +1,6 @@
-import { Icons } from "@stark/ui/icons";
+import { buttonVariants } from "@stark/ui/components/button";
+import { Icons } from "@stark/ui/components/icons";
+import { cn } from "@stark/ui/utils/cn";
 import { links } from "~/lib/links";
 
 const chat = [
@@ -66,16 +68,10 @@ export function Hero() {
       </div>
 
       <div className="mt-2 flex flex-wrap justify-center gap-2 text-[13px]">
-        <a
-          href={links.telegram}
-          className="rounded-full bg-ink px-4 py-2.5 font-medium text-white no-underline"
-        >
+        <a href={links.telegram} className={cn(buttonVariants({ variant: "ink" }), "min-h-10")}>
           Open the Telegram bot
         </a>
-        <a
-          href={links.getStarted}
-          className="rounded-full bg-paper-2 px-4 py-2.5 font-medium text-ink no-underline"
-        >
+        <a href={links.getStarted} className={cn(buttonVariants({ variant: "paper" }), "min-h-10")}>
           Set up Stark
         </a>
       </div>
@@ -111,10 +107,7 @@ export function Intro() {
           first.
         </p>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3 text-sm">
-          <a
-            href={links.getStarted}
-            className="rounded-full bg-ink px-5 py-3 font-medium text-white no-underline"
-          >
+          <a href={links.getStarted} className={buttonVariants({ variant: "ink", size: "md" })}>
             Start with Stark
           </a>
           <a href={links.telegram} className="font-medium text-ink no-underline">

@@ -1,9 +1,9 @@
 import { errorCopy, limitsQuery, useResetDemo, useUpdateLimits } from "@stark/api";
-import { AmountField } from "@stark/ui/amount-field";
-import { Button } from "@stark/ui/button";
-import { Card } from "@stark/ui/card";
-import { Icons } from "@stark/ui/icons";
-import { SectionHeading } from "@stark/ui/section-heading";
+import { AmountField } from "@stark/ui/components/amount-field";
+import { Button } from "@stark/ui/components/button";
+import { Card } from "@stark/ui/components/card";
+import { Icons } from "@stark/ui/components/icons";
+import { SectionHeading } from "@stark/ui/components/section-heading";
 import { formatNaira } from "@stark/utils/format";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -111,7 +111,7 @@ function ResetDemo() {
     <Card className="flex-row flex-wrap items-center gap-3">
       <span className="flex flex-[1_1_240px] flex-col">
         <span className="font-medium">Reset the demo</span>
-        <span className="text-[13px] text-muted">
+        <span className="text-[13px] text-muted-foreground">
           Puts the seeded bills, balance and history back. Bills you added are removed.
         </span>
       </span>

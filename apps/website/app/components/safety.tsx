@@ -1,21 +1,16 @@
-import { Icons } from "@stark/ui/icons";
-import { type ReactNode, useRef, useState } from "react";
+import {
+  Carousel,
+  type CarouselApi,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@stark/ui/components/carousel";
+import { Switch } from "@stark/ui/components/switch";
+import { type ReactNode, useEffect, useState } from "react";
 
 const panel =
   "w-full max-w-[440px] rounded-[18px] bg-[#141518] text-sm text-fg shadow-[0_30px_60px_rgba(0,0,0,0.45)]";
-
-function Toggle({ on }: { on: boolean }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`relative h-[22px] w-[38px] flex-none rounded-full ${on ? "bg-brand" : "bg-[#3A3B40]"}`}
-    >
-      <span
-        className={`absolute top-[3px] size-4 rounded-full ${on ? "right-[3px] bg-white" : "left-[3px] bg-[#8F939A]"}`}
-      />
-    </span>
-  );
-}
 
 const rules: { title: string; body: string; bg: string; demo: ReactNode }[] = [
   {
@@ -69,7 +64,12 @@ const rules: { title: string; body: string; bg: string; demo: ReactNode }[] = [
                 <span>{t}</span>
                 <span className="text-xs text-[#8F939A]">{s}</span>
               </span>
-              <Toggle on={on as boolean} />
+              <Switch
+                checked={on as boolean}
+                aria-label={t as string}
+                className="pointer-events-none data-checked:bg-brand data-unchecked:bg-[#3A3B40]"
+                tabIndex={-1}
+              />
             </div>
           ))}
         </div>
@@ -149,19 +149,26 @@ const rules: { title: string; body: string; bg: string; demo: ReactNode }[] = [
 ];
 
 export function Safety() {
-  const track = useRef<HTMLDivElement>(null);
+  const [api, setApi] = useState<CarouselApi>();
   const [index, setIndex] = useState(0);
 
-  function go(i: number) {
-    const next = Math.max(0, Math.min(rules.length - 1, i));
-    const el = track.current?.children[next] as HTMLElement | undefined;
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
-    setIndex(next);
-  }
+  useEffect(() => {
+    if (!api) return;
+    const update = () => setIndex(api.selectedScrollSnap());
+    update();
+    api.on("select", update);
+    return () => {
+      api.off("select", update);
+    };
+  }, [api]);
 
   return (
     <section id="safety" className="scroll-mt-16 bg-[#141414] text-fg">
-      <div className="mx-auto flex max-w-[1240px] flex-col gap-12 px-4 py-24 sm:px-6 sm:py-[120px]">
+      <Carousel
+        setApi={setApi}
+        opts={{ align: "start" }}
+        className="mx-auto flex max-w-[1240px] flex-col gap-12 px-4 py-24 sm:px-6 sm:py-[120px]"
+      >
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="flex max-w-[620px] flex-col gap-3">
             <span className="text-xs tracking-[0.08em] text-brand-warm uppercase">Safety</span>
@@ -176,40 +183,24 @@ export function Safety() {
             <span className="tabular text-[13px] text-[#B9BCC2]">
               {String(index + 1).padStart(2, "0")} / {String(rules.length).padStart(2, "0")}
             </span>
-            <button
-              type="button"
-              aria-label="Previous rule"
-              disabled={index === 0}
-              onClick={() => go(index - 1)}
-              className="flex size-11 cursor-pointer items-center justify-center rounded-full border border-white/20 bg-transparent text-fg disabled:opacity-40"
-            >
-              <Icons.ArrowLeft size={18} />
-            </button>
-            <button
-              type="button"
-              aria-label="Next rule"
-              disabled={index === rules.length - 1}
-              onClick={() => go(index + 1)}
-              className="flex size-11 cursor-pointer items-center justify-center rounded-full border-0 bg-fg text-[#141414] disabled:opacity-40"
-            >
-              <Icons.ArrowRight size={18} />
-            </button>
+            <CarouselPrevious
+              variant="ghost"
+              size="icon-lg"
+              className="static size-11 translate-none border border-white/20 text-fg hover:bg-white/5 disabled:opacity-40"
+            />
+            <CarouselNext
+              variant="light"
+              size="icon-lg"
+              className="static size-11 translate-none disabled:opacity-40"
+            />
           </div>
         </div>
 
-        <div
-          ref={track}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            const card = el.firstElementChild as HTMLElement | null;
-            if (card) setIndex(Math.round(el.scrollLeft / (card.offsetWidth + 32)));
-          }}
-          className="-mx-4 flex snap-x snap-mandatory gap-8 overflow-x-auto scroll-px-4 px-4 [scrollbar-width:none] sm:mx-0 sm:scroll-px-0 sm:px-0"
-        >
+        <CarouselContent className="-ml-8">
           {rules.map((rule, i) => (
-            <article
+            <CarouselItem
               key={rule.title}
-              className="flex min-w-0 flex-[0_0_88%] snap-start flex-col gap-3.5 md:flex-[0_0_calc((100%-32px)/2)]"
+              className="flex basis-[88%] flex-col gap-3.5 pl-8 md:basis-1/2"
             >
               <span className="tabular text-sm text-[#8F939A]">
                 {String(i + 1).padStart(2, "0")}
@@ -223,10 +214,10 @@ export function Safety() {
               >
                 {rule.demo}
               </div>
-            </article>
+            </CarouselItem>
           ))}
-        </div>
-      </div>
+        </CarouselContent>
+      </Carousel>
     </section>
   );
 }

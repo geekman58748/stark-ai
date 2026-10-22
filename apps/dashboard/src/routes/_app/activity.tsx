@@ -1,12 +1,12 @@
 import { activityQuery, type Receipt } from "@stark/api";
-import { Card } from "@stark/ui/card";
-import { cn } from "@stark/ui/cn";
-import { Eyebrow } from "@stark/ui/eyebrow";
-import { RowList } from "@stark/ui/list-row";
-import { PillTabs } from "@stark/ui/pill-tabs";
-import { SectionHeading } from "@stark/ui/section-heading";
-import { Stat, StatGrid } from "@stark/ui/stat";
-import { StatusPill } from "@stark/ui/status-pill";
+import { Card } from "@stark/ui/components/card";
+import { Eyebrow } from "@stark/ui/components/eyebrow";
+import { RowList } from "@stark/ui/components/list-row";
+import { PillTabs } from "@stark/ui/components/pill-tabs";
+import { SectionHeading } from "@stark/ui/components/section-heading";
+import { Stat, StatGrid } from "@stark/ui/components/stat";
+import { StatusPill } from "@stark/ui/components/status-pill";
+import { cn } from "@stark/ui/utils/cn";
 import { formatDateTime, formatNaira, isToday } from "@stark/utils/format";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -87,7 +87,9 @@ function Activity() {
           </RowList>
         </>
       ) : null}
-      {!rows.length ? <p className="m-0 text-[13px] text-muted">Nothing here yet.</p> : null}
+      {!rows.length ? (
+        <p className="m-0 text-[13px] text-muted-foreground">Nothing here yet.</p>
+      ) : null}
     </>
   );
 }
@@ -106,12 +108,12 @@ function ReceiptCard({ receipt }: { receipt: Receipt }) {
         <span
           className={cn(
             "font-serif text-5xl leading-none",
-            receipt.status === "declined" && "text-muted",
+            receipt.status === "declined" && "text-muted-foreground",
           )}
         >
           {formatNaira(signedAmount(receipt), { sign: receipt.type === "deposit" })}
         </span>
-        <span className="text-xs text-muted">
+        <span className="text-xs text-muted-foreground">
           {receipt.bill_label} · {formatDateTime(receipt.created_at)}
         </span>
       </div>

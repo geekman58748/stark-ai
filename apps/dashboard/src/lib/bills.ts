@@ -1,5 +1,5 @@
 import type { Bill, BillKind, State } from "@stark/api";
-import type { IconName } from "@stark/ui/icons";
+import type { IconName } from "@stark/ui/components/icons";
 import { formatNaira, formatShortDate, maskReference } from "@stark/utils/format";
 
 export const billKinds: { kind: BillKind; label: string; icon: IconName }[] = [

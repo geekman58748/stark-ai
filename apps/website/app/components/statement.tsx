@@ -1,4 +1,4 @@
-import { LogoMark } from "@stark/ui/logo";
+import { LogoMark } from "@stark/ui/components/logo";
 
 const bills = ["Electricity", "Airtime", "Data", "Cable TV", "Internet", "Water"];
 

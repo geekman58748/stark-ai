@@ -1,9 +1,9 @@
 import { errorCopy, useTopUp } from "@stark/api";
-import { AmountField } from "@stark/ui/amount-field";
-import { Button } from "@stark/ui/button";
-import { Card } from "@stark/ui/card";
-import { Eyebrow } from "@stark/ui/eyebrow";
-import { RadioList, RadioRow } from "@stark/ui/radio-row";
+import { AmountField } from "@stark/ui/components/amount-field";
+import { Button } from "@stark/ui/components/button";
+import { Card } from "@stark/ui/components/card";
+import { Eyebrow } from "@stark/ui/components/eyebrow";
+import { RadioList, RadioRow } from "@stark/ui/components/radio-row";
 import { formatNaira } from "@stark/utils/format";
 import { requestId } from "@stark/utils/id";
 import { useMemo, useState } from "react";
@@ -60,21 +60,15 @@ export function FundForm({
         onChange={setAmount}
         presets={[10000, 20000, 50000]}
       />
-      <RadioList label="How to pay">
+      <RadioList label="How to pay" value={method} onValueChange={setMethod}>
         {fundMethods.map((m) => (
-          <RadioRow
-            key={m.id}
-            checked={m.id === method}
-            onSelect={() => setMethod(m.id)}
-            title={m.name}
-            subtitle={m.note}
-          />
+          <RadioRow key={m.id} value={m.id} title={m.name} subtitle={m.note} />
         ))}
       </RadioList>
       <Card className="gap-2.5">
         <Eyebrow>{current.name}</Eyebrow>
         <span className="text-[15px]">{current.detail}</span>
-        <span className="text-xs text-muted">
+        <span className="text-xs text-muted-foreground">
           Demo mode: the money shows up in your balance straight away.
         </span>
       </Card>

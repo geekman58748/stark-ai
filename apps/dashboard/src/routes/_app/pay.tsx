@@ -7,14 +7,14 @@ import {
   stateQuery,
   usePayBill,
 } from "@stark/api";
-import { AmountField } from "@stark/ui/amount-field";
-import { Button, buttonVariants } from "@stark/ui/button";
-import { Card } from "@stark/ui/card";
-import { cn } from "@stark/ui/cn";
-import { IconTile } from "@stark/ui/icon-tile";
-import { Icons } from "@stark/ui/icons";
-import { RadioList, RadioRow } from "@stark/ui/radio-row";
-import { Stat, StatGrid } from "@stark/ui/stat";
+import { AmountField } from "@stark/ui/components/amount-field";
+import { Button, buttonVariants } from "@stark/ui/components/button";
+import { Card } from "@stark/ui/components/card";
+import { IconTile } from "@stark/ui/components/icon-tile";
+import { Icons } from "@stark/ui/components/icons";
+import { RadioList, RadioRow } from "@stark/ui/components/radio-row";
+import { Stat, StatGrid } from "@stark/ui/components/stat";
+import { cn } from "@stark/ui/utils/cn";
 import { formatNaira } from "@stark/utils/format";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -82,12 +82,15 @@ function Pay() {
       <BackLink to="/">Home</BackLink>
       <PageTitle>Pay a bill</PageTitle>
 
-      <RadioList label="Which bill">
+      <RadioList
+        label="Which bill"
+        value={billId}
+        onValueChange={(id) => choose(() => setBillId(id))()}
+      >
         {payable.map((b) => (
           <RadioRow
             key={b.id}
-            checked={b.id === billId}
-            onSelect={choose(() => setBillId(b.id))}
+            value={b.id}
             title={b.label}
             subtitle={`${kindLabel(b.kind)} · ${billStatus(b, state).text}`}
           />
@@ -98,7 +101,7 @@ function Pay() {
         <Card className="flex-row items-center gap-3 p-4">
           <span className="flex flex-1 flex-col">
             <span className="font-medium">{formatNaira(amount)}</span>
-            <span className="text-xs text-muted">
+            <span className="text-xs text-muted-foreground">
               The {bill.provider} plan price. Plans can’t be part-paid.
             </span>
           </span>
@@ -211,7 +214,7 @@ function Result({
         <span className="font-serif text-2xl">{title}</span>
       </div>
       {receipt.token ? <TokenLine token={receipt.token} /> : null}
-      {body ? <span className="text-xs text-muted">{body}</span> : null}
+      {body ? <span className="text-xs text-muted-foreground">{body}</span> : null}
       <div className="flex flex-wrap gap-2">
         <Link to="/" className={cn(buttonVariants(), "hover:text-white")}>
           Done

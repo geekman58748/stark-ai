@@ -1,7 +1,7 @@
 import { errorCopy, stateQuery, useVoice, type VoiceReply } from "@stark/api";
-import { cn } from "@stark/ui/cn";
-import { Icons } from "@stark/ui/icons";
-import { LogoMark } from "@stark/ui/logo";
+import { Icons } from "@stark/ui/components/icons";
+import { LogoMark } from "@stark/ui/components/logo";
+import { cn } from "@stark/ui/utils/cn";
 import { formatNaira, formatToken } from "@stark/utils/format";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -131,12 +131,12 @@ function Talk() {
         <section aria-label="Status" className="relative grid grid-cols-2 gap-2">
           {meter && state.days_left !== null ? (
             <div className="rounded-[14px] border border-white/8 bg-white/5 p-3">
-              <span className="block text-xs text-muted">{meter.label} meter</span>
+              <span className="block text-xs text-muted-foreground">{meter.label} meter</span>
               <span className="font-serif text-xl">~{state.days_left} days</span>
             </div>
           ) : null}
           <div className="rounded-[14px] border border-white/8 bg-white/5 p-3">
-            <span className="block text-xs text-muted">Limit left</span>
+            <span className="block text-xs text-muted-foreground">Limit left</span>
             <span className="font-serif text-xl">{formatNaira(state.remaining_cap_ngn)}</span>
           </div>
         </section>
@@ -159,7 +159,7 @@ function Talk() {
         </button>
         <div className="flex min-h-16 flex-col gap-1.5">
           <span className="font-serif text-[26px] tracking-[-0.02em]">{copy[0]}</span>
-          <span className="text-sm text-muted">{copy[1]}</span>
+          <span className="text-sm text-muted-foreground">{copy[1]}</span>
         </div>
       </div>
 
@@ -169,7 +169,7 @@ function Talk() {
       >
         {reply?.reply ? (
           <>
-            <span className="text-xs text-muted">Stark</span>
+            <span className="text-xs text-muted-foreground">Stark</span>
             <span>{reply.reply}</span>
             {reply.token ? (
               <span className="tabular text-lg tracking-[0.03em]">{formatToken(reply.token)}</span>
@@ -177,12 +177,12 @@ function Talk() {
           </>
         ) : heard ? (
           <>
-            <span className="text-xs text-muted">You</span>
+            <span className="text-xs text-muted-foreground">You</span>
             <span>“{heard}”</span>
           </>
         ) : (
           <>
-            <span className="text-xs text-muted">Try</span>
+            <span className="text-xs text-muted-foreground">Try</span>
             <span>“Stark, top up the house with five thousand.”</span>
           </>
         )}
@@ -208,7 +208,7 @@ function Talk() {
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           placeholder="Or type it"
-          className="min-w-0 flex-1 bg-transparent py-2 text-[15px] text-fg placeholder:text-muted focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent py-2 text-[15px] text-fg placeholder:text-muted-foreground focus:outline-none"
         />
         <button
           type="submit"
@@ -220,7 +220,7 @@ function Talk() {
         </button>
       </form>
 
-      <span className="relative text-center text-xs text-muted">
+      <span className="relative text-center text-xs text-muted-foreground">
         This screen can’t spend on its own. Stark checks every payment against your limits.
         {livePayments ? "" : " Tokens are samples for now."}
       </span>

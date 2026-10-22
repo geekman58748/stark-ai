@@ -9,17 +9,33 @@ import {
   useDeleteBill,
   useUpdateBill,
 } from "@stark/api";
-import { Button, buttonVariants } from "@stark/ui/button";
-import { Card } from "@stark/ui/card";
-import { cn } from "@stark/ui/cn";
-import { Eyebrow } from "@stark/ui/eyebrow";
-import { RowList } from "@stark/ui/list-row";
-import { pillTabClass } from "@stark/ui/pill-tabs";
-import { RadioList, RadioRow } from "@stark/ui/radio-row";
-import { SectionHeading } from "@stark/ui/section-heading";
-import { Stat, StatGrid } from "@stark/ui/stat";
-import { StatusPill } from "@stark/ui/status-pill";
-import { inputClass } from "@stark/ui/text-field";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@stark/ui/components/alert-dialog";
+import { Button, buttonVariants } from "@stark/ui/components/button";
+import { Card } from "@stark/ui/components/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@stark/ui/components/dropdown-menu";
+import { Eyebrow } from "@stark/ui/components/eyebrow";
+import { Icons } from "@stark/ui/components/icons";
+import { Input } from "@stark/ui/components/input";
+import { RowList } from "@stark/ui/components/list-row";
+import { pillTabClass } from "@stark/ui/components/pill-tabs";
+import { RadioList, RadioRow } from "@stark/ui/components/radio-row";
+import { SectionHeading } from "@stark/ui/components/section-heading";
+import { Stat, StatGrid } from "@stark/ui/components/stat";
+import { StatusPill } from "@stark/ui/components/status-pill";
+import { cn } from "@stark/ui/utils/cn";
 import { formatLongDate, formatNaira, formatShortDate, maskReference } from "@stark/utils/format";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -44,7 +60,7 @@ function BillDetail() {
   const { data: bill } = useSuspenseQuery(billQuery(billId));
   const { data: state } = useSuspenseQuery(stateQuery());
   const { data: activity } = useSuspenseQuery(activityQuery());
-  const [editing, setEditing] = useState<"menu" | "rename" | "plan" | "remove" | null>(null);
+  const [editing, setEditing] = useState<"rename" | "plan" | "remove" | null>(null);
 
   const history = activity.filter((r) => r.bill_id === bill.id);
   const status = billStatus(bill, state);
@@ -63,7 +79,7 @@ function BillDetail() {
             {status.attention ? "Running low" : "All good"}
           </StatusPill>
         </div>
-        <p className="m-0 flex flex-wrap gap-x-2.5 gap-y-1.5 text-xs text-muted">
+        <p className="m-0 flex flex-wrap gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground">
           <span>{kindLabel(bill.kind)}</span>
           <span aria-hidden="true">·</span>
           <span>{bill.provider}</span>
@@ -88,33 +104,26 @@ function BillDetail() {
             {bill.plan_price_ngn ? "Renew" : "Top up"}
           </Link>
         ) : null}
-        <Button
-          variant="secondary"
-          aria-expanded={editing !== null}
-          onClick={() => setEditing(editing ? null : "menu")}
-        >
-          Edit
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="secondary" />}>
+            Edit
+            <Icons.ChevronDown size={14} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="min-w-44">
+            <DropdownMenuItem onClick={() => setEditing("rename")}>Rename</DropdownMenuItem>
+            {bill.plan ? (
+              <DropdownMenuItem onClick={() => setEditing("plan")}>Change plan</DropdownMenuItem>
+            ) : null}
+            <DropdownMenuItem variant="destructive" onClick={() => setEditing("remove")}>
+              Remove bill
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {editing === "menu" ? (
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => setEditing("rename")}>
-            Rename
-          </Button>
-          {bill.plan ? (
-            <Button variant="secondary" onClick={() => setEditing("plan")}>
-              Change plan
-            </Button>
-          ) : null}
-          <Button variant="secondary" onClick={() => setEditing("remove")}>
-            Remove bill
-          </Button>
-        </div>
-      ) : null}
       {editing === "rename" ? <Rename bill={bill} onDone={() => setEditing(null)} /> : null}
       {editing === "plan" ? <ChangePlan bill={bill} onDone={() => setEditing(null)} /> : null}
-      {editing === "remove" ? <Remove bill={bill} onCancel={() => setEditing(null)} /> : null}
+      <Remove bill={bill} open={editing === "remove"} onCancel={() => setEditing(null)} />
 
       <nav aria-label="Sections" className="flex flex-wrap gap-2">
         <span aria-current="page" className={pillTabClass(true)}>
@@ -170,7 +179,7 @@ function Overview({
           <Eyebrow>Light left</Eyebrow>
           <div className="flex flex-wrap items-baseline gap-2.5">
             <span className="font-serif text-5xl leading-none">About {daysLeft} days</span>
-            <span className="text-xs text-muted">estimated from your top-ups</span>
+            <span className="text-xs text-muted-foreground">estimated from your top-ups</span>
           </div>
         </>
       ) : (
@@ -185,7 +194,9 @@ function Overview({
                   : "Not yet"}
             </span>
             {bill.last_paid_at ? (
-              <span className="text-xs text-muted">on {formatShortDate(bill.last_paid_at)}</span>
+              <span className="text-xs text-muted-foreground">
+                on {formatShortDate(bill.last_paid_at)}
+              </span>
             ) : null}
           </div>
         </>
@@ -225,7 +236,7 @@ function TopUpChart({ history }: { history: Receipt[] }) {
       >
         {paid.map((r, i) => (
           <div key={r.id} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
-            <span className="text-[11px] text-muted">{formatNaira(r.amount_ngn)}</span>
+            <span className="text-[11px] text-muted-foreground">{formatNaira(r.amount_ngn)}</span>
             <span
               className={cn(
                 "w-full max-w-9 rounded-t-md rounded-b-[2px]",
@@ -236,7 +247,7 @@ function TopUpChart({ history }: { history: Receipt[] }) {
           </div>
         ))}
       </div>
-      <div className="tabular flex justify-between text-[11px] text-muted">
+      <div className="tabular flex justify-between text-[11px] text-muted-foreground">
         <span>{formatShortDate(first.created_at)}</span>
         <span>{formatShortDate(last.created_at)}</span>
       </div>
@@ -277,11 +288,11 @@ function Rename({ bill, onDone }: { bill: Bill; onDone: () => void }) {
       <label htmlFor="rename" className="sr-only">
         Bill name
       </label>
-      <input
+      <Input
         id="rename"
         value={label}
         onChange={(e) => setLabel(e.target.value)}
-        className={cn(inputClass, "max-w-xs flex-1 py-2")}
+        className="h-10 max-w-xs flex-1"
       />
       <Button type="submit" disabled={!label.trim() || update.isPending}>
         Save
@@ -303,15 +314,22 @@ function ChangePlan({ bill, onDone }: { bill: Bill; onDone: () => void }) {
   return (
     <Card>
       <Eyebrow>Choose a plan</Eyebrow>
-      <RadioList label="Plan">
+      <RadioList
+        label="Plan"
+        // The vendor catalogue repeats some plan codes across services, so rows are keyed
+        // by position.
+        value={String(plans.data?.findIndex((p) => p.plan === bill.plan) ?? "")}
+        onValueChange={(i) => {
+          const picked = plans.data?.[Number(i)];
+          if (picked) update.mutate({ plan: picked.plan }, { onSuccess: onDone });
+        }}
+      >
         <div className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
           {plans.data?.map((p, i) => (
             <RadioRow
-              // The vendor catalogue repeats some plan codes across services.
               key={`${p.provider}-${p.plan}-${i}`}
-              checked={p.plan === bill.plan}
+              value={String(i)}
               disabled={update.isPending}
-              onSelect={() => update.mutate({ plan: p.plan }, { onSuccess: onDone })}
               title={p.label}
               subtitle={formatNaira(p.price_ngn)}
             />
@@ -328,29 +346,31 @@ function ChangePlan({ bill, onDone }: { bill: Bill; onDone: () => void }) {
   );
 }
 
-function Remove({ bill, onCancel }: { bill: Bill; onCancel: () => void }) {
+function Remove({ bill, open, onCancel }: { bill: Bill; open: boolean; onCancel: () => void }) {
   const remove = useDeleteBill();
   const navigate = useNavigate();
   return (
-    <Card className="border-brand-warm/40 bg-brand-wash">
-      <span className="font-medium">Remove {bill.label}?</span>
-      <p className="m-0 text-[13px] text-fg-2">
-        Stark won’t be able to pay it any more. Its history stays in your activity.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          disabled={remove.isPending}
-          onClick={() => remove.mutate(bill.id, { onSuccess: () => navigate({ to: "/bills" }) })}
-        >
-          Remove
-        </Button>
-        <Button variant="secondary" onClick={onCancel}>
-          Keep it
-        </Button>
-      </div>
-      {remove.error ? (
-        <p className="m-0 text-[13px] text-brand-soft">{errorCopy(remove.error)}</p>
-      ) : null}
-    </Card>
+    <AlertDialog open={open} onOpenChange={(next) => (next ? null : onCancel())}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove {bill.label}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Stark won’t be able to pay it any more. Its history stays in your activity.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {remove.error ? (
+          <p className="m-0 text-[13px] text-brand-soft">{errorCopy(remove.error)}</p>
+        ) : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel variant="secondary">Keep it</AlertDialogCancel>
+          <Button
+            disabled={remove.isPending}
+            onClick={() => remove.mutate(bill.id, { onSuccess: () => navigate({ to: "/bills" }) })}
+          >
+            Remove
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

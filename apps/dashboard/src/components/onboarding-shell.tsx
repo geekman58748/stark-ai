@@ -1,5 +1,5 @@
-import { LogoMark } from "@stark/ui/logo";
-import { Steps } from "@stark/ui/steps";
+import { LogoMark } from "@stark/ui/components/logo";
+import { Steps } from "@stark/ui/components/steps";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
@@ -30,7 +30,7 @@ export function OnboardingShell({
           /
         </span>
         <span className="text-[13px] font-medium">Get started</span>
-        <span className="tabular ml-auto text-xs text-muted">{step} of 3</span>
+        <span className="tabular ml-auto text-xs text-muted-foreground">{step} of 3</span>
       </header>
       <main className="mx-auto flex w-full max-w-[480px] flex-col gap-6 px-5 pt-8 pb-16 sm:pt-12">
         <Steps current={step} />

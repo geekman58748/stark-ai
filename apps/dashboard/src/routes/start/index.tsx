@@ -1,8 +1,8 @@
-import { buttonVariants } from "@stark/ui/button";
-import { Card } from "@stark/ui/card";
-import { cn } from "@stark/ui/cn";
-import { IconTile } from "@stark/ui/icon-tile";
-import { Icons } from "@stark/ui/icons";
+import { buttonVariants } from "@stark/ui/components/button";
+import { Card } from "@stark/ui/components/card";
+import { IconTile } from "@stark/ui/components/icon-tile";
+import { Icons } from "@stark/ui/components/icons";
+import { cn } from "@stark/ui/utils/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { OnboardingShell } from "@/components/onboarding-shell";
 
@@ -63,12 +63,12 @@ function SignUp() {
         </IconTile>
         <span className="flex flex-col gap-0.5">
           <span className="text-sm font-medium">Your money stays yours</span>
-          <span className="text-[13px] text-muted">
+          <span className="text-[13px] text-muted-foreground">
             Stark can only pay the bills you add, inside limits only you can change.
           </span>
         </span>
       </Card>
-      <p className="m-0 text-center text-xs text-muted">
+      <p className="m-0 text-center text-xs text-muted-foreground">
         Already have an account? <Link to="/">Log in</Link>
       </p>
     </OnboardingShell>

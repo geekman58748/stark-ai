@@ -1,3 +1,10 @@
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@stark/ui/components/accordion";
+
 const questions = [
   {
     q: "Which bills can it pay?",
@@ -30,19 +37,16 @@ export function Faq() {
       <h2 className="m-0 font-serif text-[clamp(30px,3vw,40px)] font-medium tracking-[-0.015em]">
         Questions
       </h2>
-      <div className="flex flex-col">
+      <Accordion className="border-y border-[#E2E3DE]">
         {questions.map(({ q, a }) => (
-          <details key={q} className="group border-t border-[#E2E3DE] py-[18px] last:border-b">
-            <summary className="flex cursor-pointer list-none justify-between gap-4 font-medium [&::-webkit-details-marker]:hidden">
+          <AccordionItem key={q} value={q} className="border-[#E2E3DE] not-last:border-b">
+            <AccordionTrigger className="py-[18px] text-base hover:no-underline">
               {q}
-              <span aria-hidden="true" className="transition-transform group-open:rotate-45">
-                +
-              </span>
-            </summary>
-            <p className="mt-3 mb-0 text-ink-2">{a}</p>
-          </details>
+            </AccordionTrigger>
+            <AccordionContent className="pb-[18px] text-base text-ink-2">{a}</AccordionContent>
+          </AccordionItem>
         ))}
-      </div>
+      </Accordion>
     </section>
   );
 }

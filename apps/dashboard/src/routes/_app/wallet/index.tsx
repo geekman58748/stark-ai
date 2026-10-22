@@ -1,14 +1,14 @@
 import { activityQuery, errorCopy, useWithdraw, walletQuery } from "@stark/api";
-import { AmountField } from "@stark/ui/amount-field";
-import { Button, buttonVariants } from "@stark/ui/button";
-import { Card } from "@stark/ui/card";
-import { cn } from "@stark/ui/cn";
-import { Eyebrow } from "@stark/ui/eyebrow";
-import { IconTile } from "@stark/ui/icon-tile";
-import { Icons } from "@stark/ui/icons";
-import { listRowClass, RowList, RowText } from "@stark/ui/list-row";
-import { SectionHeading } from "@stark/ui/section-heading";
-import { Stat, StatGrid } from "@stark/ui/stat";
+import { AmountField } from "@stark/ui/components/amount-field";
+import { Button, buttonVariants } from "@stark/ui/components/button";
+import { Card } from "@stark/ui/components/card";
+import { Eyebrow } from "@stark/ui/components/eyebrow";
+import { IconTile } from "@stark/ui/components/icon-tile";
+import { Icons } from "@stark/ui/components/icons";
+import { listRowClass, RowList, RowText } from "@stark/ui/components/list-row";
+import { SectionHeading } from "@stark/ui/components/section-heading";
+import { Stat, StatGrid } from "@stark/ui/components/stat";
+import { cn } from "@stark/ui/utils/cn";
 import { formatNaira } from "@stark/utils/format";
 import { requestId } from "@stark/utils/id";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -48,7 +48,7 @@ function WalletPage() {
           <span className="font-serif text-5xl leading-none">
             {formatNaira(wallet.balance_ngn)}
           </span>
-          <span className="text-xs text-muted">ready for your bills</span>
+          <span className="text-xs text-muted-foreground">ready for your bills</span>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to="/wallet/add" className={cn(buttonVariants(), "hover:text-white")}>
@@ -99,7 +99,7 @@ function WalletPage() {
           <ActivityRow key={r.id} receipt={r} />
         ))}
         {!moves.length ? (
-          <p className="m-0 text-[13px] text-muted">No money in or out yet.</p>
+          <p className="m-0 text-[13px] text-muted-foreground">No money in or out yet.</p>
         ) : null}
       </RowList>
     </>

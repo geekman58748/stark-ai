@@ -1,4 +1,4 @@
-import { CopyButton } from "@stark/ui/copy-button";
+import { CopyButton } from "@stark/ui/components/copy-button";
 import { formatToken } from "@stark/utils/format";
 import { livePayments } from "@/lib/receipts";
 
@@ -9,7 +9,7 @@ export function TokenLine({ token, note }: { token: string; note?: string }) {
         <span className="tabular text-[15px] tracking-[0.02em] whitespace-nowrap sm:text-[17px] sm:tracking-[0.03em]">
           {formatToken(token)}
         </span>
-        <span className="text-xs text-muted">
+        <span className="text-xs text-muted-foreground">
           {[note, livePayments ? null : "sample token"].filter(Boolean).join(" · ")}
         </span>
       </span>

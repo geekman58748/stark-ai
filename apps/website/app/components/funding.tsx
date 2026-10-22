@@ -1,4 +1,4 @@
-import { Icons } from "@stark/ui/icons";
+import { Icons } from "@stark/ui/components/icons";
 
 const ways = ["Bank transfer", "Debit card", "Crypto"];
 

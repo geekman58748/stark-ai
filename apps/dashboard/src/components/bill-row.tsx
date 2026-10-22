@@ -1,8 +1,8 @@
 import type { Bill, State } from "@stark/api";
-import { cn } from "@stark/ui/cn";
-import { IconTile } from "@stark/ui/icon-tile";
-import { Icons } from "@stark/ui/icons";
-import { listRowClass, RowText } from "@stark/ui/list-row";
+import { IconTile } from "@stark/ui/components/icon-tile";
+import { Icons } from "@stark/ui/components/icons";
+import { listRowClass, RowText } from "@stark/ui/components/list-row";
+import { cn } from "@stark/ui/utils/cn";
 import { Link } from "@tanstack/react-router";
 import { billStatus, billSubtitle, kindIcon } from "@/lib/bills";
 
@@ -28,7 +28,7 @@ export function BillRow({ bill, state }: { bill: Bill; state: State }) {
       <span className={cn("text-xs", status.attention ? "text-brand-warm" : "text-fg-2")}>
         {status.text}
       </span>
-      <Icons.ChevronRight size={16} className="text-muted" />
+      <Icons.ChevronRight size={16} className="text-muted-foreground" />
     </Link>
   );
 }

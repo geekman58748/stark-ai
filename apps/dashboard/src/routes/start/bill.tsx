@@ -1,5 +1,5 @@
 import { limitsQuery } from "@stark/api";
-import { Icons } from "@stark/ui/icons";
+import { Icons } from "@stark/ui/components/icons";
 import { formatNaira } from "@stark/utils/format";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";

@@ -1,8 +1,9 @@
 import { stateQuery } from "@stark/api";
-import { buttonVariants } from "@stark/ui/button";
-import { cn } from "@stark/ui/cn";
-import { Icons } from "@stark/ui/icons";
-import { LogoMark } from "@stark/ui/logo";
+import { Avatar, AvatarFallback } from "@stark/ui/components/avatar";
+import { buttonVariants } from "@stark/ui/components/button";
+import { Icons } from "@stark/ui/components/icons";
+import { LogoMark } from "@stark/ui/components/logo";
+import { cn } from "@stark/ui/utils/cn";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
@@ -31,16 +32,16 @@ function isActive(path: string, to: string, exact: boolean) {
   return exact ? path === to : path === to || path.startsWith(`${to}/`);
 }
 
-function Avatar() {
+function AccountAvatar() {
   const { data } = useQuery(stateQuery());
   const initials = data?.first_name?.slice(0, 2).toUpperCase() ?? "";
   return (
-    <Link
-      to="/settings"
-      aria-label="Account and settings"
-      className="flex size-[34px] items-center justify-center rounded-full bg-surface-3 text-xs font-semibold text-fg no-underline hover:text-fg sm:size-[34px]"
-    >
-      {initials}
+    <Link to="/settings" aria-label="Account and settings" className="rounded-full no-underline">
+      <Avatar className="size-[34px]">
+        <AvatarFallback className="bg-surface-3 text-xs font-semibold text-fg">
+          {initials}
+        </AvatarFallback>
+      </Avatar>
     </Link>
   );
 }
@@ -74,7 +75,7 @@ function Header() {
           <Icons.Add size={14} />
           <span className="hidden sm:inline">Pay a bill</span>
         </Link>
-        <Avatar />
+        <AccountAvatar />
       </div>
     </header>
   );

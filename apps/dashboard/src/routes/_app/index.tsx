@@ -1,15 +1,15 @@
 import { activityQuery, stateQuery } from "@stark/api";
-import { buttonVariants } from "@stark/ui/button";
-import { Card } from "@stark/ui/card";
-import { cn } from "@stark/ui/cn";
-import { Eyebrow } from "@stark/ui/eyebrow";
-import { IconTile } from "@stark/ui/icon-tile";
-import { Icons } from "@stark/ui/icons";
-import { RowList } from "@stark/ui/list-row";
-import { Notice } from "@stark/ui/notice";
-import { SectionHeading } from "@stark/ui/section-heading";
-import { Stat, StatGrid } from "@stark/ui/stat";
-import { StatusPill } from "@stark/ui/status-pill";
+import { buttonVariants } from "@stark/ui/components/button";
+import { Card } from "@stark/ui/components/card";
+import { Eyebrow } from "@stark/ui/components/eyebrow";
+import { IconTile } from "@stark/ui/components/icon-tile";
+import { Icons } from "@stark/ui/components/icons";
+import { RowList } from "@stark/ui/components/list-row";
+import { Notice } from "@stark/ui/components/notice";
+import { SectionHeading } from "@stark/ui/components/section-heading";
+import { Stat, StatGrid } from "@stark/ui/components/stat";
+import { StatusPill } from "@stark/ui/components/status-pill";
+import { cn } from "@stark/ui/utils/cn";
 import { formatNaira, greeting } from "@stark/utils/format";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -42,7 +42,7 @@ function Home() {
   return (
     <>
       <div className="flex flex-col gap-1.5">
-        <span className="text-[13px] text-muted">
+        <span className="text-[13px] text-muted-foreground">
           {greeting()}, {state.first_name}
         </span>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -57,7 +57,9 @@ function Home() {
         <Eyebrow>Balance</Eyebrow>
         <div className="flex flex-wrap items-baseline gap-2.5">
           <span className="font-serif text-5xl leading-none">{formatNaira(state.balance_ngn)}</span>
-          <span className="text-xs text-muted">{runway(state.balance_ngn, state.spent_ngn)}</span>
+          <span className="text-xs text-muted-foreground">
+            {runway(state.balance_ngn, state.spent_ngn)}
+          </span>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to="/wallet/add" className={cn(buttonVariants(), "hover:text-white")}>
@@ -170,7 +172,7 @@ function AskStark() {
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Ask Stark: “buy 2GB for my line”"
-        className="min-w-0 flex-1 bg-transparent py-2 text-[15px] text-fg placeholder:text-muted focus:outline-none"
+        className="min-w-0 flex-1 bg-transparent py-2 text-[15px] text-fg placeholder:text-muted-foreground focus:outline-none"
       />
       {text.trim() ? (
         <button

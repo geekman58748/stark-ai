@@ -1,5 +1,7 @@
-import { Icons } from "@stark/ui/icons";
-import { LogoMark } from "@stark/ui/logo";
+import { buttonVariants } from "@stark/ui/components/button";
+import { Icons } from "@stark/ui/components/icons";
+import { LogoMark } from "@stark/ui/components/logo";
+import { cn } from "@stark/ui/utils/cn";
 import { links } from "~/lib/links";
 
 const floaters = [
@@ -23,16 +25,10 @@ export function Closing() {
           <span className="text-[26px] font-semibold tracking-[-0.01em]">Stark</span>
         </span>
         <div className="flex flex-wrap justify-center gap-2 text-[13px]">
-          <a
-            href={links.getStarted}
-            className="rounded-full bg-ink px-4 py-2.5 font-medium text-white no-underline"
-          >
+          <a href={links.getStarted} className={cn(buttonVariants({ variant: "ink" }), "min-h-10")}>
             Get started
           </a>
-          <a
-            href={links.telegram}
-            className="rounded-full bg-paper-2 px-4 py-2.5 font-medium text-ink no-underline"
-          >
+          <a href={links.telegram} className={cn(buttonVariants({ variant: "paper" }), "min-h-10")}>
             Open the Telegram bot
           </a>
         </div>

@@ -1,10 +1,10 @@
 import { stateQuery } from "@stark/api";
-import { buttonVariants } from "@stark/ui/button";
-import { cn } from "@stark/ui/cn";
-import { Icons } from "@stark/ui/icons";
-import { RowList } from "@stark/ui/list-row";
-import { PillTabs } from "@stark/ui/pill-tabs";
-import { SectionHeading } from "@stark/ui/section-heading";
+import { buttonVariants } from "@stark/ui/components/button";
+import { Icons } from "@stark/ui/components/icons";
+import { RowList } from "@stark/ui/components/list-row";
+import { PillTabs } from "@stark/ui/components/pill-tabs";
+import { SectionHeading } from "@stark/ui/components/section-heading";
+import { cn } from "@stark/ui/utils/cn";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
@@ -80,7 +80,9 @@ function Bills() {
         {fine.map((b) => (
           <BillRow key={b.id} bill={b} state={state} />
         ))}
-        {!bills.length ? <p className="m-0 text-[13px] text-muted">No bills here yet.</p> : null}
+        {!bills.length ? (
+          <p className="m-0 text-[13px] text-muted-foreground">No bills here yet.</p>
+        ) : null}
       </RowList>
 
       <Link

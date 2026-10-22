@@ -1,5 +1,5 @@
-import { Icons } from "@stark/ui/icons";
-import { LogoMark } from "@stark/ui/logo";
+import { Icons } from "@stark/ui/components/icons";
+import { LogoMark } from "@stark/ui/components/logo";
 import { useState } from "react";
 
 const doors = [
@@ -62,7 +62,7 @@ export function WaysToAsk() {
         </div>
 
         <div className="absolute right-6 bottom-6 flex h-[200px] w-[150px] flex-col items-center justify-center gap-3 rounded-[28px] border-[6px] border-canvas-deep bg-canvas text-fg shadow-[0_20px_50px_rgba(15,17,21,0.35)] sm:top-24 sm:right-15 sm:bottom-auto sm:h-[330px] sm:w-[220px] sm:gap-3.5">
-          <span className="text-[11px] text-muted">Wall phone · Home</span>
+          <span className="text-[11px] text-muted-foreground">Wall phone · Home</span>
           <span className="flex size-16 items-center justify-center rounded-full bg-brand text-white shadow-[0_0_0_10px_rgba(194,65,12,0.25)] sm:size-24">
             <Icons.Mic size={32} />
           </span>
