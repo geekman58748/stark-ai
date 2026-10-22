@@ -1,0 +1,23 @@
+import { errorCopy } from "@stark/api";
+import { Button } from "@stark/ui/button";
+import { Card } from "@stark/ui/card";
+import { useQueryErrorResetBoundary } from "@tanstack/react-query";
+import { type ErrorComponentProps, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
+
+/** Route error boundary: usually the backend isn't running. */
+export function QueryError({ error }: ErrorComponentProps) {
+  const router = useRouter();
+  const { reset } = useQueryErrorResetBoundary();
+  useEffect(() => reset(), [reset]);
+
+  return (
+    <Card className="items-start">
+      <span className="font-serif text-2xl">Can’t load this right now</span>
+      <p className="m-0 text-[13px] text-fg-2">{errorCopy(error)}</p>
+      <Button variant="secondary" onClick={() => router.invalidate()}>
+        Try again
+      </Button>
+    </Card>
+  );
+}

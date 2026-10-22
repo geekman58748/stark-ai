@@ -1,13 +1,7 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "@stark/tsconfig/vite.json",
   "compilerOptions": {
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["node", "vite/client"],
-    "jsx": "react-jsx",
-    "noEmit": true,
-    "rootDirs": [".", "./.react-router/types"],
-    "paths": { "~/*": ["./app/*"] }
+    "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["**/*", "**/.server/**/*", "**/.client/**/*", ".react-router/types/**/*"],
-  "exclude": ["node_modules", "build"]
+  "include": ["src", "vite.config.ts"]
 }

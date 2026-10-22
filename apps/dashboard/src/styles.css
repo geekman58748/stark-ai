@@ -1,0 +1,17 @@
+@import "tailwindcss";
+@import "@stark/ui/globals.css";
+
+@layer base {
+  html,
+  body {
+    @apply min-h-full bg-canvas font-sans text-sm leading-normal text-fg antialiased;
+  }
+
+  a {
+    color: var(--color-brand-warm);
+  }
+
+  a:hover {
+    color: var(--color-brand-soft);
+  }
+}
