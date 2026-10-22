@@ -11,11 +11,7 @@ export function ActivityRow({ receipt, selected }: { receipt: Receipt; selected?
     <Link
       to="/activity"
       search={(prev) => ({ ...prev, receipt: receipt.id })}
-      className={cn(
-        listRowClass,
-        "py-2.5 hover:text-fg",
-        selected && "border-brand-warm/50 bg-surface-selected",
-      )}
+      className={cn(listRowClass, "py-2.5", selected && "border-brand-warm/50 bg-surface-selected")}
     >
       <span className="tabular w-11 text-xs text-muted-foreground">
         {formatActivityTime(receipt.created_at)}

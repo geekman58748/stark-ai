@@ -1,6 +1,3 @@
-import { BackLink, PageTitle } from "@/components/app-shell";
-import { TokenLine } from "@/components/token-card";
-import { billStatus, fixedAmount, isPayable, kindLabel } from "@/lib/bills";
 import {
   type Bill,
   errorCopy,
@@ -11,26 +8,37 @@ import {
   usePayBill,
 } from "@stark/api";
 import { AmountField } from "@stark/ui/components/amount-field";
-import { Button, buttonVariants } from "@stark/ui/components/button";
+import { Button } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@stark/ui/components/empty";
 import { IconTile } from "@stark/ui/components/icon-tile";
 import { Icons } from "@stark/ui/components/icons";
+import { Notice } from "@stark/ui/components/notice";
 import { RadioList, RadioRow } from "@stark/ui/components/radio-row";
+import { Spinner } from "@stark/ui/components/spinner";
 import { Stat, StatGrid } from "@stark/ui/components/stat";
-import { cn } from "@stark/ui/utils/cn";
 import { formatNaira } from "@stark/utils/format";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
+import { BackLink, PageTitle } from "@/components/app-shell";
+import { TokenLine } from "@/components/token-card";
+import { billStatus, fixedAmount, isPayable, kindLabel } from "@/lib/bills";
 
 export const Route = createFileRoute("/_app/pay")({
   validateSearch: z.object({
     bill: z.string().optional(),
     amount: z.number().int().positive().optional(),
   }),
-  loader: ({ context }) =>
-    context.queryClient.query({ ...limitsQuery(), staleTime: "static" }),
+  loader: ({ context }) => context.queryClient.query({ ...limitsQuery(), staleTime: "static" }),
   head: () => ({ meta: [{ title: "Pay a bill · Stark" }] }),
   component: Pay,
 });
@@ -65,15 +73,20 @@ function Pay() {
       <>
         <BackLink to="/">Home</BackLink>
         <PageTitle>Pay a bill</PageTitle>
-        <p className="m-0 text-fg-2">
-          Add a bill first, then Stark can pay it.
-        </p>
-        <Link
-          to="/bills/new"
-          className={cn(buttonVariants(), "self-start hover:text-white")}
-        >
-          Add a bill
-        </Link>
+        <Empty className="rounded-card border border-dashed border-white/12">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Icons.Bills size={16} />
+            </EmptyMedia>
+            <EmptyTitle>Nothing to pay yet</EmptyTitle>
+            <EmptyDescription>Add a bill first, then Stark can pay it.</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button nativeButton={false} render={<Link to="/bills/new" />}>
+              Add a bill
+            </Button>
+          </EmptyContent>
+        </Empty>
       </>
     );
   }
@@ -155,10 +168,9 @@ function Pay() {
             size="lg"
             block
             disabled={!bill || amount <= 0 || pay.isPending}
-            onClick={() =>
-              bill && pay.mutate({ bill_id: bill.id, amount_ngn: amount })
-            }
+            onClick={() => bill && pay.mutate({ bill_id: bill.id, amount_ngn: amount })}
           >
+            {pay.isPending ? <Spinner /> : null}
             {pay.isPending ? "Paying…" : `Pay ${formatNaira(amount)}`}
           </Button>
         </Card>
@@ -168,13 +180,7 @@ function Pay() {
 }
 
 /** A refusal explains the rule that stopped it, and offers what Stark can pay instead. */
-function Refused({
-  error,
-  onPay,
-}: {
-  error: Error;
-  onPay: (amount: number) => void;
-}) {
+function Refused({ error, onPay }: { error: Error; onPay: (amount: number) => void }) {
   const { data: limits } = useSuspenseQuery(limitsQuery());
   const offer = isApiError(error, "over_per_payment_cap")
     ? limits.per_payment_cap_ngn
@@ -182,20 +188,19 @@ function Refused({
       ? limits.remaining_cap_ngn
       : null;
   return (
-    <div
-      role="alert"
-      className="flex flex-col gap-2 rounded-row border border-brand-warm/40 bg-brand-wash p-3.5"
-    >
-      <span className="text-[13px]">{errorCopy(error)}</span>
-      {offer ? (
-        <Button
-          variant="secondary"
-          className="self-start"
-          onClick={() => onPay(offer)}
-        >
-          Pay {formatNaira(offer)} instead
-        </Button>
-      ) : null}
+    <div role="alert">
+      <Notice
+        icon={<Icons.Warning size={16} className="text-brand-warm" />}
+        title={errorCopy(error)}
+        className="rounded-row p-3.5"
+        actions={
+          offer ? (
+            <Button variant="secondary" onClick={() => onPay(offer)}>
+              Pay {formatNaira(offer)} instead
+            </Button>
+          ) : null
+        }
+      />
     </div>
   );
 }
@@ -228,19 +233,15 @@ function Result({
   return (
     <Card aria-live="polite">
       <div className="flex items-center gap-3">
-        <IconTile>
-          {delivered ? <Icons.Check size={16} /> : <Icons.Clock size={16} />}
-        </IconTile>
+        <IconTile>{delivered ? <Icons.Check size={16} /> : <Icons.Clock size={16} />}</IconTile>
         <span className="font-serif text-2xl">{title}</span>
       </div>
       {receipt.token ? <TokenLine token={receipt.token} /> : null}
-      {body ? (
-        <span className="text-xs text-muted-foreground">{body}</span>
-      ) : null}
+      {body ? <span className="text-xs text-muted-foreground">{body}</span> : null}
       <div className="flex flex-wrap gap-2">
-        <Link to="/" className={cn(buttonVariants(), "hover:text-white")}>
+        <Button nativeButton={false} render={<Link to="/" />}>
           Done
-        </Link>
+        </Button>
         <Button variant="secondary" onClick={onAgain}>
           Pay another bill
         </Button>

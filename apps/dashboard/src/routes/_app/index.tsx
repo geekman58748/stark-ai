@@ -1,22 +1,34 @@
-import { ActivityRow } from "@/components/activity-row";
-import { BillRow } from "@/components/bill-row";
-import { LOW_DAYS, meterBill } from "@/lib/bills";
 import { activityQuery, stateQuery } from "@stark/api";
-import { buttonVariants } from "@stark/ui/components/button";
+import { Button } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+} from "@stark/ui/components/empty";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
 import { IconTile } from "@stark/ui/components/icon-tile";
 import { Icons } from "@stark/ui/components/icons";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@stark/ui/components/input-group";
 import { RowList } from "@stark/ui/components/list-row";
 import { Notice } from "@stark/ui/components/notice";
 import { SectionHeading } from "@stark/ui/components/section-heading";
 import { Stat, StatGrid } from "@stark/ui/components/stat";
 import { StatusPill } from "@stark/ui/components/status-pill";
-import { cn } from "@stark/ui/utils/cn";
 import { formatNaira, greeting } from "@stark/utils/format";
 import { noop, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { ActivityRow } from "@/components/activity-row";
+import { BillRow } from "@/components/bill-row";
+import { LOW_DAYS, meterBill } from "@/lib/bills";
 
 export const Route = createFileRoute("/_app/")({
   loader: ({ context }) => {
@@ -56,29 +68,18 @@ function Home() {
       <Card>
         <Eyebrow>Balance</Eyebrow>
         <div className="flex flex-wrap items-baseline gap-2.5">
-          <span className="font-serif text-5xl leading-none">
-            {formatNaira(state.balance_ngn)}
-          </span>
+          <span className="font-serif text-5xl leading-none">{formatNaira(state.balance_ngn)}</span>
           <span className="text-xs text-muted-foreground">
             {runway(state.balance_ngn, state.spent_ngn)}
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link
-            to="/wallet/add"
-            className={cn(buttonVariants(), "hover:text-white")}
-          >
+          <Button nativeButton={false} render={<Link to="/wallet/add" />}>
             Add money
-          </Link>
-          <Link
-            to="/wallet"
-            className={cn(
-              buttonVariants({ variant: "secondary" }),
-              "hover:text-fg",
-            )}
-          >
+          </Button>
+          <Button variant="secondary" nativeButton={false} render={<Link to="/wallet" />}>
             Withdraw
-          </Link>
+          </Button>
         </div>
         <StatGrid>
           <Stat label="Spent this month">
@@ -102,28 +103,20 @@ function Home() {
           title={`${meter.label} meter is running low`}
           actions={
             <>
-              <Link
-                to="/pay"
-                search={{
-                  bill: meter.id,
-                  amount: meter.last_amount_ngn ?? undefined,
-                }}
-                className={cn(buttonVariants(), "hover:text-white")}
+              <Button
+                nativeButton={false}
+                render={
+                  <Link
+                    to="/pay"
+                    search={{ bill: meter.id, amount: meter.last_amount_ngn ?? undefined }}
+                  />
+                }
               >
-                Top up{" "}
-                {meter.last_amount_ngn
-                  ? formatNaira(meter.last_amount_ngn)
-                  : ""}
-              </Link>
-              <Link
-                to="/bills"
-                className={cn(
-                  buttonVariants({ variant: "secondary" }),
-                  "hover:text-fg",
-                )}
-              >
+                Top up {meter.last_amount_ngn ? formatNaira(meter.last_amount_ngn) : ""}
+              </Button>
+              <Button variant="secondary" nativeButton={false} render={<Link to="/bills" />}>
                 Later
-              </Link>
+              </Button>
             </>
           }
         >
@@ -175,51 +168,64 @@ function AskStark() {
   const [text, setText] = useState("");
   return (
     <form
-      className="m-0 flex items-center gap-2 rounded-full border border-white/10 bg-surface py-1.5 pr-1.5 pl-4.5"
+      className="m-0"
       onSubmit={(e) => {
         e.preventDefault();
         if (text.trim()) navigate({ to: "/talk", search: { q: text.trim() } });
       }}
     >
-      <label htmlFor="ask" className="sr-only">
-        Ask Stark
-      </label>
-      <input
-        id="ask"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Ask Stark: “buy 2GB for my line”"
-        className="min-w-0 flex-1 bg-transparent py-2 text-[15px] text-fg placeholder:text-muted-foreground focus:outline-none"
-      />
-      {text.trim() ? (
-        <button
-          type="submit"
-          aria-label="Send"
-          className="flex size-10 cursor-pointer items-center justify-center rounded-full border-0 bg-brand text-white"
-        >
-          <Icons.ArrowRight size={18} />
-        </button>
-      ) : (
-        <Link
-          to="/talk"
-          aria-label="Speak instead"
-          className="flex size-10 items-center justify-center rounded-full bg-brand text-white hover:text-white"
-        >
-          <Icons.Mic size={18} />
-        </Link>
-      )}
+      <InputGroup className="h-auto rounded-full border-white/10 bg-surface py-1.5 pr-1.5 pl-4.5 dark:bg-surface">
+        <InputGroupInput
+          aria-label="Ask Stark"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Ask Stark: “buy 2GB for my line”"
+          className="h-auto px-0 py-2 text-[15px]"
+        />
+        <InputGroupAddon align="inline-end" className="py-0">
+          {text.trim() ? (
+            <InputGroupButton
+              type="submit"
+              variant="default"
+              size="icon-sm"
+              aria-label="Send"
+              className="size-10 rounded-full"
+            >
+              <Icons.ArrowRight className="size-4.5" />
+            </InputGroupButton>
+          ) : (
+            <InputGroupButton
+              variant="default"
+              size="icon-sm"
+              aria-label="Speak instead"
+              nativeButton={false}
+              render={<Link to="/talk" />}
+              className="size-10 rounded-full"
+            >
+              <Icons.Mic className="size-4.5" />
+            </InputGroupButton>
+          )}
+        </InputGroupAddon>
+      </InputGroup>
     </form>
   );
 }
 
 function EmptyBills() {
   return (
-    <Link
-      to="/bills/new"
-      className="flex items-center justify-center gap-2 rounded-row border border-dashed border-white/12 p-4 text-[13px] text-fg-2 no-underline hover:text-fg"
-    >
-      <Icons.Add size={16} />
-      Add your first bill
-    </Link>
+    <Empty className="rounded-row border border-dashed border-white/12 p-6">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Icons.Bills size={16} />
+        </EmptyMedia>
+        <EmptyDescription>Add a bill and Stark starts watching it for you.</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button variant="secondary" nativeButton={false} render={<Link to="/bills/new" />}>
+          <Icons.Add size={16} />
+          Add your first bill
+        </Button>
+      </EmptyContent>
+    </Empty>
   );
 }

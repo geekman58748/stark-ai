@@ -1,10 +1,11 @@
-import { BillForm } from "@/components/bill-form";
-import { OnboardingShell } from "@/components/onboarding-shell";
 import { limitsQuery } from "@stark/api";
+import { Button } from "@stark/ui/components/button";
 import { Icons } from "@stark/ui/components/icons";
 import { formatNaira } from "@stark/utils/format";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { BillForm } from "@/components/bill-form";
+import { OnboardingShell } from "@/components/onboarding-shell";
 
 export const Route = createFileRoute("/start/bill")({
   head: () => ({ meta: [{ title: "Your first bill · Stark" }] }),
@@ -35,12 +36,14 @@ function FirstBill() {
           </p>
         }
       />
-      <Link
-        to="/start/money"
-        className="self-center text-sm text-fg-2 no-underline hover:text-fg"
+      <Button
+        variant="ghost"
+        nativeButton={false}
+        render={<Link to="/start/money" />}
+        className="self-center"
       >
         Skip for now
-      </Link>
+      </Button>
     </OnboardingShell>
   );
 }

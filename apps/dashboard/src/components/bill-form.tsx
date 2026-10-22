@@ -1,14 +1,26 @@
 import { type Bill, type BillKind, errorCopy, plansQuery, useAddBill } from "@stark/api";
 import { Button } from "@stark/ui/components/button";
 import { ChipGroup, ChoiceChip } from "@stark/ui/components/choice-chip";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@stark/ui/components/field";
 import { Icons } from "@stark/ui/components/icons";
-import { Label } from "@stark/ui/components/label";
-import { NativeSelect, NativeSelectOption } from "@stark/ui/components/native-select";
-import { RadioList, RadioRow } from "@stark/ui/components/radio-row";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@stark/ui/components/select";
+import { Spinner } from "@stark/ui/components/spinner";
 import { TextField } from "@stark/ui/components/text-field";
-import { formatNaira } from "@stark/utils/format";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useId, useState } from "react";
+import { PlanSelect } from "@/components/plan-select";
 import { billKinds, defaultNickname, providers, referenceLabel } from "@/lib/bills";
 
 /** Pick a bill type, enter its number, choose a plan when it's sold as one, name it. */
@@ -28,6 +40,7 @@ export function BillForm({
   const [plan, setPlan] = useState<string>();
   const addBill = useAddBill();
   const providerId = useId();
+  const planId = useId();
 
   const sellsPlans = kind === "data" || kind === "tv";
   const plans = useQuery({
@@ -45,7 +58,7 @@ export function BillForm({
 
   return (
     <form
-      className="m-0 flex flex-col gap-6"
+      className="m-0"
       onSubmit={(e) => {
         e.preventDefault();
         addBill.mutate(
@@ -60,106 +73,97 @@ export function BillForm({
         );
       }}
     >
-      <ChipGroup label="Bill type" columns={3}>
-        {billKinds.map((k) => (
-          <ChoiceChip
-            key={k.kind}
-            selected={k.kind === kind}
-            onClick={() => pickKind(k.kind)}
-            className="text-sm"
-          >
-            {k.label}
-          </ChoiceChip>
-        ))}
-      </ChipGroup>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={providerId} className="font-normal text-fg-2">
-          Provider
-        </Label>
-        <NativeSelect
-          id={providerId}
-          value={provider}
-          onChange={(e) => {
-            setProvider(e.target.value);
-            setPlan(undefined);
-          }}
-          className="w-full"
-        >
-          {providers[kind].map((p) => (
-            <NativeSelectOption key={p}>{p}</NativeSelectOption>
+      <FieldGroup className="gap-6">
+        <ChipGroup label="Bill type" columns={3}>
+          {billKinds.map((k) => (
+            <ChoiceChip
+              key={k.kind}
+              selected={k.kind === kind}
+              onClick={() => pickKind(k.kind)}
+              className="text-sm"
+            >
+              {k.label}
+            </ChoiceChip>
           ))}
-        </NativeSelect>
-      </div>
+        </ChipGroup>
 
-      <TextField
-        label={referenceLabel[kind]}
-        inputMode="numeric"
-        autoComplete="off"
-        required
-        value={reference}
-        onChange={(e) => setReference(e.target.value)}
-        className="[&_input]:tabular [&_input]:tracking-[0.04em]"
-      />
-
-      {sellsPlans ? (
-        <div className="flex flex-col gap-2">
-          <span className="text-sm text-fg-2">Plan</span>
-          {plans.isPending ? (
-            <span className="text-[13px] text-muted-foreground">Loading plans…</span>
-          ) : null}
-          {plans.data && !plans.data.length ? (
-            <span className="text-[13px] text-muted-foreground">No plans for {provider} yet.</span>
-          ) : null}
-          <RadioList
-            label="Plan"
-            // The vendor catalogue repeats some plan codes across services, so rows are keyed
-            // by position.
-            value={plan ? String(plans.data?.findIndex((p) => p.plan === plan) ?? "") : undefined}
-            onValueChange={(i) => {
-              const picked = plans.data?.[Number(i)];
-              if (picked) setPlan(picked.plan);
+        <Field>
+          <FieldLabel htmlFor={providerId} className="font-normal text-fg-2">
+            Provider
+          </FieldLabel>
+          <Select
+            value={provider}
+            onValueChange={(next) => {
+              if (next === null) return;
+              setProvider(next);
+              setPlan(undefined);
             }}
           >
-            <div className="flex max-h-72 flex-col gap-2 overflow-y-auto pr-1">
-              {plans.data?.map((p, i) => (
-                <RadioRow
-                  key={`${p.provider}-${p.plan}-${i}`}
-                  value={String(i)}
-                  title={p.label}
-                  subtitle={formatNaira(p.price_ngn)}
-                />
+            <SelectTrigger id={providerId} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {providers[kind].map((p) => (
+                <SelectItem key={p} value={p}>
+                  {p}
+                </SelectItem>
               ))}
-            </div>
-          </RadioList>
-        </div>
-      ) : null}
+            </SelectContent>
+          </Select>
+        </Field>
 
-      <TextField label="Call it" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <TextField
+          label={referenceLabel[kind]}
+          inputMode="numeric"
+          autoComplete="off"
+          required
+          value={reference}
+          onChange={(e) => setReference(e.target.value)}
+          className="[&_input]:tabular [&_input]:tracking-[0.04em]"
+        />
 
-      {kind === "internet" || kind === "water" ? (
-        <p className="m-0 text-[13px] text-muted-foreground">
-          You can save this now. Stark will start paying it once the provider is connected.
-        </p>
-      ) : null}
+        {sellsPlans ? (
+          <Field>
+            <FieldLabel htmlFor={planId} className="font-normal text-fg-2">
+              Plan
+            </FieldLabel>
+            <PlanSelect
+              id={planId}
+              plans={plans.data}
+              provider={provider}
+              value={plan}
+              onChange={setPlan}
+            />
+          </Field>
+        ) : null}
 
-      {footer}
+        <TextField label="Call it" value={label} onChange={(e) => setLabel(e.target.value)} />
 
-      {addBill.error ? (
-        <p role="alert" className="m-0 flex items-center gap-2 text-[13px] text-brand-soft">
-          <Icons.Warning size={16} />
-          {errorCopy(addBill.error)}
-        </p>
-      ) : null}
+        {kind === "internet" || kind === "water" ? (
+          <FieldDescription className="text-[13px]">
+            You can save this now. Stark will start paying it once the provider is connected.
+          </FieldDescription>
+        ) : null}
 
-      <Button
-        type="submit"
-        size="lg"
-        block
-        disabled={addBill.isPending || !reference.trim() || (sellsPlans && !plan)}
-      >
-        {addBill.isPending ? "Adding…" : submitLabel}
-      </Button>
+        {footer}
+
+        {addBill.error ? (
+          <FieldError className="flex items-center gap-2 text-[13px]">
+            <Icons.Warning size={16} />
+            {errorCopy(addBill.error)}
+          </FieldError>
+        ) : null}
+
+        <Button
+          type="submit"
+          size="lg"
+          block
+          disabled={addBill.isPending || !reference.trim() || (sellsPlans && !plan)}
+        >
+          {addBill.isPending ? <Spinner /> : null}
+          {addBill.isPending ? "Adding…" : submitLabel}
+        </Button>
+      </FieldGroup>
     </form>
   );
 }

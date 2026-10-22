@@ -1,6 +1,14 @@
 import { stateQuery } from "@stark/api";
 import { Avatar, AvatarFallback } from "@stark/ui/components/avatar";
-import { buttonVariants } from "@stark/ui/components/button";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@stark/ui/components/breadcrumb";
+import { Button } from "@stark/ui/components/button";
 import { Icons } from "@stark/ui/components/icons";
 import { LogoMark } from "@stark/ui/components/logo";
 import { cn } from "@stark/ui/utils/cn";
@@ -51,30 +59,33 @@ function Header() {
   const page = pageNames.find(([p]) => isActive(path, p, false))?.[1] ?? "Home";
   return (
     <header className="flex items-center gap-3 px-4 pt-3 pb-2.5 sm:border-b sm:border-line sm:px-5 sm:py-3.5">
-      <Link
-        to="/"
-        aria-label="Stark home"
-        className="flex items-center gap-2 text-fg no-underline hover:text-fg"
-      >
-        <LogoMark />
-        <span className="text-base font-semibold sm:text-[15px]">Stark</span>
-      </Link>
-      <span aria-hidden="true" className="hidden text-faint sm:inline">
-        /
-      </span>
-      <span className="hidden text-[13px] font-medium sm:inline">{page}</span>
+      <Breadcrumb>
+        <BreadcrumbList className="gap-3 text-fg">
+          <BreadcrumbItem>
+            <BreadcrumbLink
+              render={<Link to="/" aria-label="Stark home" />}
+              className="flex items-center gap-2 text-fg no-underline"
+            >
+              <LogoMark />
+              <span className="text-base font-semibold sm:text-[15px]">Stark</span>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator className="hidden text-faint sm:inline">/</BreadcrumbSeparator>
+          <BreadcrumbItem className="hidden sm:inline-flex">
+            <BreadcrumbPage className="text-[13px] font-medium">{page}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
       <div className="ml-auto flex items-center gap-2 sm:gap-2.5">
-        <Link
-          to="/pay"
-          aria-label="Pay a bill"
-          className={cn(
-            buttonVariants({ size: "sm" }),
-            "size-[38px] px-0 text-white hover:text-white sm:size-auto sm:px-4",
-          )}
+        <Button
+          size="sm"
+          nativeButton={false}
+          render={<Link to="/pay" aria-label="Pay a bill" />}
+          className="size-[38px] px-0 sm:size-auto sm:px-4"
         >
           <Icons.Add size={14} />
           <span className="hidden sm:inline">Pay a bill</span>
-        </Link>
+        </Button>
         <AccountAvatar />
       </div>
     </header>
@@ -97,7 +108,7 @@ function Dock() {
             aria-label={label}
             aria-current={isActive(path, to, exact) ? "page" : undefined}
             className={cn(
-              "flex size-[42px] items-center justify-center rounded-full text-fg hover:text-fg",
+              "flex size-[42px] items-center justify-center rounded-full text-fg",
               isActive(path, to, exact) && "bg-brand/25",
             )}
           >
@@ -108,7 +119,7 @@ function Dock() {
       <Link
         to="/talk"
         aria-label="Talk to Stark"
-        className="pointer-events-auto flex size-[54px] items-center justify-center rounded-full bg-brand text-white shadow-[0_12px_30px_rgba(0,0,0,0.5)] hover:text-white"
+        className="pointer-events-auto flex size-[54px] items-center justify-center rounded-full bg-brand text-white shadow-[0_12px_30px_rgba(0,0,0,0.5)]"
       >
         <Icons.Mic size={22} />
       </Link>
@@ -127,9 +138,7 @@ function TabBar() {
       aria-current={isActive(path, to, exact) ? "page" : undefined}
       className={cn(
         "flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium no-underline",
-        isActive(path, to, exact)
-          ? "text-brand-soft hover:text-brand-soft"
-          : "text-idle hover:text-fg",
+        isActive(path, to, exact) ? "text-brand-soft" : "text-idle hover:text-fg",
       )}
     >
       <Icon size={22} />
@@ -180,12 +189,15 @@ export function PageTitle({ children, aside }: { children: ReactNode; aside?: Re
 
 export function BackLink({ to, children }: { to: string; children: ReactNode }) {
   return (
-    <Link
-      to={to}
-      className="flex items-center gap-1.5 self-start text-[13px] text-fg-2 no-underline hover:text-fg"
+    <Button
+      variant="ghost"
+      size="sm"
+      nativeButton={false}
+      render={<Link to={to} />}
+      className="-ml-1 self-start px-1"
     >
       <Icons.ChevronLeft size={16} />
       {children}
-    </Link>
+    </Button>
   );
 }

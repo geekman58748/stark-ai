@@ -3,7 +3,9 @@ import { AmountField } from "@stark/ui/components/amount-field";
 import { Button } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
+import { FieldError } from "@stark/ui/components/field";
 import { RadioList, RadioRow } from "@stark/ui/components/radio-row";
+import { Spinner } from "@stark/ui/components/spinner";
 import { formatNaira } from "@stark/utils/format";
 import { requestId } from "@stark/utils/id";
 import { useMemo, useState } from "react";
@@ -73,9 +75,7 @@ export function FundForm({
         </span>
       </Card>
       {topUp.error ? (
-        <p role="alert" className="m-0 text-[13px] text-brand-soft">
-          {errorCopy(topUp.error)}
-        </p>
+        <FieldError className="text-[13px]">{errorCopy(topUp.error)}</FieldError>
       ) : null}
       <Button
         size="lg"
@@ -88,6 +88,7 @@ export function FundForm({
           )
         }
       >
+        {topUp.isPending ? <Spinner /> : null}
         {topUp.isPending ? "Adding…" : `Add ${formatNaira(amount)}`}
       </Button>
     </div>

@@ -18,11 +18,7 @@ export function BillIcon({ bill, size = 16 }: { bill: Pick<Bill, "kind">; size?:
 export function BillRow({ bill, state }: { bill: Bill; state: State }) {
   const status = billStatus(bill, state);
   return (
-    <Link
-      to="/bills/$billId"
-      params={{ billId: bill.id }}
-      className={cn(listRowClass, "hover:text-fg")}
-    >
+    <Link to="/bills/$billId" params={{ billId: bill.id }} className={listRowClass}>
       <BillIcon bill={bill} />
       <RowText title={bill.label} subtitle={billSubtitle(bill)} />
       <span className={cn("text-xs", status.attention ? "text-brand-warm" : "text-fg-2")}>

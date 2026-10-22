@@ -1,10 +1,10 @@
 import { stateQuery } from "@stark/api";
-import { buttonVariants } from "@stark/ui/components/button";
+import { Button } from "@stark/ui/components/button";
+import { Empty, EmptyDescription } from "@stark/ui/components/empty";
 import { Icons } from "@stark/ui/components/icons";
 import { RowList } from "@stark/ui/components/list-row";
 import { PillTabs } from "@stark/ui/components/pill-tabs";
 import { SectionHeading } from "@stark/ui/components/section-heading";
-import { cn } from "@stark/ui/utils/cn";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
@@ -43,10 +43,10 @@ function Bills() {
     <>
       <PageTitle
         aside={
-          <Link to="/bills/new" className={cn(buttonVariants(), "hover:text-white")}>
+          <Button nativeButton={false} render={<Link to="/bills/new" />}>
             <Icons.Add size={14} />
             Add a bill
-          </Link>
+          </Button>
         }
       >
         Bills
@@ -80,18 +80,29 @@ function Bills() {
         {fine.map((b) => (
           <BillRow key={b.id} bill={b} state={state} />
         ))}
-        {!bills.length ? (
-          <p className="m-0 text-[13px] text-muted-foreground">No bills here yet.</p>
-        ) : null}
       </RowList>
 
-      <Link
-        to="/bills/new"
-        className="flex items-center justify-center gap-2 rounded-row border border-dashed border-white/12 p-4 text-[13px] text-fg-2 no-underline hover:text-fg"
-      >
-        <Icons.Add size={16} />
-        Add internet, water or another meter
-      </Link>
+      {bills.length ? (
+        <Button
+          variant="outline"
+          size="lg"
+          block
+          nativeButton={false}
+          render={<Link to="/bills/new" />}
+          className="rounded-row border-dashed border-white/12 text-[13px] font-normal text-fg-2 dark:border-white/12 dark:bg-transparent"
+        >
+          <Icons.Add size={16} />
+          Add internet, water or another meter
+        </Button>
+      ) : (
+        <Empty className="rounded-row border border-dashed border-white/12 p-6">
+          <EmptyDescription>No bills here yet.</EmptyDescription>
+          <Button variant="secondary" nativeButton={false} render={<Link to="/bills/new" />}>
+            <Icons.Add size={16} />
+            Add a bill
+          </Button>
+        </Empty>
+      )}
     </>
   );
 }
