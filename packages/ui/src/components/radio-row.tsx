@@ -1,51 +1,60 @@
+import { RadioGroup, RadioGroupItem } from "@stark/ui/components/radio-group";
+import { cn } from "@stark/ui/utils/cn";
 import type { ReactNode } from "react";
-import { cn } from "../utils/cn";
 
-/** One option in a list of choices, with a round indicator on the right. */
+/** A list of choices shown as full-width rows. Built on the shadcn radio group. */
+export function RadioList<T extends string>({
+  label,
+  value,
+  onValueChange,
+  children,
+}: {
+  label: string;
+  value: T | undefined;
+  onValueChange: (value: T) => void;
+  children: ReactNode;
+}) {
+  return (
+    <RadioGroup
+      aria-label={label}
+      value={value ?? null}
+      onValueChange={(v) => onValueChange(v as T)}
+      className="flex flex-col gap-2"
+    >
+      {children}
+    </RadioGroup>
+  );
+}
+
+/** One option in a RadioList, with the round indicator on the right. */
 export function RadioRow({
-  checked,
-  onSelect,
+  value,
   title,
   subtitle,
   disabled,
 }: {
-  checked: boolean;
-  onSelect: () => void;
+  value: string;
   title: ReactNode;
   subtitle?: ReactNode;
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={onSelect}
+    <label
       className={cn(
-        "flex min-h-[60px] w-full cursor-pointer items-center gap-3 rounded-row border px-4 py-2.5 text-left text-sm text-fg transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "border-brand-warm/60 bg-surface-selected" : "border-white/8 bg-surface",
+        "flex min-h-[60px] w-full cursor-pointer items-center gap-3 rounded-row border border-border bg-card px-4 py-2.5 text-left text-sm transition-colors",
+        "has-data-checked:border-brand-warm/60 has-data-checked:bg-surface-selected",
+        "has-data-disabled:cursor-not-allowed has-data-disabled:opacity-50",
       )}
     >
       <span className="flex flex-1 flex-col">
         <span className="font-medium">{title}</span>
-        {subtitle ? <span className="text-xs text-muted">{subtitle}</span> : null}
+        {subtitle ? <span className="text-xs text-muted-foreground">{subtitle}</span> : null}
       </span>
-      <span
-        aria-hidden="true"
-        className={cn(
-          "box-border size-[18px] flex-none rounded-full",
-          checked ? "border-[5px] border-brand-warm" : "border-2 border-faint",
-        )}
+      <RadioGroupItem
+        value={value}
+        disabled={disabled}
+        className="size-[18px] border-2 border-faint data-checked:border-[5px] data-checked:border-brand-warm data-checked:bg-transparent dark:data-checked:bg-transparent [&_[data-slot=radio-group-indicator]]:hidden"
       />
-    </button>
-  );
-}
-
-export function RadioList({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div role="radiogroup" aria-label={label} className="flex flex-col gap-2">
-      {children}
-    </div>
+    </label>
   );
 }

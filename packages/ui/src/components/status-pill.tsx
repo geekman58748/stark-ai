@@ -1,6 +1,8 @@
+import { Badge } from "@stark/ui/components/badge";
+import { cn } from "@stark/ui/utils/cn";
 import type { ReactNode } from "react";
-import { cn } from "../utils/cn";
 
+/** A small status badge with a dot, e.g. "Running low". */
 export function StatusPill({
   children,
   tone = "brand",
@@ -11,18 +13,19 @@ export function StatusPill({
   className?: string;
 }) {
   return (
-    <span
+    <Badge
+      variant="secondary"
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full bg-white/5 px-2 py-[3px] text-[11px]",
-        tone === "brand" ? "text-brand-warm" : "text-muted",
+        "h-auto gap-1.5 bg-white/5 py-[3px] text-[11px] font-normal",
+        tone === "brand" ? "text-brand-warm" : "text-muted-foreground",
         className,
       )}
     >
       <span
         aria-hidden="true"
-        className={cn("size-1.5 rounded-full", tone === "brand" ? "bg-brand-warm" : "bg-muted")}
+        className={cn("size-1.5 rounded-full", tone === "brand" ? "bg-brand-warm" : "bg-idle")}
       />
       {children}
-    </span>
+    </Badge>
   );
 }

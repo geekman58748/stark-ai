@@ -1,7 +1,9 @@
+import { ChipGroup, ChoiceChip } from "@stark/ui/components/choice-chip";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@stark/ui/components/input-group";
+import { Label } from "@stark/ui/components/label";
+import { cn } from "@stark/ui/utils/cn";
 import { formatAmountInput, parseAmountInput } from "@stark/utils/format";
 import { useId } from "react";
-import { cn } from "../utils/cn";
-import { ChipGroup, ChoiceChip } from "./choice-chip";
 
 /**
  * A typed naira amount plus quick-pick chips. This is how every amount, cap and threshold
@@ -23,22 +25,24 @@ export function AmountField({
   const id = useId();
   return (
     <div className={cn("flex flex-col gap-2.5", className)}>
-      <label htmlFor={id} className="text-sm text-fg-2">
+      <Label htmlFor={id} className="font-normal text-fg-2">
         {label}
-      </label>
-      <div className="flex items-center gap-2 rounded-xl border border-white/12 bg-canvas px-3.5 focus-within:border-brand-warm/60">
-        <span aria-hidden="true" className="font-serif text-2xl text-muted">
-          ₦
-        </span>
-        <input
+      </Label>
+      <InputGroup className="h-auto rounded-xl px-1.5 dark:bg-canvas">
+        <InputGroupAddon>
+          <span aria-hidden="true" className="font-serif text-2xl text-muted-foreground">
+            ₦
+          </span>
+        </InputGroupAddon>
+        <InputGroupInput
           id={id}
           inputMode="numeric"
           autoComplete="off"
           value={formatAmountInput(value)}
           onChange={(e) => onChange(parseAmountInput(e.target.value))}
-          className="tabular w-full bg-transparent py-3 font-serif text-[28px] text-fg focus:outline-none"
+          className="tabular h-auto py-3 font-serif text-[28px] md:text-[28px]"
         />
-      </div>
+      </InputGroup>
       {presets?.length ? (
         <ChipGroup label={`Quick amounts for ${label.toLowerCase()}`}>
           {presets.map((p) => (

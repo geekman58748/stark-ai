@@ -1,6 +1,6 @@
+import { Eyebrow } from "@stark/ui/components/eyebrow";
+import { cn } from "@stark/ui/utils/cn";
 import type { ReactNode } from "react";
-import { cn } from "../utils/cn";
-import { Eyebrow } from "./eyebrow";
 
 export function StatGrid({ children, className }: { children: ReactNode; className?: string }) {
   return (

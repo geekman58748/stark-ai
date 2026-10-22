@@ -1,5 +1,5 @@
+import { Button } from "@stark/ui/components/button";
 import { useState } from "react";
-import { Button } from "./button";
 
 export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);

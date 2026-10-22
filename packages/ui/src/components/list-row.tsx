@@ -1,5 +1,5 @@
+import { cn } from "@stark/ui/utils/cn";
 import type { HTMLAttributes, ReactNode } from "react";
-import { cn } from "../utils/cn";
 
 export const listRowClass =
   "flex flex-wrap items-center gap-3 rounded-row border border-line bg-surface px-4 py-3 text-fg no-underline transition-colors hover:border-white/12";
@@ -17,7 +17,7 @@ export function RowText({
   return (
     <span className={cn("flex min-w-0 flex-[1_1_0] flex-col sm:flex-[1_1_180px]", className)}>
       <span className="truncate font-medium">{title}</span>
-      {subtitle ? <span className="text-xs text-muted">{subtitle}</span> : null}
+      {subtitle ? <span className="text-xs text-muted-foreground">{subtitle}</span> : null}
     </span>
   );
 }

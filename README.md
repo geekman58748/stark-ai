@@ -56,7 +56,7 @@ has its own README; start there when you work on it.
 | [`apps/dashboard`](apps/dashboard) | the Stark app users manage bills in | TanStack Start (SPA) + TanStack Query |
 | [`apps/backend`](apps/backend) | API, agent, bill vending, Telegram bot | Python, standard library only |
 | [`apps/contracts`](apps/contracts) | NEAR vault contract: caps and allowlist | Rust, near-sdk |
-| [`packages/ui`](packages/ui) | shared tokens, fonts, icons and components | Tailwind v4, Reicon |
+| [`packages/ui`](packages/ui) | the design system: shadcn/ui components on Base UI, themed to Stark | shadcn, Base UI, Tailwind v4, Reicon |
 | [`packages/api`](packages/api) | typed `/v1` client, query options and mutations | TanStack Query |
 | [`packages/utils`](packages/utils) | naira and date formatting, request ids | |
 | [`docs`](docs) | the API contract, frontend guide, backend handoff | |

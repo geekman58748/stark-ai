@@ -1,10 +1,13 @@
-import { cn } from "../utils/cn";
+import { cn } from "@stark/ui/utils/cn";
 
-export function Skeleton({ className }: { className?: string }) {
+function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <span
-      aria-hidden="true"
-      className={cn("block animate-pulse rounded-lg bg-white/6", className)}
+    <div
+      data-slot="skeleton"
+      className={cn("animate-pulse rounded-md bg-muted", className)}
+      {...props}
     />
   );
 }
+
+export { Skeleton };

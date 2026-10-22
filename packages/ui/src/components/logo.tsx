@@ -1,4 +1,4 @@
-import { cn } from "../utils/cn";
+import { cn } from "@stark/ui/utils/cn";
 
 type LogoMarkProps = {
   size?: number;

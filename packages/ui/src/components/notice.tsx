@@ -1,5 +1,5 @@
+import { cn } from "@stark/ui/utils/cn";
 import type { ReactNode } from "react";
-import { cn } from "../utils/cn";
 
 /** A highlighted strip for something that needs the user (low meter, a refused payment). */
 export function Notice({

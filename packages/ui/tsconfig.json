@@ -1,4 +1,9 @@
 {
   "extends": "@stark/tsconfig/react-library.json",
+  "compilerOptions": {
+    "paths": {
+      "@stark/ui/*": ["./src/*"]
+    }
+  },
   "include": ["src"]
 }

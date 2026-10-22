@@ -1,6 +1,12 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
   "files": {
     "includes": [
       "**",
@@ -51,5 +57,29 @@
   "formatter": {
     "indentStyle": "space",
     "lineWidth": 100
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "packages/ui/src/components/**",
+        "packages/ui/src/hooks/**",
+        "packages/ui/src/lib/**"
+      ],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useFocusableInteractive": "off",
+            "noNoninteractiveTabindex": "off",
+            "useAriaPropsForRole": "off",
+            "noLabelWithoutControl": "off",
+            "noRedundantRoles": "off"
+          },
+          "suspicious": {
+            "noDocumentCookie": "off",
+            "noDoubleEquals": "off"
+          }
+        }
+      }
+    }
+  ]
 }

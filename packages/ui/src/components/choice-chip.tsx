@@ -1,7 +1,8 @@
-import type { ButtonHTMLAttributes } from "react";
-import { cn } from "../utils/cn";
+import { Toggle } from "@stark/ui/components/toggle";
+import { cn } from "@stark/ui/utils/cn";
+import type { ComponentProps } from "react";
 
-type ChoiceChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+type ChoiceChipProps = Omit<ComponentProps<typeof Toggle>, "pressed" | "size"> & {
   selected: boolean;
   size?: "sm" | "lg";
 };
@@ -9,20 +10,16 @@ type ChoiceChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 /** A toggle in a group of quick picks (amounts, bill types). Never a slider. */
 export function ChoiceChip({ selected, size = "lg", className, ...props }: ChoiceChipProps) {
   return (
-    <button
-      type="button"
-      aria-pressed={selected}
+    <Toggle
+      pressed={selected}
       className={cn(
-        "cursor-pointer border font-[inherit] transition-colors",
+        "h-auto cursor-pointer border font-normal",
         size === "lg"
           ? "min-h-12 rounded-xl text-[15px]"
           : "min-h-9 rounded-full px-3.5 text-[13px]",
-        selected
-          ? "border-brand-warm/60 bg-brand-tint text-brand-soft"
-          : cn(
-              "border-white/8 text-fg hover:border-white/16",
-              size === "lg" ? "bg-surface" : "bg-surface-2",
-            ),
+        "border-border text-foreground hover:border-white/16 hover:bg-card",
+        size === "lg" ? "bg-card" : "bg-secondary",
+        "aria-pressed:border-brand-warm/60 aria-pressed:bg-brand-tint aria-pressed:text-brand-soft",
         className,
       )}
       {...props}
