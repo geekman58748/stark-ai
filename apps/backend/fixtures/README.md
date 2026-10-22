@@ -38,28 +38,46 @@ Two facts from that capture worth keeping in mind:
 - **`startimes` is `product_type: flexible` and still has 25 priced bouquets.** The
   plan list, not `product_type`, decides whether a product is amount-priced.
 
+## Captured with credentials (sandbox)
+
+**2026-10-22** — the first authenticated calls. POSTs authenticate with the dashboard
+key pair (`api-key` + `secret-key`); the static `api-key` alone is a 401. The sandbox
+test meter for `ikeja-electric` prepaid is `1111111111111`.
+
+| File | Source |
+|---|---|
+| `merchant-verify_ok.json` | `POST /merchant-verify`, meter `1111111111111` — `Customer_Name: TESTMETER1`, `WrongBillersCode: false` |
+| `merchant-verify_wrong.json` | `POST /merchant-verify`, meter `04512345678` — HTTP 200, `code: "000"`, `WrongBillersCode: true` inside `content` |
+| `pay_not_whitelisted.json` | `POST /pay`, `ikeja-electric`, ₦5,000 — `028 PRODUCT IS NOT WHITELISTED ON YOUR ACCOUNT` |
+
+The wrong-meter capture is why `verify_meter` checks `content`, not just the
+envelope: code `000` does not mean the meter resolved.
+
+**Purchases are blocked by 028.** The account authenticates and can verify meters,
+but `/pay` returns 028 for both `ikeja-electric` and `mtn`, so no product is enabled
+on the sandbox account yet. Ask VTpass to provision the products, then capture the
+purchase fixtures below.
+
 ## Modeled on the documented shape — NOT captured
 
 These were written by hand to match VTpass's documented response structure and the
 response-code table published in their SDK. They cover **purchase** responses, which
-need credentials we do not have, so they have never been seen from the live API.
+are still blocked by the 028 above, so they have never been seen from the live API.
 
 | File | Represents |
 |---|---|
-| `merchant-verify_ok.json` | Meter found, customer name returned |
 | `pay_ok.json` | Token vended, `status: delivered` |
 | `pay_pending.json` | `code: 099`, `status: pending`, no token yet |
 | `pay_low_balance.json` | `code: 018`, VTpass wallet too low |
 | `pay_duplicate.json` | `code: 019`, same `request_id` reused |
 
-Once real credentials exist, run `python3 vtpass.py --live verify --meter ...` and
-`--live buy ...`, then replace these with actual captured bodies. Until then, treat
-every hand-written field name as a guess: `Customer_Name` in particular may be cased
-or named differently in reality. **`pay_ok.json` is also the demo's only token**, so
-every dry-run purchase returns `4821 0937 5512 8846 3019` — never present that as a
-live purchase.
+Once `/pay` is provisioned, run `python3 vtpass.py --live buy --meter 1111111111111
+--amount 5000 --phone ...` and replace these with the captured body. Until then, treat
+every hand-written field name as a guess. **`pay_ok.json` is also the demo's only
+token**, so every dry-run purchase returns `4821 0937 5512 8846 3019` — never present
+that as a live purchase.
 
 Response codes used here come from VTpass's published enum:
 `000` success, `011` invalid args, `012` product not found, `018` low balance,
-`019` duplicate, `020` biller confirmed, `030` unreachable, `034` suspended,
-`083` system error, `099` processing.
+`019` duplicate, `020` biller confirmed, `028` product not enabled, `030` unreachable,
+`034` suspended, `083` system error, `099` processing.

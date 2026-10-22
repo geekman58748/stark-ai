@@ -24,6 +24,12 @@ Order of checks, and why:
 Nothing here is live until `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`
 are set. With no `NEAR_AI_API_KEY`, voice notes are answered with a plain
 sentence saying they cannot be heard — never a guessed transcript.
+
+A **voice note gets a voice note back**: when the reply answers one, the local
+TTS sidecar (`tts.voice_note`, `STARK_TTS_URL`) speaks it and it ships as
+OGG/Opus via `sendVoice`. Every failure of that path — no sidecar, no ffmpeg,
+a Telegram refusal — lands on the ordinary text reply, because a spoken
+answer is a delight, not a dependency. Typed messages keep typed replies.
 """
 
 from __future__ import annotations
@@ -33,11 +39,13 @@ import json
 import os
 import urllib.error
 import urllib.request
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 
 import audio
 import stt
+import tts
 
 CHANNEL = "telegram"
 
@@ -126,6 +134,29 @@ def send_message(chat_id: int, text: str, *, bot_token: str,
         return False
 
 
+def send_voice_note(chat_id: int, ogg: bytes, *, bot_token: str,
+                    timeout: float = 30.0) -> bool:
+    """One voice note (OGG/Opus). Never raises — same rule as `send_message`:
+    a chat that cannot be reached is not an error."""
+    boundary = f"----starkvoice{uuid.uuid4().hex}"
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n'
+        f'{chat_id}\r\n'
+        f'--{boundary}\r\nContent-Disposition: form-data; name="voice"; '
+        f'filename="voice.ogg"\r\nContent-Type: audio/ogg\r\n\r\n'
+    ).encode() + ogg + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        f"{TELEGRAM_API}/bot{bot_token}/sendVoice",
+        data=body, method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout):
+            return True
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+
 # --- adapter -----------------------------------------------------------------
 
 
@@ -139,10 +170,14 @@ class TelegramAdapter:
     download: Callable[[str], bytes | None] | None = None
     transcribe: Callable[[bytes], tuple[str | None, str]] | None = None
     send: Callable[[int, str], bool] | None = None
+    # Speaking the reply: text → OGG/Opus bytes, and how those bytes go out.
+    # Both injected in tests; live they default to tts.voice_note / the API.
+    speak: Callable[[str], bytes | None] | None = None
+    send_voice: Callable[[int, bytes], bool] | None = None
     log: Callable[[str], None] = lambda line: None
     stats: dict[str, int] = field(default_factory=lambda: {
         "updates": 0, "duplicates": 0, "unlinked": 0, "agent": 0,
-        "commands": 0, "voice": 0, "ignored": 0,
+        "commands": 0, "voice": 0, "ignored": 0, "spoken": 0,
     })
 
     @property
@@ -191,10 +226,11 @@ class TelegramAdapter:
             reply = "Something went wrong handling that. Nothing was charged."
 
         if reply:
-            self._send(chat_id, reply)
+            self._deliver(chat_id, reply, spoken=self._speak_reply)
         return {"ok": True, "handled": self._last_outcome, "update_id": update.get("update_id")}
 
     _last_outcome = "ignored"
+    _speak_reply = False       # per-update scratch, reset on every _route
 
     def _send(self, chat_id: int, text: str) -> None:
         if self.send is not None:
@@ -204,10 +240,33 @@ class TelegramAdapter:
         else:
             self.log(f"telegram reply to {chat_id}: {text}")
 
+    def _deliver(self, chat_id: int, text: str, *, spoken: bool) -> None:
+        """Voice note when Stark was spoken to and the voice works; text otherwise.
+
+        Fail-closed like everything else here: no sidecar, no ffmpeg, or a
+        Telegram refusal, and the reply still arrives — as text.
+        """
+        if spoken:
+            synth = self.speak if self.speak is not None else tts.voice_note
+            ogg = synth(text)
+            if ogg and self._send_voice(chat_id, ogg):
+                self.stats["spoken"] += 1
+                return
+        self._send(chat_id, text)
+
+    def _send_voice(self, chat_id: int, ogg: bytes) -> bool:
+        if self.send_voice is not None:
+            return bool(self.send_voice(chat_id, ogg))
+        if not self.bot_token:
+            self.log("telegram voice reply skipped: no bot token")
+            return False
+        return send_voice_note(chat_id, ogg, bot_token=self.bot_token)
+
     # --- routing -------------------------------------------------------------
 
     def _route(self, message: dict, text: str, channel_user_id: str,
                display_name: str | None, chat_id: int) -> str | None:
+        self._speak_reply = False
         if text.startswith("/"):
             self.stats["commands"] += 1
             self._last_outcome = "command"
@@ -220,7 +279,9 @@ class TelegramAdapter:
             return NOT_LINKED_REPLY
 
         transcript = None
+        from_voice = False
         if message.get("voice") or message.get("audio"):
+            from_voice = True
             self.stats["voice"] += 1
             transcript = self._transcribe(message)
             if transcript is None:
@@ -241,7 +302,11 @@ class TelegramAdapter:
         self.stats["agent"] += 1
         self._last_outcome = "agent"
         self.log(f"telegram user={user_id} transcript={transcript!r}")
-        return self.agent.respond(transcript).reply
+        reply = self.agent.respond(transcript).reply
+        # Spoken only when the question was a voice note: you spoke to Stark,
+        # Stark speaks back. A typed message gets a typed reply.
+        self._speak_reply = bool(from_voice)
+        return reply
 
     def _transcribe(self, message: dict) -> str | None:
         voice = message.get("voice") or message.get("audio") or {}

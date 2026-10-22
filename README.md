@@ -80,9 +80,10 @@ Run from the repo root.
 | `bun run build` | build the website and dashboard |
 | `bun typecheck` | TypeScript across the workspace |
 | `bun lint` / `bun format` | Biome |
-| `bun run test` | backend unit tests (149, hermetic) |
+| `bun run test` | backend unit tests (207, hermetic) |
 | `bun check` | typecheck + lint + test, what CI should run |
 | `bun smoke` | end-to-end checks against a running backend |
+| `bun tts` | the local Kokoro voice sidecar on :8010 (needs `.venv-tts`, see [`apps/backend`](apps/backend/README.md#voice-output-tts)) |
 
 Contract commands are in [`apps/contracts`](apps/contracts/README.md); they need a Rust
 toolchain, so they are not part of `bun run test`.
@@ -91,21 +92,22 @@ toolchain, so they are not part of `bun run test`.
 
 **Nothing is live yet.** The bill API, the vault contract and the agent all exist and
 are tested, but every payment is dry-run: no real token has been vended, no transaction
-broadcast and no contract deployed. No real AI model has been called.
+broadcast and no contract deployed. The NEAR AI model and Whisper were called live on
+2026-10-22 — a real tool call and real transcripts came back.
 
 | Piece | Status |
 |---|---|
 | API contract | **frozen** — see [`docs/API.md`](docs/API.md) |
-| Stub server | working, 50/50 smoke checks |
+| Stub server | working, 53/53 smoke checks (54 with the voice sidecar up) |
 | App routes | **built** — plans, bill add/edit/delete, limits and wallet, additive to `/v1` |
-| VTpass client | written, dry-run verified, 30/30 tests — **live token unproven** |
+| VTpass client | **live auth + meter verify confirmed 2026-10-22** (33 tests) — purchases blocked by VTpass `028` product not whitelisted, **live token still unproven** |
 | Vending (M3) | **wired** — electricity, airtime, data and TV. Dry-run by default, 44 tests |
 | Receipts | **persisted** in SQLite: token ↔ tx hash ↔ request_id, survives restart |
 | Vault contract | **built** — 38/38 tests, wasm target checks clean, clippy clean. Ledger-only: it does not move tokens yet |
-| Agent + LLM | **built (M2)** — tool routing, policy gate, `pay()` signing. 59 tests. Signs but does not broadcast |
+| Agent + LLM | **built (M2)** — tool routing, policy gate, `pay()` signing. 59 tests. Real NEAR AI turn verified 2026-10-22. Signs but does not broadcast |
 | Telegram bot (M4) | **built, fail-closed** — webhook auth, identity linking, dedupe, voice wake gate. 16 tests. Needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` to go live |
-| Voice (Whisper) | **pipeline built (M4)** — ffmpeg decode + NEAR AI client. Needs `NEAR_AI_API_KEY`; no transcript has ever come back |
-| TTS | not started — replies are text; provider unchosen |
+| Voice (Whisper) | **live-verified 2026-10-22** — real transcripts from NEAR AI Whisper over generated speech |
+| TTS | **built and live-verified 2026-10-23** — Kokoro-82M sidecar (`bun tts`): `/v1/voice` speaks replies (WAV data URL), Telegram voice notes reply in voice, Talk screen plays them. Fails closed to text. No Nigerian voice in Kokoro — cloning is the accent path |
 | AC telemetry | not started (M6) |
 
 ## Ground rules

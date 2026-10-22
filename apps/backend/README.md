@@ -12,7 +12,7 @@ what to do next, read [`docs/HANDOFF.md`](../../docs/HANDOFF.md).
 ```sh
 cp .env.example .env          # optional, everything works with it empty
 bun dev:backend               # from the repo root → http://127.0.0.1:8000
-bun smoke                     # in another shell: 50 checks against the running server
+bun smoke                     # in another shell: 53 checks against the running server
 ```
 
 With no configuration the server is fully offline: payments are dry-run against
@@ -22,8 +22,9 @@ for the LLM. Each variable in [`.env.example`](.env.example) switches one piece 
 | Command (from `apps/backend`) | What it does |
 |---|---|
 | `python3 server.py` | API on port 8000 (no `.env` loading) |
-| `python3 smoke_test.py` | 50 end-to-end checks; the server must be running |
-| `python3 -m unittest test_agent test_vending test_vtpass test_tg` | unit tests, hermetic, no server needed (`bun run test` from the root) |
+| `python3 smoke_test.py` | 53 end-to-end checks (54 with the voice sidecar up); the server must be running |
+| `python3 -m unittest test_agent test_vending test_vtpass test_tg test_tts test_live_paths` | unit tests, hermetic, no server needed (`bun run test` from the root) |
+| `bun tts` | the local Kokoro voice sidecar on :8010 (needs `.venv-tts`, see Voice output) |
 | `curl -X POST http://127.0.0.1:8000/v1/_stub/reset` | back to the demo seed; deletes added bills |
 
 Optional: `ffmpeg` on your `PATH` for Telegram voice notes (`brew install ffmpeg`).
@@ -33,7 +34,7 @@ Without it the bot asks for text instead of guessing.
 
 ```
 server.py        zero-dependency API stub, `/v1/voice` routed through the agent
-smoke_test.py    50 checks, covers every endpoint and error code
+smoke_test.py    53 checks, covers every endpoint and error code
 agent.py         tool schema, tool routing, policy gate, model loop
 policy.py        the vault's rules in Python, same codes and sentences
 near_tx.py       borsh + ed25519 + base58 + RPC: builds and signs pay()
@@ -45,12 +46,18 @@ payments.py      record → buy → charge-on-delivery → receipt
 test_agent.py    59 tests: policy parity, RFC 8032 vectors, borsh, the cap gate
 test_vending.py  44 tests: store, idempotent retry, charge-on-delivery, plans
 vtpass.py        VTpass client, dry-run by default
-test_vtpass.py   30 tests, including the CLI wiring
+test_vtpass.py   33 tests, including the CLI wiring and the live shapes
 telegram.py      the Telegram door: webhook auth, identity, wake gate, then the agent
 identities.py    channel identity linking and webhook dedupe, in stark.db
-audio.py         voice note → 16 kHz mono WAV via ffmpeg
+audio.py         voice note → 16 kHz WAV via ffmpeg, and WAV → OGG/Opus for replies
 stt.py           speech to text on NEAR AI's Whisper, or an honest refusal
-test_tg.py       16 tests: the Telegram door, its gates and the audio path
+tts.py           text to speech against the local sidecar, or an honest silence
+tts_server.py    the Kokoro-82M sidecar: OpenAI `/v1/audio/speech`, own venv
+tts-requirements.txt  the sidecar's install list (separate venv, needs Python 3.12)
+test_tg.py       22 tests: the Telegram door, its gates, the audio path and voice replies
+test_tts.py      21 tests: the TTS client, the sidecar's request handling, the Opus encode
+test_live_paths.py  28 tests: the live HTTP paths (VTpass, NEAR AI, Whisper,
+                 NEAR RPC) against real loopback servers, no credentials
 fixtures/        captured + modeled VTpass responses (see its README)
 stark.db         runtime data (receipts, wallet), gitignored
 .env.example     every environment variable the server reads
@@ -118,8 +125,9 @@ transcript → model picks a tool → policy gate → sign pay() → book the pa
 python3 -m unittest test_agent     # 59 tests
 python3 -m unittest test_vending   # 44 tests
 python3 -m unittest test_vtpass    # 30 tests
-python3 smoke_test.py              # 50 checks, server must be running
-python3 -m unittest test_tg        # 16 tests: the Telegram door and its gates
+python3 smoke_test.py              # 53 checks, server must be running
+python3 -m unittest test_tg        # 22 tests: the Telegram door and its gates
+python3 -m unittest test_tts       # 21 tests: the voice path, without torch
 ```
 
 ## Telegram bot
@@ -162,8 +170,41 @@ behaviour. With a key, a signature that cannot be produced **refuses the payment
 rather than charging unaccountably. Broadcasting is off by default, the same way
 `vtpass.py` is dry-run by default.
 
-**Honest limits:** the borsh layout has never been round-tripped against a live RPC,
-and the NEAR AI model client has never run with a key. See [`HANDOFF.md`](../../docs/HANDOFF.md) §10.
+**Honest limits:** the borsh layout has never been round-tripped against a live RPC.
+The NEAR AI model and Whisper *have* run live (2026-10-22), but `/v1/voice` still takes
+a `transcript_hint` rather than audio. See [`HANDOFF.md`](../../docs/HANDOFF.md) §10.
+
+## Voice output (TTS)
+
+Replies come back **spoken** when the local voice sidecar is up, and as text when it
+is not — never slower, never blocked on it. `/v1/voice` carries an additive `audio`
+field (a WAV data URL, or `null`); a Telegram voice note gets a voice note back
+(OGG/Opus via `sendVoice`); the dashboard's Talk screen plays it.
+
+The voice is [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache 2.0,
+82M params), served by `tts_server.py` behind the OpenAI speech shape — the mirror
+image of `stt.py`. It needs its own interpreter, because torch has no business in a
+standard-library API:
+
+```sh
+# once, from the repo root
+uv venv --python 3.12 .venv-tts
+uv pip install --python .venv-tts/bin/python -r apps/backend/tts-requirements.txt
+
+# every time (or: bun tts from the root)
+cd apps/backend && ../../.venv-tts/bin/python tts_server.py
+```
+
+Then set `STARK_TTS_URL=http://127.0.0.1:8010` in `.env` (see `.env.example`).
+Measured 2026-10-23 on an M1 Pro: ~2s for a typical reply on MPS and on CPU
+(RTF ~0.25–0.3, so speech arrives faster than it plays on both). `STARK_TTS_VOICE`
+picks the voice — `af_heart` (US female, default), `bf_emma` (UK female),
+`am_michael` (US male). **Kokoro has no Nigerian English voice**; if the accent
+matters, voice cloning (Chatterbox, MIT) is the path.
+
+Fails closed, exactly like `stt.py`: no URL, sidecar down, no ffmpeg, or a Telegram
+refusal — the answer still arrives, just not spoken. `bun smoke` proves both worlds:
+53 checks with voice off (audio `null`), 54 with the sidecar up.
 
 ## Bill API (VTpass)
 
@@ -174,7 +215,7 @@ python3 vtpass.py variations                       # prepaid | postpaid
 python3 vtpass.py verify --meter 04512345678
 python3 vtpass.py buy --meter 04512345678 --amount 5000 --phone 08031234567
 python3 vtpass.py buy ... --fixture pay_pending.json    # exercise the pending path
-python3 -m unittest test_vtpass -v                 # 30 tests
+python3 -m unittest test_vtpass -v                 # 33 tests
 ```
 
 Two behaviours the agent depends on:
@@ -188,9 +229,12 @@ Add `--live` to hit the real API. It needs `VTPASS_ENV`, `VTPASS_USERNAME`,
 `VTPASS_PUBLIC_KEY` / `VTPASS_SECRET_KEY` trio. Never commit them.
 
 The 13 catalogue fixtures (`services_*.json`, `service-variations_*.json`) are real
-captured responses (2026-10-22). The five purchase-response fixtures
-(`merchant-verify_ok.json`, `pay_*.json`) are **modeled on the documented shape and have
-never been seen live** — replace them with real captures the moment you have credentials.
+captured responses (2026-10-22). The first authenticated calls captured
+`merchant-verify_ok.json`, `merchant-verify_wrong.json` and
+`pay_not_whitelisted.json` (code 028). The four remaining purchase fixtures
+(`pay_ok`, `pay_pending`, `pay_low_balance`, `pay_duplicate`) are **modeled on the
+documented shape and have never been seen live** — the sandbox account is not yet
+provisioned for `/pay`. See [`fixtures/README.md`](fixtures/README.md).
 
 ## Vending and receipts
 

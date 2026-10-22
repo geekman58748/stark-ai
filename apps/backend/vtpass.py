@@ -60,6 +60,7 @@ CODE_MESSAGES = {
     "019": "Duplicate transaction",
     "020": "Biller confirmed",
     "021": "Account locked",
+    "028": "This product is not enabled on the account",
     "030": "The meter provider is unreachable",
     "034": "This service is suspended",
     "083": "VTpass system error",
@@ -206,7 +207,10 @@ class VtpassClient:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return self._parse(resp.read(), resp.status)
         except urllib.error.HTTPError as err:
-            return self._parse(err.read(), err.code)
+            try:
+                return self._parse(err.read(), err.code)
+            finally:
+                err.close()
         except urllib.error.URLError as err:
             raise VtpassError("network", f"Could not reach VTpass: {err.reason}") from err
 
@@ -288,7 +292,19 @@ class VtpassClient:
                 data.get("response_description") or "",
                 raw=data,
             )
-        return data.get("content") or {}
+
+        content = data.get("content") or {}
+        # VTpass returns code "000" even when it could not resolve the meter; the
+        # failure is in the content body (captured live 2026-10-22). Trusting the
+        # envelope alone would let a payment be attempted for a meter the vendor
+        # has already said is wrong.
+        if content.get("WrongBillersCode") is True or content.get("error"):
+            raise VtpassError(
+                "016",
+                content.get("error") or "Invalid meter or phone number",
+                raw=data,
+            )
+        return content
 
     def buy_electricity(
         self,
@@ -353,7 +369,8 @@ class VtpassClient:
             code=code,
             status=status,
             token=extract_token(data),
-            units=txn.get("units"),
+            # Electricity puts `units` at the top level; some products nest it.
+            units=txn.get("units") or data.get("units"),
             amount_ngn=data.get("amount") or amount_ngn,
             description=data.get("response_description") or CODE_MESSAGES.get(code, ""),
             raw=data,

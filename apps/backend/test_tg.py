@@ -75,6 +75,9 @@ class AdapterCase(unittest.TestCase):
             bot_token="123:TEST",
             secret="s3cret",
             send=lambda chat_id, text: self.sent.append((chat_id, text)) or True,
+            # Voice stays off unless a test turns it on: unit tests never
+            # reach for a sidecar, whatever is in the environment.
+            speak=lambda text: None,
         )
 
     def linked(self, chat_id=42):
@@ -179,6 +182,80 @@ class TestVoice(AdapterCase):
         wav, why = audio.transcode(self.wav)
         self.assertEqual(why, audio.OK)
         self.assertTrue(wav.startswith(b"RIFF"))
+
+
+class TestVoiceReply(AdapterCase):
+    """A voice note gets a voice note back — when the voice works.
+
+    Every failure of the voice path (no synthesis, Telegram refusing the note)
+    must land on the ordinary text reply: a spoken answer is a delight, not a
+    dependency. Typed messages keep typed replies.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.linked()
+        self.adapter.download = lambda file_id: _tiny_wav()
+        self.adapter.transcribe = lambda wav: ("hello stark what's left", "ok")
+        self.notes: list[tuple[int, bytes]] = []
+        self.spoken: list[str] = []
+
+    def speaking(self, note: bytes | None = b"OggS-fake-note"):
+        self.adapter.speak = (
+            lambda text: self.spoken.append(text) or note
+        )
+        self.adapter.send_voice = (
+            lambda chat_id, ogg: self.notes.append((chat_id, ogg)) or True
+        )
+
+    def ask_by_voice(self):
+        return self.adapter.handle_update(_update(text=None, voice={"file_id": "f1"}))
+
+    def test_voice_question_comes_back_as_a_voice_note(self):
+        self.speaking()
+        result = self.ask_by_voice()
+        self.assertEqual(result["handled"], "agent")
+        self.assertEqual(self.notes, [(42, b"OggS-fake-note")])
+        self.assertEqual(self.spoken, ["You've got about 11.4 units left."])
+        self.assertEqual(self.sent, [])          # no text twin
+        self.assertEqual(self.adapter.stats["spoken"], 1)
+
+    def test_no_synthesis_falls_back_to_text(self):
+        self.speaking(note=None)
+        self.ask_by_voice()
+        self.assertEqual(self.notes, [])
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("11.4", self.sent[0][1])
+
+    def test_telegram_refusal_falls_back_to_text(self):
+        self.speaking()
+        self.adapter.send_voice = lambda chat_id, ogg: False
+        self.ask_by_voice()
+        self.assertEqual(self.sent, [(42, "You've got about 11.4 units left.")])
+        self.assertEqual(self.adapter.stats["spoken"], 0)
+
+    def test_typed_message_keeps_a_typed_reply(self):
+        self.speaking()
+        result = self.adapter.handle_update(_update(text="hello stark what's left"))
+        self.assertEqual(result["handled"], "agent")
+        self.assertEqual(self.notes, [])         # never spoken to, so never spoken
+        self.assertEqual(self.spoken, [])
+        self.assertEqual(len(self.sent), 1)
+
+    def test_wake_gate_reply_stays_text(self):
+        self.speaking()
+        self.adapter.transcribe = lambda wav: ("what's the weather", "ok")
+        result = self.ask_by_voice()
+        self.assertEqual(result["handled"], "asleep")
+        self.assertEqual(self.notes, [])
+        self.assertEqual(len(self.sent), 1)
+
+    def test_commands_stay_text(self):
+        self.speaking()
+        result = self.adapter.handle_update(_update(text="/help"))
+        self.assertEqual(result["handled"], "command")
+        self.assertEqual(self.notes, [])
+        self.assertEqual(self.spoken, [])
 
 
 class TestSttFallback(unittest.TestCase):

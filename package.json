@@ -26,7 +26,8 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "check": "turbo typecheck lint test",
-    "smoke": "bun --filter @stark/backend smoke"
+    "smoke": "bun --filter @stark/backend smoke",
+    "tts": "bun --filter @stark/backend tts"
   },
   "packageManager": "bun@1.4.2",
   "catalog": {

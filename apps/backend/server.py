@@ -14,6 +14,7 @@ Ikeja Electric "Home meter", DStv Compact, MTN airtime, "4 days left").
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import os
@@ -30,6 +31,7 @@ import identities
 import payments
 import receipts
 import telegram
+import tts
 import vault_signer
 import vending
 
@@ -821,14 +823,25 @@ def h_voice(body) -> tuple[int, dict]:
     The wake gate stays here, in front of the agent, so Telegram and the phone
     share one implementation. Everything past it is M2: the model picks tools,
     the policy gate decides, and `reply` comes back already speakable.
+
+    Additive since the TTS sidecar: `audio` is the reply spoken by Kokoro, as
+    a WAV data URL, and `null` whenever voice is off — no sidecar, sidecar
+    down, or an ignored transcript. Clients that ignore the field see exactly
+    the old behaviour (contract rule: additive only).
     """
     transcript = body.get("transcript_hint") or "hello stark what's my light bill"
 
     if "stark" not in transcript.lower():
         return 200, {"transcript": transcript, "ignored": True, "reply": None,
-                     "token": None, "receipt_id": None}
+                     "token": None, "receipt_id": None, "audio": None}
 
-    return 200, AGENT.respond(transcript).as_voice_payload(transcript)
+    payload = AGENT.respond(transcript).as_voice_payload(transcript)
+    wav, _why = tts.synthesize(payload["reply"])
+    payload["audio"] = (
+        "data:audio/wav;base64," + base64.b64encode(wav).decode("ascii")
+        if wav else None
+    )
+    return 200, payload
 
 
 def h_reset(_body=None, _params=None) -> tuple[int, dict]:

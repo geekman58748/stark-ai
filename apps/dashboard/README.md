@@ -56,6 +56,8 @@ These come from [`docs/FRONTEND.md`](../../docs/FRONTEND.md) and are enforced in
 - Never render `tx_hash` or `actions`. No "vault", "USDC" or addresses in the UI.
 - Amounts are typed fields plus quick-pick chips. No sliders.
 - Every screen has a phone layout (bottom tab bar under `md`).
+- The Talk screen plays `VoiceReply.audio` when present (a WAV data URL from the local
+  voice sidecar) and never blocks on it — the text `reply` is always shown.
 
 ## Not wired yet
 

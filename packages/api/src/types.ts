@@ -102,6 +102,9 @@ export type VoiceReply = {
   reply: string | null;
   token: string | null;
   receipt_id: string | null;
+  /** Additive: the reply spoken by the local voice, as a WAV data URL.
+   *  null when voice is off (no sidecar configured, or it did not answer). */
+  audio?: string | null;
 };
 
 export type NewBill = {

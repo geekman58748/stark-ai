@@ -59,9 +59,24 @@ class TestVariations(unittest.TestCase):
 
 class TestVerify(unittest.TestCase):
     def test_returns_customer_details(self):
+        """Captured live 2026-10-22 with the sandbox test meter."""
         info = client().verify_meter(METER)
-        self.assertEqual(info["Customer_Name"], "TUNDE AREMU")
-        self.assertEqual(info["Meter_Number"], METER)
+        self.assertEqual(info["Customer_Name"], "TESTMETER1")
+        self.assertEqual(info["Meter_Number"], "68100017372")
+        self.assertIs(info["WrongBillersCode"], False)
+
+    def test_code_000_with_wrong_billers_code_is_a_refusal(self):
+        """VTpass returns code "000" for a meter it could not resolve.
+
+        Captured live 2026-10-22: a wrong meter is HTTP 200, code "000", and
+        `WrongBillersCode: true` inside `content`. Trusting the envelope would
+        let the agent buy for a meter the vendor already rejected.
+        """
+        with self.assertRaises(VtpassError) as ctx:
+            client(fixture="merchant-verify_wrong.json").verify_meter(METER)
+        self.assertEqual(ctx.exception.code, "016")
+        self.assertIn("not a valid", ctx.exception.description)
+        self.assertIn("couldn't find that meter", ctx.exception.user_message)
 
     def test_non_zero_code_raises(self):
         payload = {"code": "016", "response_description": "INVALID METER NUMBER"}
@@ -107,6 +122,38 @@ class TestBuy(unittest.TestCase):
     def test_rejects_under_minimum(self):
         with self.assertRaises(ValueError):
             client().buy_electricity(METER, 499, "08031234567")
+
+    def test_reads_the_top_level_token_and_units_shape(self):
+        """The shape documented for a real vend: token and units at the top level."""
+        payload = {
+            "code": "000",
+            "response_description": "TRANSACTION SUCCESSFUL",
+            "requestId": "2025031013366434255",
+            "amount": 2000,
+            "purchased_code": "Token : 26362054405982757802",
+            "token": "Token : 26362054405982757802",
+            "units": "79.9 kWh",
+            "content": {"transactions": {"status": "delivered"}},
+        }
+        live = VtpassClient(dry_run=False, env="sandbox")
+        with mock.patch.object(VtpassClient, "_http", return_value=payload):
+            res = live.buy_electricity(METER, 2000, "08031234567")
+
+        self.assertTrue(res.delivered)
+        self.assertEqual(res.token, "26362054405982757802")
+        self.assertEqual(res.units, "79.9 kWh")
+        self.assertEqual(res.amount_ngn, 2000)
+
+    def test_not_whitelisted_is_a_clear_refusal(self):
+        """Captured live 2026-10-22: a sandbox account without the product enabled."""
+        with self.assertRaises(VtpassError) as ctx:
+            client(fixture="pay_not_whitelisted.json").buy_electricity(
+                METER, 5000, "08031234567"
+            )
+        err = ctx.exception
+        self.assertEqual(err.code, "028")
+        self.assertFalse(err.retryable)
+        self.assertIn("NOT WHITELISTED", err.description)
 
     def test_reuses_supplied_request_id_on_the_wire(self):
         """A retry must post the same request_id, or VTpass books a second sale."""

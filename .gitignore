@@ -16,6 +16,7 @@ dist
 __pycache__/
 *.pyc
 .venv/
+.venv-tts/
 
 # Local receipt store. Runtime data, never committed.
 apps/backend/stark.db

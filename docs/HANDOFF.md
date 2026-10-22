@@ -61,9 +61,10 @@ the webhook at `/v1/tg/webhook` with `secret_token` set to that same value.
 two sensible UIs.
 
 **What M4 is not:** no TTS yet (replies are text; the provider is still an open
-decision), no Whisper transcript has ever come back (no key — `stt.py` is written
-from the documented shape and is unproven), and the bot has never received a real
-update. `test_tg.py` is hermetic: agent, transport and transcription are injected.
+decision), and the bot has never received a real update. Whisper itself is now
+live-verified (2026-10-22): `stt.py` returned real transcripts from generated speech,
+including "Hello Stark, what is my light bill?". `test_tg.py` stays hermetic: agent,
+transport and transcription are injected.
 
 ### Frontend contract breadth (2026-10-22)
 
@@ -219,7 +220,8 @@ repo copy*. It is **uncommitted and unpushed** — that needs the human (§13 it
 
 1. **VTpass sandbox credentials** — still the kill-switch (§10.1). No amount of local
    work substitutes for one real `DELIVERED` token.
-2. **NEAR AI API key** — unblocks real Whisper (M4) and the M2 LLM call.
+2. ~~**NEAR AI API key**~~ — **supplied 2026-10-22.** A real chat turn (with a tool
+   call) and real Whisper transcripts are verified (§10.12).
 3. **A funded NEAR testnet account** — unblocks the M1 deploy. The wasm is built; the
    deploy still needs an account with storage deposit plus `near-cli`/`cargo-near`.
    Note `near` CLI is **not installed** (checked this session).
@@ -465,7 +467,7 @@ days of runway the original plan did not assume.
 | **M0** | now → Oct 27 | Contract frozen, VTpass sandbox confirmed, NEAR AI key, AC meter decision | **partly done** |
 | M1 | Oct 27–31 | Vault contract: monthly cap, per-payment cap, meter allowlist, `pay()`, events, unit tests | **built** — 38/38 tests, clippy clean, 203 KB wasm builds. **Not deployed** — needs a funded testnet account (§0.3) |
 | M2 | Nov 1–3 | Agent server: NEAR AI LLM + tools, signs `pay()` with a function-call key | **built 2026-10-22** — 59 tests, gate enforced in code, signature dry-run. LLM client and RPC path unproven (§10.11–12) |
-| M3 | Nov 4–5 | Real vending wired in, receipt store (tx hash ↔ token) | **built 2026-10-22** — 44 tests, 4 product families, dry-run; live still needs credentials (§10.1) |
+| M3 | Nov 4–5 | Real vending wired in, receipt store (tx hash ↔ token) | **built 2026-10-22** — 44 tests, 4 product families, dry-run; live blocked by VTpass `028` provisioning (§10.1) |
 | M4 | Nov 6–7 | Telegram bot + Whisper voice + TTS | **built 2026-10-22** (Telegram + Whisper + identity linking, 16 tests, fail-closed until secrets). **TTS still open** — replies are text |
 | M5 | Nov 8 | NEAR Intents funding, one cross-chain deposit | not started |
 | M6 | Nov 9–10 | AC telemetry + suggestion engine | not started |
@@ -483,8 +485,8 @@ days of runway the original plan did not assume.
 | Stub server working | ✅ 50/50 |
 | VTpass client written + dry-run verified | ✅ 30/30 |
 | NEAR AI audio model confirmed | ✅ `openai/whisper-large-v3` in `/v1/models` |
-| **VTpass live token vending** | ❌ **THE KILL-SWITCH.** Needs sandbox credentials |
-| NEAR AI API key | ❌ needs the human |
+| **VTpass live token vending** | ❌ **THE KILL-SWITCH.** Credentials and meter verify are live; `/pay` returns `028` until the sandbox account is provisioned |
+| NEAR AI API key | ✅ supplied 2026-10-22 — live turn + transcript verified |
 | AC: 13A plug or hardwired breaker? | ❌ physical inspection |
 
 ---
@@ -675,10 +677,10 @@ Do not assume any of this exists:
   (§0), but has never been deployed: no testnet account, no testnet NEAR, and neither
   `near` nor `cargo-near` is installed on this machine.
 - **Agent server, partly** — tool routing, the policy gate and `pay()` signing exist
-  and are tested (M2), and the payment path now buys through VTpass (M3), but: the real
-  NEAR AI model has never been called (no key), no transaction has ever been broadcast
-  or landed onchain, and no **live** VTpass purchase has ever run. `transcript_hint` is
-  still a stand-in for Whisper.
+  and are tested (M2), the payment path buys through VTpass (M3), and the real NEAR AI
+  model + Whisper are live-verified (2026-10-22). Still not real: no transaction has
+  ever been broadcast or landed onchain, no live VTpass purchase has run, and
+  `/v1/voice` still accepts `transcript_hint` rather than audio.
 - **Token custody** — the vault's `balance_ngn` is an internal ledger. No NEP-141
   USDC, no `ft_on_transfer`, no settlement to the treasury. Say so plainly; do not
   imply money moves onchain today.
@@ -722,6 +724,16 @@ Do not assume any of this exists:
    idempotent retry, charge-on-delivery — runs end to end against fixtures, but no `pay`
    call has returned a real token. **This is still the single thing that can kill the
    project.**
+
+   **2026-10-22 update — auth and verification are now live-verified.** The sandbox key
+   pair authenticates (POSTs need `api-key` + `secret-key`; the static key alone is 401),
+   `merchant-verify` for the documented test meter `1111111111111` returns
+   `Customer_Name: TESTMETER1` and `WrongBillersCode: false`, and a wrong meter returns
+   HTTP 200 / `code: "000"` with `WrongBillersCode: true` in `content` — which the client
+   now refuses as `016`. `/pay` returns `028 PRODUCT IS NOT WHITELISTED ON YOUR ACCOUNT`
+   for both `ikeja-electric` and `mtn`, so purchases are blocked by **account
+   provisioning**, not code. Ask VTpass to enable the products on the sandbox account;
+   then the only remaining step is the one real `DELIVERED` token.
 2. **All five purchase-response fixtures are hand-written.** The 13 catalogue fixtures
    (`services_*.json`, `service-variations_*.json`) were captured live on 2026-10-22;
    `merchant-verify_ok.json` and the four `pay_*.json` files are modeled, because a
@@ -733,6 +745,11 @@ Do not assume any of this exists:
    model runs *outside* a TEE). The `/v1/models` payload has no tier field. If whisper is
    Incognito, **"the whole voice path stays private" is false** and must not be said to
    `security` judges. Check the model catalog before writing the README.
+
+   **2026-10-22:** the pricing page labels `Qwen/Qwen3.8-27B` **Private TEE** (NEAR's
+   own fleet), so the chat path can carry that claim. Whisper reports
+   `owned_by: nearai` but its tier is still not stated in the API payload — confirm it
+   on the catalogue before claiming the voice path is private.
 4. **NEAR AI minimum top-up / starter credits unknown.** Usage is fractions of a cent; a
    required deposit is the only way cost becomes a real question.
 5. **AC wiring unknown.** A 1–1.5 HP split on a 13A socket takes a 16A smart plug (watch
@@ -757,10 +774,11 @@ Do not assume any of this exists:
     but no signed transaction has been accepted by an RPC. A layout error is silent
     until the first live send. **Verify with one tiny testnet `fun` call before
     trusting it for a payment.**
-12. **The NEAR AI model client has never run.** `NearAiModel` is written from the
-    documented OpenAI-compatible shape: no key, no request, no response seen. It is
-    selected by `build_agent` only when `NEAR_AI_API_KEY` is set, so it cannot break
-    the tested path — but do not claim "LLM-driven" until a real turn works.
+12. ~~**The NEAR AI model client has never run.**~~ **Live-verified 2026-10-22.** With
+    a key, `NearAiModel` returned a real completion from `Qwen/Qwen3.8-27B` and a
+    parsed tool call (`get_balance`). `stt.transcribe` returned real Whisper
+    transcripts. `openai/gpt-5-nano` was `is_ready: false` and is Incognito, so the
+    default is now the NEAR-hosted Private TEE model.
 13. **Limits do not survive a restart.** `PATCH /v1/limits` mutates the agent's live
     `Limits` object, so both paths enforce the new caps immediately — but the values live
     in memory. A restart, or `_stub/reset`, restores ₦30,000 / ₦10,000. (The per-payment
@@ -788,6 +806,15 @@ Do not assume any of this exists:
     That matches the design ("DStv · Nov 3" is next month), but it means the earlier
     "pay DStv ₦7,900 end to end" demo needs a lower `spent_ngn` or a fresh month. The
     plan path itself is still covered by `test_vending.py`.
+20. **The TTS sidecar has never spoken to a real Telegram chat.** Kokoro-82M is
+    live-verified locally (2026-10-23): `/v1/voice` returns a spoken reply as a WAV
+    data URL in ~2s (RTF ~0.25–0.3 on MPS *and* CPU), the OGG/Opus encode for
+    `sendVoice` is proven with ffmpeg, and `bun smoke` passes 54/54 with the sidecar up
+    and 53/53 with it down — but no note has reached a real chat, because the bot has
+    no live token. Two honest gaps on top: **Kokoro has no Nigerian English voice**
+    (default `af_heart` is US female; Chatterbox cloning is the accent path), and the
+    sidecar venv needs spaCy's `en_core_web_sm` installed explicitly
+    (`tts-requirements.txt`) — misaki's auto-download dies inside a uv venv.
 
 ---
 
@@ -844,25 +871,31 @@ Do not assume any of this exists:
 
 ```
 /Users/mac/stark-ai/            git repo, remote github.com/geekman58748/stark-ai, branch main
+  apps/backend …                THE PROJECT since the monorepo move (2026-10-22): backend,
+                                dashboard, website, contracts; docs/ sits at the root
   index.html                    the OLD unrelated landing page — leave it alone
-  stark/                        the project: backend/ contracts/ docs/ README HANDOFF
+  stark/                        the PRE-monorepo copy — stale, do not edit. A server
+                                started from stark/backend once held :8000 and broke smoke
 /Users/mac/stark/               STALE unversioned copy — missing all of M2/M3; do not use
 ```
 
 Rules that keep this from drifting again:
 
-- **Edit `/Users/mac/stark-ai/stark/…`**, and only there. `/Users/mac/stark/` is now
-  *behind*: it lacks `agent.py`, `catalog.py`, `payments.py`, `receipts.py`, `vending.py`,
-  `policy.py`, `near_tx.py`, `vault_signer.py`, both new test files and all 13 captured
-  fixtures. **Never rsync from it into the repo** — that would delete M2/M3. If you need
-  the copy refreshed, copy *from* the repo:
+- **Edit `/Users/mac/stark-ai/apps/…` and `/Users/mac/stark-ai/docs/…`** — the monorepo
+  layout — and never `stark/` (pre-monorepo) or `/Users/mac/stark/` (unversioned, and
+  *behind*: it lacks `agent.py`, `catalog.py`, `payments.py`, `receipts.py`,
+  `vending.py`, `policy.py`, `near_tx.py`, `vault_signer.py`, both new test files and
+  all 13 captured fixtures). **Never rsync either copy into the repo** — that would
+  delete M2/M3 and the monorepo. If you need the unversioned copy refreshed, copy
+  *from* the repo:
   ```sh
   rsync -a --exclude 'target/' --exclude '__pycache__/' /Users/mac/stark-ai/stark/ /Users/mac/stark/
   ```
 - **The public repo is required by 2026-11-14.** The app auto-deploys to hellostark.xyz on
   push to `main`, so a push is a deploy — do not push broken code.
-- `.gitignore` covers `__pycache__/`, `*.pyc`, `.venv/`, `.DS_Store`, `.env`, and now
-  `target/` + `**/target/` (a near-sdk build is ~1 GB; `Cargo.lock` **is** committed).
+- `.gitignore` covers `__pycache__/`, `*.pyc`, `.venv/`, `.venv-tts/` (the Kokoro
+  sidecar's venv), `.DS_Store`, `.env`, and now `target/` + `**/target/` (a near-sdk
+  build is ~1 GB; `Cargo.lock` **is** committed).
 - No secrets anywhere in the tree. VTpass credentials are read from env vars only.
 - `index.html` (the old landing page) and `Desktop/export/` must not be modified — they are
   the human's artifacts and the design reference.
@@ -874,16 +907,18 @@ Rules that keep this from drifting again:
 **In order. Items 1, 3 and 4 are external or human-gated. Items 2, 5 and 6 are done.
 Item 7 is the next code.**
 
-1. **Ask the human for VTpass sandbox credentials**, then run:
+1. **VTpass: credentials supplied 2026-10-22; get the products whitelisted.** Auth and
+   `merchant-verify` work (see §10.1). `/pay` is blocked by `028 PRODUCT IS NOT
+   WHITELISTED ON YOUR ACCOUNT`, so ask VTpass to provision `ikeja-electric` and the
+   other products on the sandbox account, then run:
    ```sh
    cd apps/backend
-   export VTPASS_ENV=sandbox VTPASS_USERNAME=... VTPASS_PASSWORD=...
-   python3 vtpass.py verify --meter <real-meter> --live
-   python3 vtpass.py buy --meter <real-meter> --amount 5000 --phone <their-phone> --live
+   set -a; . ./.env; set +a
+   python3 vtpass.py verify --meter 1111111111111 --live
+   python3 vtpass.py buy --meter 1111111111111 --amount 5000 --phone <their-phone> --live
    ```
-   If it prints `DELIVERED` with a 20-digit token, **replace the modeled fixtures with real
-   captures** and update `fixtures/README.md`. If it fails, the project needs rethinking —
-   find that out now, not on Nov 12.
+   If it prints `DELIVERED` with a 20-digit token, **replace the remaining modeled
+   purchase fixtures with real captures** and update `fixtures/README.md`.
 2. ~~Write the vault contract (M1).~~ **Done 2026-10-20, re-verified 22:25:** `contracts/vault/`,
    **38 tests** (not 41 — that number was wrong here), clippy clean, 203 KB wasm builds with
    plain `cargo`. Still missing: **deploy to testnet**. It needs a funded account, then:
@@ -900,9 +935,10 @@ Item 7 is the next code.**
    That argument list is copied from `pub fn new` in `src/lib.rs` (U128s go over the wire
    as strings). `per_payment_cap_ngn` must not exceed `monthly_cap_ngn` or `new` panics —
    which is itself one of the 38 tests.
-3. **Ask for the NEAR AI API key**, then replace `transcript_hint` with a real
-   `/v1/audio/transcriptions` call. Check whisper's privacy tier *before* writing any
-   README claim about it.
+3. ~~**Ask for the NEAR AI API key.**~~ **Done 2026-10-22.** Live chat + tool call and
+   real Whisper transcripts verified. What remains: accept audio on `/v1/voice` (it
+   still takes `transcript_hint`) and confirm Whisper's privacy tier before any TEE
+   claim.
 4. ~~`git init` and push a public repo.~~ **Done 2026-10-20:** `github.com/geekman58748/stark-ai`,
    branch `main`. **But the push predates M1**, so the remote has no `contracts/`. The repo
    working tree now has it (uncommitted, re-verified there) — **ask the human before
@@ -917,10 +953,13 @@ Item 7 is the next code.**
    then replace the modeled fixtures with real captures.
 7. **M4 — Telegram bot + Whisper voice + TTS**, the next code item. Read §8A first:
    the adapter contract, identity linking and webhook-auth design are there, and the
-   rule is “one brain, many doors”. Two things to do first: check whisper's privacy
-   tier (§10.3) *before* writing any README claim, and keep the wake gate server-side
-   (`h_voice`) so the bot and the wall phone share it. `transcript_hint` becomes a real
-   `/v1/audio/transcriptions` call; everything after it already works.
+   rule is “one brain, many doors”. ~~TTS~~ **Done 2026-10-23:** the Kokoro sidecar
+   (`bun tts`, `apps/backend/tts_server.py`) speaks `/v1/voice` replies and Telegram
+   voice-note replies, and every failure of that path falls back to text (§10.20).
+   What remains of M4: real audio into `/v1/voice` (it still takes `transcript_hint`),
+   a live bot token to prove one voice-note round trip, and whisper's privacy tier
+   (§10.3) *before* any README claim — the wake gate already sits server-side
+   (`h_voice`), so nothing there is waiting.
 
 **Never without explicit human confirmation:** submit the application, publish on X, make
 the repo public, sign transactions, spend tokens, deploy to mainnet, or commit secrets.

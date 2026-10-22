@@ -36,7 +36,9 @@ import policy as policy_rules
 DEFAULT_AMOUNT_NGN = 5_000
 
 NEAR_AI_BASE = os.environ.get("NEAR_AI_BASE_URL") or "https://cloud-api.near.ai"
-NEAR_AI_MODEL = os.environ.get("NEAR_AI_MODEL") or "openai/gpt-5-nano"
+# On NEAR's own fleet (Private TEE) and tool-capable. `openai/gpt-5-nano` is
+# Incognito (no end-to-end TEE) and was `is_ready: false` when checked 2026-10-22.
+NEAR_AI_MODEL = os.environ.get("NEAR_AI_MODEL") or "Qwen/Qwen3.8-27B"
 
 SYSTEM_PROMPT = """You are Stark, a calm assistant that pays household bills.
 
@@ -451,7 +453,10 @@ class NearAiModel:
             with urllib.request.urlopen(request, timeout=self.timeout) as resp:
                 body = json.loads(resp.read() or b"{}")
         except urllib.error.HTTPError as err:
-            detail = err.read().decode("utf-8", "replace")[:300]
+            try:
+                detail = err.read().decode("utf-8", "replace")[:300]
+            finally:
+                err.close()
             raise RuntimeError(f"NEAR AI returned HTTP {err.code}: {detail}") from err
         except urllib.error.URLError as err:
             raise RuntimeError(f"Could not reach NEAR AI: {err.reason}") from err

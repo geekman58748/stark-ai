@@ -69,6 +69,9 @@ def transcribe(wav: bytes, *, api_key: str | None = None,
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
             payload = json.loads(res.read() or b"{}")
+    except urllib.error.HTTPError as err:
+        err.close()
+        return None, FAILED
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
         return None, FAILED
 

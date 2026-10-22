@@ -388,6 +388,12 @@ class NearRpc:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as resp:
                 payload = json.loads(resp.read() or b"{}")
+        except urllib.error.HTTPError as err:
+            try:
+                detail = err.read().decode("utf-8", "replace")[:300]
+            finally:
+                err.close()
+            raise NearRpcError(f"RPC returned HTTP {err.code}: {detail}") from err
         except urllib.error.URLError as err:
             raise NearRpcError(f"Could not reach {self.base_url}: {err}") from err
         except json.JSONDecodeError as err:

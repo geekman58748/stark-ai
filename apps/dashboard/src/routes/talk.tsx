@@ -1,10 +1,3 @@
-import { meterBill } from "@/lib/bills";
-import { livePayments } from "@/lib/receipts";
-import {
-  createRecognition,
-  type Recognition,
-  transcriptOf,
-} from "@/lib/speech";
 import { errorCopy, stateQuery, useVoice, type VoiceReply } from "@stark/api";
 import { Button } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
@@ -22,6 +15,9 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { meterBill } from "@/lib/bills";
+import { livePayments } from "@/lib/receipts";
+import { createRecognition, type Recognition, transcriptOf } from "@/lib/speech";
 
 export const Route = createFileRoute("/talk")({
   validateSearch: z.object({ q: z.string().optional() }),
@@ -47,8 +43,15 @@ function Talk() {
   const recognition = useRef<Recognition | null>(null);
   const sentQ = useRef(false);
   const [canListen, setCanListen] = useState(false);
+  const player = useRef<HTMLAudioElement | null>(null);
+
+  const stopSpeaking = () => {
+    player.current?.pause();
+    player.current = null;
+  };
 
   const handleSend = (transcript: string) => {
+    stopSpeaking();
     setStage("thinking");
     voice.mutate(transcript, {
       onSuccess: (res) => {
@@ -58,10 +61,20 @@ function Talk() {
         }
         setReply(res);
         setStage("done");
+        if (res.audio) {
+          // Stark's spoken reply (WAV data URL from the local voice). A
+          // browser autoplay refusal is not an error — the text is on screen.
+          stopSpeaking();
+          const a = new Audio(res.audio);
+          player.current = a;
+          void a.play().catch(() => undefined);
+        }
       },
       onError: () => setStage("done"),
     });
   };
+
+  useEffect(() => () => stopSpeaking(), []);
 
   useEffect(() => setCanListen(createRecognition() !== null), []);
 
@@ -78,6 +91,7 @@ function Talk() {
       recognition.current?.stop();
       return;
     }
+    stopSpeaking();
     const r = createRecognition();
     if (!r) {
       document.getElementById("type-instead")?.focus();
@@ -104,9 +118,7 @@ function Talk() {
   const copy = {
     idle: [
       "Tap and speak",
-      canListen
-        ? "Start with “Stark”, then say what you need."
-        : "Type what you need below.",
+      canListen ? "Start with “Stark”, then say what you need." : "Type what you need below.",
     ],
     listening: ["Listening…", "Tap again when you’re done."],
     thinking: ["One moment", "Checking your bills and balance."],
@@ -128,9 +140,7 @@ function Talk() {
       <header className="relative flex items-center justify-between">
         <span className="flex items-center gap-2">
           <LogoMark cutout="#111211" />
-          <span className="font-serif text-[19px] font-semibold tracking-[-0.02em]">
-            Stark
-          </span>
+          <span className="font-serif text-[19px] font-semibold tracking-[-0.02em]">Stark</span>
         </span>
         <Button
           variant="ghost"
@@ -150,9 +160,7 @@ function Talk() {
             variant="ghost"
             onClick={handleTapMicrophone}
             disabled={stage === "thinking"}
-            aria-label={
-              stage === "listening" ? "Stop recording" : "Talk to Stark"
-            }
+            aria-label={stage === "listening" ? "Stop recording" : "Talk to Stark"}
             className={cn(
               "size-50 rounded-full lg:size-64",
               live
@@ -163,44 +171,23 @@ function Talk() {
             <Icons.Mic className="size-14 lg:size-18" />
           </Button>
           <div className="flex min-h-16 flex-col gap-1.5">
-            <span className="font-serif text-[26px] tracking-[-0.02em] lg:text-4xl">
-              {copy[0]}
-            </span>
-            <span className="text-sm text-muted-foreground lg:text-base">
-              {copy[1]}
-            </span>
+            <span className="font-serif text-[26px] tracking-[-0.02em] lg:text-4xl">{copy[0]}</span>
+            <span className="text-sm text-muted-foreground lg:text-base">{copy[1]}</span>
           </div>
         </div>
 
         <div className="contents lg:flex lg:flex-col lg:gap-5">
           {state ? (
-            <section
-              aria-label="Status"
-              className="order-first grid grid-cols-2 gap-2 lg:order-0"
-            >
+            <section aria-label="Status" className="order-first grid grid-cols-2 gap-2 lg:order-0">
               {meter && state.days_left !== null ? (
-                <Card
-                  size="sm"
-                  className="gap-0 rounded-row border-white/8 bg-white/5"
-                >
-                  <span className="text-xs text-muted-foreground">
-                    {meter.label} meter
-                  </span>
-                  <span className="font-serif text-xl">
-                    ~{state.days_left} days
-                  </span>
+                <Card size="sm" className="gap-0 rounded-row border-white/8 bg-white/5">
+                  <span className="text-xs text-muted-foreground">{meter.label} meter</span>
+                  <span className="font-serif text-xl">~{state.days_left} days</span>
                 </Card>
               ) : null}
-              <Card
-                size="sm"
-                className="gap-0 rounded-row border-white/8 bg-white/5"
-              >
-                <span className="text-xs text-muted-foreground">
-                  Limit left
-                </span>
-                <span className="font-serif text-xl">
-                  {formatNaira(state.remaining_cap_ngn)}
-                </span>
+              <Card size="sm" className="gap-0 rounded-row border-white/8 bg-white/5">
+                <span className="text-xs text-muted-foreground">Limit left</span>
+                <span className="font-serif text-xl">{formatNaira(state.remaining_cap_ngn)}</span>
               </Card>
             </section>
           ) : null}
@@ -269,8 +256,7 @@ function Talk() {
           </form>
 
           <span className="text-center text-xs text-muted-foreground lg:text-left">
-            This screen can’t spend on its own. Stark checks every payment
-            against your limits.
+            This screen can’t spend on its own. Stark checks every payment against your limits.
             {livePayments ? "" : " Tokens are samples for now."}
           </span>
         </div>

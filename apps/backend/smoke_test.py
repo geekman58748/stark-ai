@@ -29,7 +29,9 @@ def call(method: str, path: str, body: dict | None = None) -> tuple[int, dict | 
         headers={"Content-Type": "application/json"} if data else {},
     )
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        # 15s, not 5: a /v1/voice reply may be spoken server-side (TTS
+        # sidecar) on top of the agent turn, and neither should hit the ceiling.
+        with urllib.request.urlopen(req, timeout=15) as resp:
             return resp.status, json.loads(resp.read() or b"null"), dict(resp.headers)
     except urllib.error.HTTPError as err:
         raw = err.read()
@@ -169,6 +171,23 @@ check("no wake word -> ignored", status == 200 and ig.get("ignored") is True)
 
 status, pay, _ = call("POST", "/v1/voice", {"transcript_hint": "hello stark top it up"})
 check("voice pay returns token", status == 200 and bool(pay.get("token")))
+
+# The reply comes back spoken when the TTS sidecar is up (STARK_TTS_URL), and
+# the additive `audio` field is present either way — null when voice is off.
+import base64                                       # noqa: E402 - section-local
+
+audio_field = answer.get("audio", "missing")
+check("voice reply carries audio field", audio_field != "missing")
+check("audio is a WAV data URL or null",
+      audio_field is None or (
+          isinstance(audio_field, str)
+          and audio_field.startswith("data:audio/wav;base64,")
+      ), str(audio_field)[:60])
+if isinstance(audio_field, str) and audio_field.startswith("data:audio/wav;base64,"):
+    spoken = base64.b64decode(audio_field.split(",", 1)[1])
+    check("sidecar audio decodes to a real WAV",
+          spoken[:4] == b"RIFF" and len(spoken) > 1000, f"len={len(spoken)}")
+check("ignored reply never carries audio", ig.get("audio") is None, str(ig.get("audio"))[:40])
 
 # --- limits and wallet ------------------------------------------------------
 status, limits, _ = call("GET", "/v1/limits")

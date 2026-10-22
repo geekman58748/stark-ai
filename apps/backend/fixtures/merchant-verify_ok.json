@@ -1,12 +1,22 @@
 {
   "code": "000",
-  "response_description": "000",
   "content": {
-    "Customer_Name": "TUNDE AREMU",
-    "Meter_Number": "04512345678",
-    "Address": "12 OGUN STREET, IKEJA",
-    "Customer_Number": "07123456789",
-    "Tariff": "R2",
-    "Business_Unit": "IKEJA ELECTRICITY"
+    "Customer_Name": "TESTMETER1",
+    "Address": "ABULE  EGBA BU ABULE",
+    "Meter_Number": "68100017372",
+    "Customer_Arrears": "",
+    "Minimum_Amount": "",
+    "Min_Purchase_Amount": "",
+    "Can_Vend": "yes",
+    "Business_Unit": "",
+    "Customer_Account_Type": "PRIME",
+    "Meter_Type": "PREPAID",
+    "WrongBillersCode": false,
+    "commission_details": {
+      "amount": null,
+      "rate": "1.50",
+      "rate_type": "percent",
+      "computation_type": "default"
+    }
   }
 }

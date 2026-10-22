@@ -384,13 +384,20 @@ only audio once STT lands.
   "token": null,
   "receipt_id": null,
   "actions": ["get_state"],
-  "tx_hash": null
+  "tx_hash": null,
+  "audio": "data:audio/wav;base64,UklGRi…"
 }
 ```
 
 `actions` and `tx_hash` are **additive** (2026-10-22). `actions` lists the tools the
 agent ran, which is useful for debugging a bad answer; `tx_hash` is set only when a
 payment was signed onchain. Neither is user-facing copy — do not render them.
+
+`audio` is **additive** (2026-10-23): the same reply, spoken by the local voice
+(Kokoro-82M), as a WAV data URL — or `null` whenever voice is off (no sidecar
+configured, sidecar down, synthesis failed, or `ignored: true`). Play it when
+present; when it is `null`, render `reply` as text. `reply` stays the source of
+either way.
 
 Since M2 the reply is produced by the agent: a model picks tool calls, the policy
 gate checks them against the same caps the contract enforces, and `reply` comes back
@@ -401,7 +408,8 @@ rule-based model, so the endpoint behaves and tests identically without a key.
 `{"ignored": true, "reply": null}` and the client must stay silent. Do not play
 anything on `ignored: true`.
 
-`reply` is already speakable text — feed it straight to TTS.
+`reply` is already speakable text. When `audio` is present, play it instead — it *is*
+this reply, spoken. Only fall back to your own TTS for `audio: null`.
 
 ### `POST /v1/telemetry`
 

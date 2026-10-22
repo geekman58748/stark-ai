@@ -37,6 +37,37 @@ def ffmpeg_available() -> bool:
     return FFMPEG is not None
 
 
+def encode_opus(wav: bytes, *, max_input_bytes: int = MAX_INPUT_BYTES,
+                max_seconds: int = MAX_SECONDS) -> bytes | None:
+    """16 kHz mono s16 WAV → OGG/Opus mono, the container Telegram's
+    `sendVoice` accepts. The mirror of `transcode`, same rules: bounded input,
+    loud failure, temp files that clean themselves up, `None` (never a partial
+    file) when ffmpeg is absent or the encode fails."""
+    if len(wav) < 44 or len(wav) > max_input_bytes:
+        return None
+    if FFMPEG is None:
+        return None
+
+    with tempfile.TemporaryDirectory(prefix="stark_audio_") as tmp:
+        src = Path(tmp) / "in.wav"
+        dst = Path(tmp) / "out.ogg"
+        src.write_bytes(wav)
+        proc = subprocess.run(
+            [
+                FFMPEG, "-v", "error", "-y",
+                "-i", str(src),
+                "-t", str(max_seconds),
+                "-ac", "1", "-ar", "16000",
+                "-c:a", "libopus", "-b:a", "32k", "-f", "ogg", str(dst),
+            ],
+            capture_output=True,
+        )
+        out = dst.read_bytes() if dst.exists() else b""
+        if proc.returncode != 0 or not out.startswith(b"OggS"):
+            return None
+        return out
+
+
 def transcode(raw: bytes, *, filename: str = "voice.ogg",
               max_input_bytes: int = MAX_INPUT_BYTES,
               max_seconds: int = MAX_SECONDS) -> tuple[bytes | None, str]:
