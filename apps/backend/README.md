@@ -11,8 +11,8 @@ what to do next, read [`docs/HANDOFF.md`](../../docs/HANDOFF.md).
 
 ```sh
 cp .env.example .env          # optional, everything works with it empty
-pnpm backend                  # from the repo root → http://127.0.0.1:8000
-pnpm smoke                    # in another shell: 50 checks against the running server
+bun dev:backend               # from the repo root → http://127.0.0.1:8000
+bun smoke                     # in another shell: 50 checks against the running server
 ```
 
 With no configuration the server is fully offline: payments are dry-run against
@@ -23,7 +23,7 @@ for the LLM. Each variable in [`.env.example`](.env.example) switches one piece 
 |---|---|
 | `python3 server.py` | API on port 8000 (no `.env` loading) |
 | `python3 smoke_test.py` | 50 end-to-end checks; the server must be running |
-| `python3 -m unittest test_agent test_vending test_vtpass test_tg` | unit tests, hermetic, no server needed (`pnpm test` from the root) |
+| `python3 -m unittest test_agent test_vending test_vtpass test_tg` | unit tests, hermetic, no server needed (`bun run test` from the root) |
 | `curl -X POST http://127.0.0.1:8000/v1/_stub/reset` | back to the demo seed; deletes added bills |
 
 Optional: `ffmpeg` on your `PATH` for Telegram voice notes (`brew install ffmpeg`).
@@ -59,7 +59,7 @@ stark.db         runtime data (receipts, wallet), gitignored
 ## Running it
 
 ```sh
-pnpm backend                 # from the repo root, loads .env if present
+bun dev:backend              # from the repo root, loads .env if present
 python3 server.py            # or directly, from apps/backend, without .env
 ```
 

@@ -6,12 +6,11 @@ request needs. Product context and the app map are in the [README](README.md).
 ## Setup
 
 ```sh
-corepack enable
-pnpm install
-pnpm dev          # web :5173, dashboard :5174, API :8000
+bun install
+bun dev           # website :5173, dashboard :5174, API :8000
 ```
 
-Requirements: Node 22+ (`.nvmrc` says 24), pnpm 11 (pinned via `packageManager`),
+Requirements: Node 22+ (`.nvmrc` says 24), Bun 1.3+ (pinned via `packageManager`),
 Python 3.9+. Rust only if you touch [`apps/contracts`](apps/contracts/README.md).
 
 Configuration is per app. Only the backend reads any today:
@@ -27,12 +26,12 @@ gitignored.
 4. Before pushing, run:
 
    ```sh
-   pnpm check        # typecheck + backend unit tests
-   pnpm build        # web and dashboard build
-   pnpm smoke        # if you touched the backend: start it first with `pnpm backend`
+   bun check         # typecheck + lint + backend unit tests
+   bun run build     # website and dashboard build
+   bun smoke         # if you touched the backend: start it first with `bun dev:backend`
    ```
 
-   If you changed the contract, also run `pnpm --filter @stark/contracts contract:test`.
+   If you changed the contract, also run `bun --filter @stark/contracts run contract:test`.
 
 ## Commit messages
 
@@ -45,7 +44,7 @@ Why the change was needed, wrapped at ~72-100 characters.
 ```
 
 - `type`: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
-- `scope`: the app or area, e.g. `web`, `dashboard`, `backend`, `contracts`, `docs`
+- `scope`: the app or area, e.g. `website`, `dashboard`, `ui`, `api`, `backend`, `contracts`, `docs`
 
 Example: `fix(backend): reuse request_id when retrying a pending vend`.
 
@@ -53,7 +52,7 @@ Example: `fix(backend): reuse request_id when retrying a pending vend`.
 
 - Say what changed and why, and how you verified it. Screenshots for any visible UI change.
 - Link the issue or milestone (M0–M7 in the README) it moves forward.
-- CI-equivalent is `pnpm check && pnpm build`; a PR that fails either is not ready.
+- CI-equivalent is `bun check && bun run build`; a PR that fails either is not ready.
 
 ## Rules that apply everywhere
 

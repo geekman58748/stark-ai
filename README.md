@@ -9,14 +9,13 @@ data, TV, internet and water. Built for **NEAR HACKATHON** (2026-11-01 → 11-14
 
 ## Quick start
 
-You need **Node 22+** (24 recommended, see `.nvmrc`), **pnpm 11** and **Python 3.9+**.
+You need **Node 22+** (24 recommended, see `.nvmrc`), **Bun 1.3+** and **Python 3.9+**.
 Nothing else: the backend has no Python dependencies, and Rust is only needed if you
 change the contract.
 
 ```sh
-corepack enable               # provides the pnpm version pinned in package.json
-pnpm install
-pnpm dev                      # web, dashboard and backend together
+bun install
+bun dev                       # website, dashboard and backend together
 ```
 
 | App | URL |
@@ -32,30 +31,34 @@ chain, and a deterministic model stands in for the LLM. To switch real services 
 Check that it all works:
 
 ```sh
-pnpm check                    # typecheck + backend unit tests
-pnpm smoke                    # 50 end-to-end checks; needs the backend running
+bun check                     # typecheck + lint + backend unit tests
+bun smoke                     # 50 end-to-end checks; needs the backend running
 ```
 
 ### Troubleshooting
 
 - **`Address already in use`.** Something else holds a port (often an old backend).
-  `lsof -nP -iTCP:8000 -sTCP:LISTEN` shows what; stop it and rerun. Under `pnpm dev`
+  `lsof -nP -iTCP:8000 -sTCP:LISTEN` shows what; stop it and rerun. Under `bun dev`
   one app failing stops the others, so check the first error in the output.
 - **Dashboard shows no data.** The backend is not running, or is on a different port;
   the dashboard only proxies `/v1` to `127.0.0.1:8000`.
-- **`pnpm: command not found`.** Run `corepack enable`, which ships with Node.
+- **`bun: command not found`.** Install it with `curl -fsSL https://bun.sh/install | bash`.
 - **Demo numbers drifted.** `curl -X POST http://127.0.0.1:8000/v1/_stub/reset`.
 
 ## What's in the repo
 
-A pnpm + turbo monorepo. Each app has its own README; start there when you work on it.
+A Bun + Turborepo monorepo, laid out like [midday](https://github.com/midday-ai/midday). Each app
+has its own README; start there when you work on it.
 
 | Path | What it is | Stack |
 |---|---|---|
-| [`apps/web`](apps/web) | marketing site for hellostark.xyz | React Router, pre-rendered static HTML |
-| [`apps/dashboard`](apps/dashboard) | the Stark app users manage bills in | React Router SPA |
+| [`apps/website`](apps/website) | marketing site for hellostark.xyz | React Router, pre-rendered static HTML |
+| [`apps/dashboard`](apps/dashboard) | the Stark app users manage bills in | TanStack Start (SPA) + TanStack Query |
 | [`apps/backend`](apps/backend) | API, agent, bill vending, Telegram bot | Python, standard library only |
 | [`apps/contracts`](apps/contracts) | NEAR vault contract: caps and allowlist | Rust, near-sdk |
+| [`packages/ui`](packages/ui) | shared tokens, fonts, icons and components | Tailwind v4, Reicon |
+| [`packages/api`](packages/api) | typed `/v1` client, query options and mutations | TanStack Query |
+| [`packages/utils`](packages/utils) | naira and date formatting, request ids | |
 | [`docs`](docs) | the API contract, frontend guide, backend handoff | |
 
 Which doc to read first:
@@ -72,16 +75,17 @@ Run from the repo root.
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | all three apps, in turbo's terminal UI |
-| `pnpm web` / `pnpm dashboard` / `pnpm backend` | one app on its own |
-| `pnpm build` | build web and dashboard |
-| `pnpm typecheck` | TypeScript across the workspace |
-| `pnpm test` | backend unit tests (149, hermetic) |
-| `pnpm check` | typecheck + test, what CI should run |
-| `pnpm smoke` | end-to-end checks against a running backend |
+| `bun dev` | all three apps in parallel |
+| `bun dev:website` / `bun dev:dashboard` / `bun dev:backend` | one app on its own |
+| `bun run build` | build the website and dashboard |
+| `bun typecheck` | TypeScript across the workspace |
+| `bun lint` / `bun format` | Biome |
+| `bun run test` | backend unit tests (149, hermetic) |
+| `bun check` | typecheck + lint + test, what CI should run |
+| `bun smoke` | end-to-end checks against a running backend |
 
 Contract commands are in [`apps/contracts`](apps/contracts/README.md); they need a Rust
-toolchain, so they are not part of `pnpm test`.
+toolchain, so they are not part of `bun run test`.
 
 ## Current state
 
@@ -129,7 +133,7 @@ broadcast and no contract deployed. No real AI model has been called.
 ## Deploy
 
 The marketing site deploys to [hellostark.xyz](https://hellostark.xyz) on
-[Brimble](https://brimble.io) from `main`; see [`apps/web`](apps/web/README.md#deploy).
+[Brimble](https://brimble.io) from `main`; see [`apps/website`](apps/website/README.md#deploy).
 Nothing else is deployed yet.
 
 ## Contributing

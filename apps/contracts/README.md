@@ -19,13 +19,13 @@ From the repo root:
 
 | Command | What it does |
 |---|---|
-| `pnpm --filter @stark/contracts contract:test` | 38 unit tests on the host |
-| `pnpm --filter @stark/contracts contract:check` | type-check the wasm target |
-| `pnpm --filter @stark/contracts contract:build` | release wasm → `vault/target/wasm32-unknown-unknown/release/stark_vault.wasm` |
+| `bun --filter @stark/contracts run contract:test` | 38 unit tests on the host |
+| `bun --filter @stark/contracts run contract:check` | type-check the wasm target |
+| `bun --filter @stark/contracts run contract:build` | release wasm → `vault/target/wasm32-unknown-unknown/release/stark_vault.wasm` |
 
 Or with cargo directly from `vault/`: `cargo test`, `cargo build --target wasm32-unknown-unknown --release`.
 
-These are deliberately not turbo tasks, so `pnpm test` and `pnpm build` work without a
+These are deliberately not turbo tasks, so `bun run test` and `bun run build` work without a
 Rust toolchain.
 
 If cargo reports no toolchain although rustup is installed, your shell's `$HOME` is
@@ -49,7 +49,7 @@ vault/src/lib.rs      contract wrapper, env-based tests
 
 **`policy.rs` has a Python twin.** [`apps/backend/policy.py`](../backend/policy.py)
 mirrors its error codes and sentences, and a backend test reads this Rust source and
-fails if they drift. Change both together; `pnpm test` will tell you if you didn't.
+fails if they drift. Change both together; `bun run test` will tell you if you didn't.
 
 The wasm comes from plain `cargo build` (203 KB, verified 2026-10-20). `cargo-near` is
 only needed for the ABI JSON and deploy convenience. Deployment is blocked on a funded
