@@ -1,0 +1,31 @@
+@import "tailwindcss";
+@import "@stark/ui/globals.css";
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  html,
+  body {
+    @apply bg-paper font-sans text-[15px] leading-[1.55] text-ink antialiased;
+  }
+}
+
+/* The hand-drawn marker swash behind a headline phrase. */
+@utility swash {
+  position: relative;
+  display: inline-block;
+  padding: 0 10px;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 18% 0 8% 0;
+    background: var(--color-brand-swash);
+    border-radius: 6px 14px 4px 12px;
+    transform: rotate(-1.2deg);
+    opacity: 0.85;
+    z-index: -1;
+  }
+}

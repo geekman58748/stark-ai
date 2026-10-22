@@ -1,0 +1,8 @@
+{
+  "extends": "@stark/tsconfig/vite.json",
+  "compilerOptions": {
+    "rootDirs": [".", "./.react-router/types"],
+    "paths": { "~/*": ["./app/*"] }
+  },
+  "include": ["app", "*.ts", ".react-router/types/**/*"]
+}
