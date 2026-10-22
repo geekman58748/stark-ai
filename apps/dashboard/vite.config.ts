@@ -20,7 +20,10 @@ export default defineConfig({
       "/v1": "http://127.0.0.1:8000",
     },
   },
+  // The SPA build prerenders `_shell.html` through a preview server. Left on `localhost` it binds
+  // only ::1, and a Linux build host's fetch tries 127.0.0.1 and gets ECONNREFUSED.
   preview: {
+    host: "127.0.0.1",
     proxy: {
       "/v1": "http://127.0.0.1:8000",
     },
