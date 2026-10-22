@@ -3,3 +3,13 @@ __pycache__/
 .venv/
 .DS_Store
 .env
+
+# Local receipt store. Runtime data, never committed.
+backend/stark.db
+backend/stark.db-journal
+backend/stark.db-wal
+backend/stark.db-shm
+
+# Rust / cargo. A near-sdk build is ~1 GB — never commit it.
+target/
+**/target/

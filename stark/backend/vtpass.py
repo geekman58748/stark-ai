@@ -303,16 +303,43 @@ class VtpassClient:
         """Buy a prepaid token. Reuse `request_id` when retrying the same intent."""
         if amount_ngn < 500:
             raise ValueError("VTpass electricity minimum is 500 naira")
+        return self.buy(
+            service_id=service_id,
+            reference=reference,
+            amount_ngn=amount_ngn,
+            phone=phone,
+            variation_code=meter_type,
+            request_id=request_id,
+        )
 
+    def buy(
+        self,
+        *,
+        service_id: str,
+        reference: str,
+        amount_ngn: int,
+        phone: str,
+        variation_code: str | None = None,
+        request_id: str | None = None,
+    ) -> VendingResult:
+        """Buy any product. Reuse `request_id` when retrying the same intent.
+
+        - **airtime**: `variation_code` is omitted entirely — the service has no
+          variations (`011 No Variations for MTN Airtime VTU`, captured live), so the
+          amount is the product.
+        - **data / TV**: `variation_code` is the plan, e.g. `mtn-100mb-1000`, `dstv79`.
+        - **electricity**: `variation_code` is `prepaid`.
+        """
         rid = request_id or new_request_id()
         payload = {
             "request_id": rid,
             "serviceID": service_id,
             "billersCode": reference,
-            "variation_code": meter_type,
             "amount": amount_ngn,
             "phone": phone,
         }
+        if variation_code:
+            payload["variation_code"] = variation_code
 
         data = (self._fixture("pay_ok.json") if self.dry_run
                 else self._http("POST", "/pay", payload))
