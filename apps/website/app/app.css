@@ -12,7 +12,6 @@
   }
 }
 
-/* The hand-drawn marker swash behind a headline phrase. */
 @utility swash {
   position: relative;
   display: inline-block;

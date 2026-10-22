@@ -11,11 +11,14 @@ crate-type = ["cdylib", "rlib"]
 # near-sdk 5 refuses a plain host compile unless it can tell this is not an
 # on-chain build. Wasm builds (via `cargo near build`) take the wasm branch;
 # `cargo test` on the host takes the non-wasm branch with unit-testing on.
+#
+# Default features are off to drop wee_alloc (GHSA-rc23-xxgq-x27g: unmaintained, leaks memory).
+# It is near-sdk's only default feature; without it the wasm build uses Rust's own allocator.
 [target.'cfg(target_family = "wasm")'.dependencies]
-near-sdk = "5.29.1"
+near-sdk = { version = "5.29.1", default-features = false }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-near-sdk = { version = "5.29.1", features = ["unit-testing"] }
+near-sdk = { version = "5.29.1", default-features = false, features = ["unit-testing"] }
 
 # Money contract settings: never overflow silently, keep the wasm small.
 [profile.release]
