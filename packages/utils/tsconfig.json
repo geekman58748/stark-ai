@@ -1,0 +1,4 @@
+{
+  "extends": "@stark/tsconfig/base.json",
+  "include": ["src"]
+}

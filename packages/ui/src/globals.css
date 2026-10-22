@@ -1,0 +1,69 @@
+/*
+ * Stark design tokens, shared by the dashboard (dark) and the website (light).
+ * Import once from each app's stylesheet, after `@import "tailwindcss"`.
+ * Inter for body text, Crimson Pro for headings. Brand: black + burnt orange.
+ */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/crimson-pro";
+
+@source "./";
+
+@theme {
+  --font-sans: "Inter Variable", "Inter", system-ui, sans-serif;
+  --font-serif: "Crimson Pro Variable", "Crimson Pro", Georgia, serif;
+
+  /* Brand */
+  --color-brand: #c2410c;
+  --color-brand-warm: #f08a4b;
+  --color-brand-soft: #f7a773;
+  --color-brand-swash: #f6a26f;
+  --color-brand-deep: #7a2e0c;
+  --color-brand-tint: rgb(194 65 12 / 0.18);
+  --color-brand-wash: rgb(194 65 12 / 0.12);
+  --color-brand-line: rgb(240 138 75 / 0.5);
+
+  /* App (dark) */
+  --color-canvas: #111214;
+  --color-canvas-deep: #0b0b0c;
+  --color-surface: #17181b;
+  --color-surface-2: #1f2024;
+  --color-surface-3: #26272b;
+  --color-surface-selected: #1d1a18;
+  --color-dock: #222327;
+  --color-track: #2a2b30;
+  --color-bar: #3a2a22;
+  --color-fg: #f2f3f1;
+  --color-fg-2: #c9cdc9;
+  --color-muted: #a3a8a3;
+  --color-faint: #5b5f66;
+  --color-idle: #8e9299;
+  --color-line: rgb(255 255 255 / 0.06);
+  --color-line-2: rgb(255 255 255 / 0.1);
+
+  /* Website (light) */
+  --color-paper: #f4f2ec;
+  --color-paper-2: #e9e6dd;
+  --color-ink: #0f1115;
+  --color-ink-2: #3e424a;
+  --color-ink-3: #5b5f66;
+  --color-rule: #d5d7d1;
+  --color-bubble: #f2f0ea;
+
+  --radius-card: 16px;
+  --radius-row: 14px;
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-warm);
+    outline-offset: 2px;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}

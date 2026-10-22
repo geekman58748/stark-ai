@@ -1,0 +1,4 @@
+{
+  "extends": "@stark/tsconfig/react-library.json",
+  "include": ["src"]
+}

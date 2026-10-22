@@ -1,0 +1,20 @@
+{
+  "name": "@stark/utils",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    "./format": "./src/format.ts",
+    "./id": "./src/id.ts"
+  },
+  "devDependencies": {
+    "@stark/tsconfig": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
