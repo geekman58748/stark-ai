@@ -12,19 +12,19 @@ Last updated: 2026-10-22.
 ## 1. Get it running in two minutes
 
 ```sh
-cd stark/backend
+cd apps/backend
 python3 server.py          # http://127.0.0.1:8000, no dependencies
 ```
 
 In another shell:
 
 ```sh
-cd stark/backend
+cd apps/backend
 python3 smoke_test.py      # 50 checks, exits 1 if anything is broken
 ```
 
 That is the whole setup. No npm install, no virtualenv, no docker. Any python3
-works. The server keeps its data in `backend/stark.db`, which is gitignored.
+works. The server keeps its data in `apps/backend/stark.db`, which is gitignored.
 
 To return everything to the demo state (seeded bills, seed balance, seed
 activity):
@@ -404,7 +404,7 @@ The fastest way to get unstuck is to run the smoke test and then call the route
 by hand:
 
 ```sh
-cd stark/backend
+cd apps/backend
 python3 smoke_test.py
 curl -s http://127.0.0.1:8000/v1/state | python3 -m json.tool
 ```

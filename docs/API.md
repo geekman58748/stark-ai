@@ -4,7 +4,7 @@
 this point the only allowed change is **additive** (new fields, new endpoints).
 Renames, removals and type changes mean bumping to `/v2`.
 
-A runnable stub implements all of this today: `backend/server.py`. No chain, no
+A runnable stub implements all of this today: `apps/backend/server.py`. No chain, no
 bill API, no AI — mock data only, so the frontend can be built in parallel.
 
 ---
@@ -464,7 +464,7 @@ outside a demo reset button.
 | Token | **vended through VTpass**, fixtures in dry-run, real when `STARK_VENDING=live` | M3 — **live credentials still missing, so no real token has ever been bought** |
 | Voice | text only, `transcript_hint` | M4 (Whisper) |
 | Suggestions | fixed copy | M6 (telemetry) |
-| Persistence | **SQLite** (`backend/stark.db`): receipts and wallet, consistent across restarts. Bills, limits and `units_left` are in memory and reset on restart | M3 |
+| Persistence | **SQLite** (`apps/backend/stark.db`): receipts and wallet, consistent across restarts. Bills, limits and `units_left` are in memory and reset on restart | M3 |
 
 Shapes will not change as these land. Only the values become real.
 

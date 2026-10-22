@@ -311,7 +311,7 @@ Python is stdlib-only — no venv, no install step. The contract is Rust, which 
 `RUSTUP_HOME` set (§1).
 
 ```
-backend/
+apps/backend/
   server.py                    API server; wallet + receipts in SQLite, bills/telemetry in memory
   smoke_test.py                50 checks: every endpoint + every error code
   agent.py                     tool schema + routing + policy gate + model loop
@@ -328,14 +328,14 @@ backend/
   test_vtpass.py               30 tests incl. CLI wiring
   stark.db                     runtime data, gitignored
   fixtures/                    VTpass responses (see §10 on provenance)
-contracts/
+apps/contracts/
   vault/                       NEAR contract: caps, allowlist, owner withdraw
   vault/src/policy.rs          pure rules, no near-sdk, 20 tests
   vault/src/lib.rs             contract wrapper, 18 env-based tests
 docs/
   API.md           218 lines   THE CONTRACT — frozen, additive changes only
 README.md                       product intro, run instructions, ground rules
-HANDOFF.md                     this file
+docs/HANDOFF.md                this file
 ```
 
 ### Run it
@@ -368,7 +368,7 @@ Expected: `OK` for the tests, a `DELIVERED` token block from the CLI, and JSON s
 
 ## 5. The API contract
 
-Full detail in [`docs/API.md`](docs/API.md). All 20 routes, plus the stub-only reset:
+Full detail in [`docs/API.md`](API.md). All 20 routes, plus the stub-only reset:
 
 | Method | Path | Status | Notes |
 |---|---|---|---|
@@ -876,7 +876,7 @@ Item 7 is the next code.**
 
 1. **Ask the human for VTpass sandbox credentials**, then run:
    ```sh
-   cd backend
+   cd apps/backend
    export VTPASS_ENV=sandbox VTPASS_USERNAME=... VTPASS_PASSWORD=...
    python3 vtpass.py verify --meter <real-meter> --live
    python3 vtpass.py buy --meter <real-meter> --amount 5000 --phone <their-phone> --live
