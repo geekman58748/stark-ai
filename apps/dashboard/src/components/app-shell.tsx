@@ -44,8 +44,12 @@ function AccountAvatar() {
   const { data } = useQuery(stateQuery());
   const initials = data?.first_name?.slice(0, 2).toUpperCase() ?? "";
   return (
-    <Link to="/settings" aria-label="Account and settings" className="rounded-full no-underline">
-      <Avatar className="size-[34px]">
+    <Link
+      to="/settings"
+      aria-label="Account and settings"
+      className="rounded-full no-underline"
+    >
+      <Avatar className="size-8.5">
         <AvatarFallback className="bg-surface-3 text-xs font-semibold text-fg">
           {initials}
         </AvatarFallback>
@@ -58,7 +62,7 @@ function Header() {
   const path = usePath();
   const page = pageNames.find(([p]) => isActive(path, p, false))?.[1] ?? "Home";
   return (
-    <header className="flex items-center gap-3 px-4 pt-3 pb-2.5 sm:border-b sm:border-line sm:px-5 sm:py-3.5">
+    <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/8 bg-canvas/92 px-4 pt-[max(12px,env(safe-area-inset-top))] pb-2.5 backdrop-blur-lg sm:border-line sm:px-5 sm:py-3.5">
       <Breadcrumb>
         <BreadcrumbList className="gap-3 text-fg">
           <BreadcrumbItem>
@@ -67,12 +71,18 @@ function Header() {
               className="flex items-center gap-2 text-fg no-underline"
             >
               <LogoMark />
-              <span className="text-base font-semibold sm:text-[15px]">Stark</span>
+              <span className="text-base font-semibold sm:text-[15px]">
+                Stark
+              </span>
             </BreadcrumbLink>
           </BreadcrumbItem>
-          <BreadcrumbSeparator className="hidden text-faint sm:inline">/</BreadcrumbSeparator>
+          <BreadcrumbSeparator className="hidden text-faint sm:inline">
+            /
+          </BreadcrumbSeparator>
           <BreadcrumbItem className="hidden sm:inline-flex">
-            <BreadcrumbPage className="text-[13px] font-medium">{page}</BreadcrumbPage>
+            <BreadcrumbPage className="text-[13px] font-medium">
+              {page}
+            </BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
@@ -81,7 +91,7 @@ function Header() {
           size="sm"
           nativeButton={false}
           render={<Link to="/pay" aria-label="Pay a bill" />}
-          className="size-[38px] px-0 sm:size-auto sm:px-4"
+          className="size-9.5 px-0 sm:size-auto sm:px-4"
         >
           <Icons.Add size={14} />
           <span className="hidden sm:inline">Pay a bill</span>
@@ -92,14 +102,13 @@ function Header() {
   );
 }
 
-/** Desktop: a floating pill dock with the Talk button beside it. */
 function Dock() {
   const path = usePath();
   return (
-    <div className="pointer-events-none sticky bottom-4 mt-4 hidden justify-center gap-2 sm:flex">
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-10 hidden justify-center gap-2 sm:flex">
       <nav
         aria-label="App"
-        className="pointer-events-auto flex gap-0.5 rounded-full border border-white/10 bg-dock p-[5px] shadow-[0_12px_30px_rgba(0,0,0,0.5)]"
+        className="pointer-events-auto flex gap-0.5 rounded-full border border-white/10 bg-dock p-1.25 shadow-[0_12px_30px_rgba(0,0,0,0.5)]"
       >
         {tabs.map(({ to, label, icon: Icon, exact }) => (
           <Link
@@ -108,7 +117,7 @@ function Dock() {
             aria-label={label}
             aria-current={isActive(path, to, exact) ? "page" : undefined}
             className={cn(
-              "flex size-[42px] items-center justify-center rounded-full text-fg",
+              "flex size-10.5 items-center justify-center rounded-full text-fg",
               isActive(path, to, exact) && "bg-brand/25",
             )}
           >
@@ -119,7 +128,7 @@ function Dock() {
       <Link
         to="/talk"
         aria-label="Talk to Stark"
-        className="pointer-events-auto flex size-[54px] items-center justify-center rounded-full bg-brand text-white shadow-[0_12px_30px_rgba(0,0,0,0.5)]"
+        className="pointer-events-auto flex size-13.5 items-center justify-center rounded-full bg-brand text-white shadow-[0_12px_30px_rgba(0,0,0,0.5)]"
       >
         <Icons.Mic size={22} />
       </Link>
@@ -127,7 +136,6 @@ function Dock() {
   );
 }
 
-/** Phone: a blurred bottom tab bar with a raised Talk button in the middle. */
 function TabBar() {
   const path = usePath();
   const [home, bills, activity, wallet] = tabs;
@@ -138,7 +146,9 @@ function TabBar() {
       aria-current={isActive(path, to, exact) ? "page" : undefined}
       className={cn(
         "flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium no-underline",
-        isActive(path, to, exact) ? "text-brand-soft" : "text-idle hover:text-fg",
+        isActive(path, to, exact)
+          ? "text-brand-soft"
+          : "text-idle hover:text-fg",
       )}
     >
       <Icon size={22} />
@@ -152,8 +162,12 @@ function TabBar() {
     >
       {item(home)}
       {item(bills)}
-      <Link to="/talk" aria-label="Talk to Stark" className="flex flex-1 justify-center">
-        <span className="-mt-[22px] flex size-14 items-center justify-center rounded-full border-4 border-canvas bg-brand text-white shadow-[0_8px_24px_rgba(194,65,12,0.45)]">
+      <Link
+        to="/talk"
+        aria-label="Talk to Stark"
+        className="flex flex-1 justify-center"
+      >
+        <span className="-mt-5.5 flex size-14 items-center justify-center rounded-full border-4 border-canvas bg-brand text-white shadow-[0_8px_24px_rgba(194,65,12,0.45)]">
           <Icons.Mic size={24} />
         </span>
       </Link>
@@ -167,16 +181,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
       <Header />
-      <main className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-5 px-4 pt-3 pb-7 sm:px-5 sm:pt-9 sm:pb-6">
+      <main className="mx-auto flex w-full max-w-190 flex-1 flex-col gap-5 px-4 pt-3 pb-7 sm:px-5 sm:pt-9 sm:pb-28">
         {children}
-        <Dock />
       </main>
+      <Dock />
       <TabBar />
     </div>
   );
 }
 
-export function PageTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+export function PageTitle({
+  children,
+  aside,
+}: {
+  children: ReactNode;
+  aside?: ReactNode;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <h1 className="m-0 font-serif text-[34px] leading-[1.1] font-medium tracking-[-0.01em]">
@@ -187,7 +207,13 @@ export function PageTitle({ children, aside }: { children: ReactNode; aside?: Re
   );
 }
 
-export function BackLink({ to, children }: { to: string; children: ReactNode }) {
+export function BackLink({
+  to,
+  children,
+}: {
+  to: string;
+  children: ReactNode;
+}) {
   return (
     <Button
       variant="ghost"

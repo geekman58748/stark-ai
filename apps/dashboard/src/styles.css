@@ -7,6 +7,11 @@
     @apply min-h-full bg-canvas font-sans text-sm leading-normal text-fg antialiased;
   }
 
+  /* Rubber-band overscroll drags the sticky header and tab bar away from the screen edges. */
+  html {
+    overscroll-behavior-y: none;
+  }
+
   a {
     color: var(--color-brand-warm);
   }
