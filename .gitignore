@@ -1,1 +1,23 @@
 .DS_Store
+node_modules
+.turbo
+build
+.react-router
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local receipt store. Runtime data, never committed.
+apps/backend/stark.db
+apps/backend/stark.db-journal
+apps/backend/stark.db-wal
+apps/backend/stark.db-shm
+
+# Rust / cargo. A near-sdk build is ~1 GB — never commit it.
+target/

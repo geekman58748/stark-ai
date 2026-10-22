@@ -1,0 +1,27 @@
+{
+  "name": "stark",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "An AI agent that pays everyday bills from a crypto balance, within limits you set, by voice or chat.",
+  "packageManager": "pnpm@11.8.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "web": "pnpm --filter @stark/web dev",
+    "dashboard": "pnpm --filter @stark/dashboard dev",
+    "backend": "pnpm --filter @stark/backend dev",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "check": "turbo run typecheck test",
+    "smoke": "pnpm --filter @stark/backend smoke"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.9",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  }
+}

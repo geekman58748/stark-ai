@@ -1,0 +1,11 @@
+{
+  "name": "@stark/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Python bill-pay API. Standard library only, no virtualenv; this file only wires it into the workspace's turbo tasks.",
+  "scripts": {
+    "dev": "set -a; [ ! -f .env ] || . ./.env; set +a; exec python3 -u server.py",
+    "test": "python3 -m unittest test_agent test_vending test_vtpass test_tg",
+    "smoke": "python3 smoke_test.py"
+  }
+}

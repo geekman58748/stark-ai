@@ -1,0 +1,15 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "globalDependencies": ["tsconfig.base.json"],
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": ["build/**", ".react-router/**"] },
+    "typecheck": { "dependsOn": ["^typecheck"], "outputs": [] },
+    "test": { "outputs": [] },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["NEAR_AI_*", "VTPASS_*", "TELEGRAM_*", "STARK_*"]
+    }
+  }
+}
