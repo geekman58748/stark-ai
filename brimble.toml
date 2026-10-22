@@ -10,6 +10,10 @@
 # each JS build installs the bun pinned in package.json#packageManager into .tools and puts it
 # first on PATH. Bump the version here when packageManager changes.
 #
+# brimble.toml is deliberately not in any `watch` list: all three services read this one file,
+# and deploying them together makes their config applies collide ("Another brimble.toml apply is
+# running"). After editing it, redeploy the affected services one at a time from the dashboard.
+#
 # Each service publishes its own URL as PUBLIC_URL and the others reference it, so a custom
 # domain is a one-line change. Static builds bake VITE_* in at build time: after changing a
 # URL here, redeploy the apps that read it.
@@ -22,7 +26,7 @@ root = "apps/backend"
 
 [services.stark-api.build]
 dockerfile = "Dockerfile"
-watch = ["apps/backend/**", "brimble.toml"]
+watch = ["apps/backend/**"]
 
 [services.stark-api.deploy]
 port = 8000
@@ -52,7 +56,6 @@ watch = [
   "package.json",
   "bun.lock",
   "turbo.json",
-  "brimble.toml",
 ]
 
 [services.stark-dashboard.env]
@@ -77,7 +80,6 @@ watch = [
   "package.json",
   "bun.lock",
   "turbo.json",
-  "brimble.toml",
 ]
 
 [services.stark-website.env]
