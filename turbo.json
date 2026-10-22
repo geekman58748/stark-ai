@@ -7,7 +7,7 @@
       "inputs": ["$TURBO_DEFAULT$", ".env"],
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "build/**", ".output/**", ".react-router/**"],
-      "env": ["VITE_STARK_API_URL"]
+      "env": ["VITE_*"]
     },
     "start": {
       "cache": false,

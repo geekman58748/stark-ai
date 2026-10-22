@@ -1,0 +1,81 @@
+#:schema https://brimble.io/schema/brimble.json
+
+# One Brimble project per [services.<name>] table; <name> must match the project's name on Brimble.
+# `watch` scopes each project to its own files, so a push only redeploys what it touched.
+#
+# The JS apps build from the repository root because they depend on workspace packages
+# (packages/*) through bun workspaces. To add a project, copy a block and adjust the paths.
+#
+# Each service publishes its own URL as PUBLIC_URL and the others reference it, so a custom
+# domain is a one-line change. Static builds bake VITE_* in at build time: after changing a
+# URL here, redeploy the apps that read it.
+
+# --- API: Python, standard library only -------------------------------------------------------
+
+[services.stark-api]
+type = "web"
+root = "apps/backend"
+
+[services.stark-api.build]
+dockerfile = "Dockerfile"
+watch = ["apps/backend/**", "brimble.toml"]
+
+[services.stark-api.deploy]
+port = 8000
+health = "/"
+
+[services.stark-api.env]
+PUBLIC_URL = "https://stark-api.brimble.app"
+HOST = "0.0.0.0"
+STARK_VENDING = "dry"
+# Optional integrations (NEAR_AI_API_KEY, VTPASS_*, TELEGRAM_*, STARK_SIGNER_*) are secrets:
+# set them in the dashboard, never here. See apps/backend/.env.example.
+
+# --- Dashboard: TanStack Start in SPA mode, served as static files ----------------------------
+
+[services.stark-dashboard]
+type = "static"
+
+[services.stark-dashboard.build]
+runtime = { node = "24" }
+install = "bun install --frozen-lockfile"
+# TanStack Start names the SPA shell _shell.html; Brimble's SPA fallback serves index.html.
+command = "bun run build:dashboard && cp apps/dashboard/dist/client/_shell.html apps/dashboard/dist/client/index.html"
+output = "apps/dashboard/dist/client"
+watch = [
+  "apps/dashboard/**",
+  "packages/**",
+  "package.json",
+  "bun.lock",
+  "turbo.json",
+  "brimble.toml",
+]
+
+[services.stark-dashboard.env]
+PUBLIC_URL = "https://stark-dashboard.brimble.app"
+VITE_STARK_API_URL = "{{@stark-api.PUBLIC_URL}}"
+
+# --- Website: React Router, pre-rendered to static HTML ---------------------------------------
+
+[services.stark-website]
+type = "static"
+
+[services.stark-website.build]
+runtime = { node = "24" }
+install = "bun install --frozen-lockfile"
+command = "bun run build:website"
+output = "apps/website/build/client"
+watch = [
+  "apps/website/**",
+  "packages/ui/**",
+  "packages/utils/**",
+  "packages/tsconfig/**",
+  "package.json",
+  "bun.lock",
+  "turbo.json",
+  "brimble.toml",
+]
+
+[services.stark-website.env]
+PUBLIC_URL = "https://stark-website.brimble.app"
+VITE_DASHBOARD_URL = "{{@stark-dashboard.PUBLIC_URL}}"

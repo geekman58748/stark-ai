@@ -33,7 +33,9 @@ import telegram
 import vault_signer
 import vending
 
-PORT = 8000
+
+HOST = os.environ.get("HOST", "127.0.0.1")
+PORT = int(os.environ.get("PORT", "8000"))
 VERSION = "0.3.0-stub"
 
 # --- mock data --------------------------------------------------------------
@@ -977,9 +979,9 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     print(f"Stark API stub {VERSION} — mock data only, nothing is charged.")
-    print(f"  http://127.0.0.1:{PORT}/")
+    print(f"  http://{HOST}:{PORT}/")
     print("  Ctrl-C to stop.\n")
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 
 if __name__ == "__main__":
