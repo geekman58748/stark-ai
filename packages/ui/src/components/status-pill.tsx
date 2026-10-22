@@ -16,7 +16,7 @@ export function StatusPill({
     <Badge
       variant="secondary"
       className={cn(
-        "h-auto gap-1.5 bg-white/5 py-[3px] text-[11px] font-normal",
+        "h-auto gap-1.5 bg-white/5 py-0.75 text-[11px] font-normal",
         tone === "brand" ? "text-brand-warm" : "text-muted-foreground",
         className,
       )}

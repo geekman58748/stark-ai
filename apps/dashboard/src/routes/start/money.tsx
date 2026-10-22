@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { FundForm } from "@/components/fund-form";
 import { OnboardingShell } from "@/components/onboarding-shell";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/start/money")({
   head: () => ({ meta: [{ title: "Add money · Stark" }] }),
@@ -16,7 +16,10 @@ function AddMoney() {
       lead="Stark pays from this balance. Top it up whenever you like."
     >
       <FundForm onDone={() => navigate({ to: "/" })} />
-      <Link to="/" className="self-center text-sm text-fg-2 no-underline hover:text-fg">
+      <Link
+        to="/"
+        className="self-center text-sm text-fg-2 no-underline hover:text-fg"
+      >
         Skip for now
       </Link>
     </OnboardingShell>

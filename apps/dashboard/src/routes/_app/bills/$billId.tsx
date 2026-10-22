@@ -1,3 +1,7 @@
+import { BackLink } from "@/components/app-shell";
+import { BillIcon } from "@/components/bill-row";
+import { TokenLine } from "@/components/token-card";
+import { billStatus, isPayable, kindLabel, meterBill } from "@/lib/bills";
 import {
   activityQuery,
   type Bill,
@@ -36,20 +40,24 @@ import { SectionHeading } from "@stark/ui/components/section-heading";
 import { Stat, StatGrid } from "@stark/ui/components/stat";
 import { StatusPill } from "@stark/ui/components/status-pill";
 import { cn } from "@stark/ui/utils/cn";
-import { formatLongDate, formatNaira, formatShortDate, maskReference } from "@stark/utils/format";
+import {
+  formatLongDate,
+  formatNaira,
+  formatShortDate,
+  maskReference,
+} from "@stark/utils/format";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { BackLink } from "@/components/app-shell";
-import { BillIcon } from "@/components/bill-row";
-import { TokenLine } from "@/components/token-card";
-import { billStatus, isPayable, kindLabel, meterBill } from "@/lib/bills";
 
 export const Route = createFileRoute("/_app/bills/$billId")({
   loader: ({ context, params }) =>
     Promise.all([
-      context.queryClient.ensureQueryData(billQuery(params.billId)),
-      context.queryClient.ensureQueryData(activityQuery()),
+      context.queryClient.query({
+        ...billQuery(params.billId),
+        staleTime: "static",
+      }),
+      context.queryClient.query({ ...activityQuery(), staleTime: "static" }),
     ]),
   head: () => ({ meta: [{ title: "Bill · Stark" }] }),
   component: BillDetail,
@@ -60,7 +68,9 @@ function BillDetail() {
   const { data: bill } = useSuspenseQuery(billQuery(billId));
   const { data: state } = useSuspenseQuery(stateQuery());
   const { data: activity } = useSuspenseQuery(activityQuery());
-  const [editing, setEditing] = useState<"rename" | "plan" | "remove" | null>(null);
+  const [editing, setEditing] = useState<"rename" | "plan" | "remove" | null>(
+    null,
+  );
 
   const history = activity.filter((r) => r.bill_id === bill.id);
   const status = billStatus(bill, state);
@@ -110,20 +120,35 @@ function BillDetail() {
             <Icons.ChevronDown size={14} />
           </DropdownMenuTrigger>
           <DropdownMenuContent className="min-w-44">
-            <DropdownMenuItem onClick={() => setEditing("rename")}>Rename</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setEditing("rename")}>
+              Rename
+            </DropdownMenuItem>
             {bill.plan ? (
-              <DropdownMenuItem onClick={() => setEditing("plan")}>Change plan</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setEditing("plan")}>
+                Change plan
+              </DropdownMenuItem>
             ) : null}
-            <DropdownMenuItem variant="destructive" onClick={() => setEditing("remove")}>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => setEditing("remove")}
+            >
               Remove bill
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      {editing === "rename" ? <Rename bill={bill} onDone={() => setEditing(null)} /> : null}
-      {editing === "plan" ? <ChangePlan bill={bill} onDone={() => setEditing(null)} /> : null}
-      <Remove bill={bill} open={editing === "remove"} onCancel={() => setEditing(null)} />
+      {editing === "rename" ? (
+        <Rename bill={bill} onDone={() => setEditing(null)} />
+      ) : null}
+      {editing === "plan" ? (
+        <ChangePlan bill={bill} onDone={() => setEditing(null)} />
+      ) : null}
+      <Remove
+        bill={bill}
+        open={editing === "remove"}
+        onCancel={() => setEditing(null)}
+      />
 
       <nav aria-label="Sections" className="flex flex-wrap gap-2">
         <span aria-current="page" className={pillTabClass(true)}>
@@ -136,7 +161,10 @@ function BillDetail() {
         >
           History
         </Link>
-        <Link to="/settings" className={cn(pillTabClass(false), "hover:text-fg")}>
+        <Link
+          to="/settings"
+          className={cn(pillTabClass(false), "hover:text-fg")}
+        >
           Limits
         </Link>
       </nav>
@@ -178,8 +206,12 @@ function Overview({
         <>
           <Eyebrow>Light left</Eyebrow>
           <div className="flex flex-wrap items-baseline gap-2.5">
-            <span className="font-serif text-5xl leading-none">About {daysLeft} days</span>
-            <span className="text-xs text-muted-foreground">estimated from your top-ups</span>
+            <span className="font-serif text-5xl leading-none">
+              About {daysLeft} days
+            </span>
+            <span className="text-xs text-muted-foreground">
+              estimated from your top-ups
+            </span>
           </div>
         </>
       ) : (
@@ -235,11 +267,16 @@ function TopUpChart({ history }: { history: Receipt[] }) {
         className="flex h-40 items-end gap-2.5"
       >
         {paid.map((r, i) => (
-          <div key={r.id} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
-            <span className="text-[11px] text-muted-foreground">{formatNaira(r.amount_ngn)}</span>
+          <div
+            key={r.id}
+            className="flex h-full flex-1 flex-col items-center justify-end gap-1.5"
+          >
+            <span className="text-[11px] text-muted-foreground">
+              {formatNaira(r.amount_ngn)}
+            </span>
             <span
               className={cn(
-                "w-full max-w-9 rounded-t-md rounded-b-[2px]",
+                "w-full max-w-9 rounded-t-md rounded-b-xs",
                 i === paid.length - 1 ? "bg-brand" : "bg-bar",
               )}
               style={{ height: `${Math.max(8, (r.amount_ngn / max) * 80)}%` }}
@@ -256,7 +293,9 @@ function TopUpChart({ history }: { history: Receipt[] }) {
 }
 
 function RecentTokens({ history }: { history: Receipt[] }) {
-  const withTokens = history.filter((r) => r.status === "delivered" && r.token).slice(0, 3);
+  const withTokens = history
+    .filter((r) => r.status === "delivered" && r.token)
+    .slice(0, 3);
   if (!withTokens.length) return null;
   return (
     <>
@@ -301,7 +340,9 @@ function Rename({ bill, onDone }: { bill: Bill; onDone: () => void }) {
         Cancel
       </Button>
       {update.error ? (
-        <p className="m-0 w-full text-[13px] text-brand-soft">{errorCopy(update.error)}</p>
+        <p className="m-0 w-full text-[13px] text-brand-soft">
+          {errorCopy(update.error)}
+        </p>
       ) : null}
     </form>
   );
@@ -321,7 +362,8 @@ function ChangePlan({ bill, onDone }: { bill: Bill; onDone: () => void }) {
         value={String(plans.data?.findIndex((p) => p.plan === bill.plan) ?? "")}
         onValueChange={(i) => {
           const picked = plans.data?.[Number(i)];
-          if (picked) update.mutate({ plan: picked.plan }, { onSuccess: onDone });
+          if (picked)
+            update.mutate({ plan: picked.plan }, { onSuccess: onDone });
         }}
       >
         <div className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
@@ -337,7 +379,9 @@ function ChangePlan({ bill, onDone }: { bill: Bill; onDone: () => void }) {
         </div>
       </RadioList>
       {update.error ? (
-        <p className="m-0 text-[13px] text-brand-soft">{errorCopy(update.error)}</p>
+        <p className="m-0 text-[13px] text-brand-soft">
+          {errorCopy(update.error)}
+        </p>
       ) : null}
       <Button variant="ghost" className="self-start" onClick={onDone}>
         Cancel
@@ -346,26 +390,44 @@ function ChangePlan({ bill, onDone }: { bill: Bill; onDone: () => void }) {
   );
 }
 
-function Remove({ bill, open, onCancel }: { bill: Bill; open: boolean; onCancel: () => void }) {
+function Remove({
+  bill,
+  open,
+  onCancel,
+}: {
+  bill: Bill;
+  open: boolean;
+  onCancel: () => void;
+}) {
   const remove = useDeleteBill();
   const navigate = useNavigate();
   return (
-    <AlertDialog open={open} onOpenChange={(next) => (next ? null : onCancel())}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => (next ? null : onCancel())}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Remove {bill.label}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Stark won’t be able to pay it any more. Its history stays in your activity.
+            Stark won’t be able to pay it any more. Its history stays in your
+            activity.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {remove.error ? (
-          <p className="m-0 text-[13px] text-brand-soft">{errorCopy(remove.error)}</p>
+          <p className="m-0 text-[13px] text-brand-soft">
+            {errorCopy(remove.error)}
+          </p>
         ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel variant="secondary">Keep it</AlertDialogCancel>
           <Button
             disabled={remove.isPending}
-            onClick={() => remove.mutate(bill.id, { onSuccess: () => navigate({ to: "/bills" }) })}
+            onClick={() =>
+              remove.mutate(bill.id, {
+                onSuccess: () => navigate({ to: "/bills" }),
+              })
+            }
           >
             Remove
           </Button>

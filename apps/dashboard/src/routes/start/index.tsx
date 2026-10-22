@@ -1,17 +1,16 @@
+import { OnboardingShell } from "@/components/onboarding-shell";
 import { buttonVariants } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
 import { IconTile } from "@stark/ui/components/icon-tile";
 import { Icons } from "@stark/ui/components/icons";
 import { cn } from "@stark/ui/utils/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { OnboardingShell } from "@/components/onboarding-shell";
 
 export const Route = createFileRoute("/start/")({
   head: () => ({ meta: [{ title: "Sign up · Stark" }] }),
   component: SignUp,
 });
 
-// Sign-in isn't wired yet (the API has no auth), so each option continues to the next step.
 function SignUp() {
   const option = "text-[15px] gap-2.5";
   return (
@@ -64,7 +63,8 @@ function SignUp() {
         <span className="flex flex-col gap-0.5">
           <span className="text-sm font-medium">Your money stays yours</span>
           <span className="text-[13px] text-muted-foreground">
-            Stark can only pay the bills you add, inside limits only you can change.
+            Stark can only pay the bills you add, inside limits only you can
+            change.
           </span>
         </span>
       </Card>

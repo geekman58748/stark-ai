@@ -1,3 +1,6 @@
+import { ActivityRow } from "@/components/activity-row";
+import { BillRow } from "@/components/bill-row";
+import { LOW_DAYS, meterBill } from "@/lib/bills";
 import { activityQuery, stateQuery } from "@stark/api";
 import { buttonVariants } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
@@ -11,16 +14,13 @@ import { Stat, StatGrid } from "@stark/ui/components/stat";
 import { StatusPill } from "@stark/ui/components/status-pill";
 import { cn } from "@stark/ui/utils/cn";
 import { formatNaira, greeting } from "@stark/utils/format";
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { noop, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { ActivityRow } from "@/components/activity-row";
-import { BillRow } from "@/components/bill-row";
-import { LOW_DAYS, meterBill } from "@/lib/bills";
 
 export const Route = createFileRoute("/_app/")({
   loader: ({ context }) => {
-    context.queryClient.prefetchQuery(activityQuery());
+    void context.queryClient.query(activityQuery()).catch(noop);
   },
   head: () => ({ meta: [{ title: "Home · Stark" }] }),
   component: Home,
@@ -56,18 +56,26 @@ function Home() {
       <Card>
         <Eyebrow>Balance</Eyebrow>
         <div className="flex flex-wrap items-baseline gap-2.5">
-          <span className="font-serif text-5xl leading-none">{formatNaira(state.balance_ngn)}</span>
+          <span className="font-serif text-5xl leading-none">
+            {formatNaira(state.balance_ngn)}
+          </span>
           <span className="text-xs text-muted-foreground">
             {runway(state.balance_ngn, state.spent_ngn)}
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link to="/wallet/add" className={cn(buttonVariants(), "hover:text-white")}>
+          <Link
+            to="/wallet/add"
+            className={cn(buttonVariants(), "hover:text-white")}
+          >
             Add money
           </Link>
           <Link
             to="/wallet"
-            className={cn(buttonVariants({ variant: "secondary" }), "hover:text-fg")}
+            className={cn(
+              buttonVariants({ variant: "secondary" }),
+              "hover:text-fg",
+            )}
           >
             Withdraw
           </Link>
@@ -96,14 +104,23 @@ function Home() {
             <>
               <Link
                 to="/pay"
-                search={{ bill: meter.id, amount: meter.last_amount_ngn ?? undefined }}
+                search={{
+                  bill: meter.id,
+                  amount: meter.last_amount_ngn ?? undefined,
+                }}
                 className={cn(buttonVariants(), "hover:text-white")}
               >
-                Top up {meter.last_amount_ngn ? formatNaira(meter.last_amount_ngn) : ""}
+                Top up{" "}
+                {meter.last_amount_ngn
+                  ? formatNaira(meter.last_amount_ngn)
+                  : ""}
               </Link>
               <Link
                 to="/bills"
-                className={cn(buttonVariants({ variant: "secondary" }), "hover:text-fg")}
+                className={cn(
+                  buttonVariants({ variant: "secondary" }),
+                  "hover:text-fg",
+                )}
               >
                 Later
               </Link>
@@ -158,7 +175,7 @@ function AskStark() {
   const [text, setText] = useState("");
   return (
     <form
-      className="m-0 flex items-center gap-2 rounded-full border border-white/10 bg-surface py-1.5 pr-1.5 pl-[18px]"
+      className="m-0 flex items-center gap-2 rounded-full border border-white/10 bg-surface py-1.5 pr-1.5 pl-4.5"
       onSubmit={(e) => {
         e.preventDefault();
         if (text.trim()) navigate({ to: "/talk", search: { q: text.trim() } });

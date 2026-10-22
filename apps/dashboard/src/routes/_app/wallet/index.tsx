@@ -1,3 +1,5 @@
+import { ActivityRow } from "@/components/activity-row";
+import { PageTitle } from "@/components/app-shell";
 import { activityQuery, errorCopy, useWithdraw, walletQuery } from "@stark/api";
 import { AmountField } from "@stark/ui/components/amount-field";
 import { Button, buttonVariants } from "@stark/ui/components/button";
@@ -14,30 +16,45 @@ import { requestId } from "@stark/utils/id";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { ActivityRow } from "@/components/activity-row";
-import { PageTitle } from "@/components/app-shell";
 
 export const Route = createFileRoute("/_app/wallet/")({
   loader: ({ context }) =>
     Promise.all([
-      context.queryClient.ensureQueryData(walletQuery()),
-      context.queryClient.ensureQueryData(activityQuery()),
+      context.queryClient.query({ ...walletQuery(), staleTime: "static" }),
+      context.queryClient.query({ ...activityQuery(), staleTime: "static" }),
     ]),
   head: () => ({ meta: [{ title: "Wallet · Stark" }] }),
   component: WalletPage,
 });
 
 const ways = [
-  { method: "bank", title: "Bank transfer", subtitle: "Your own account number", icon: Icons.Bank },
-  { method: "card", title: "Debit card", subtitle: "Visa, Mastercard, Verve", icon: Icons.Card },
-  { method: "crypto", title: "Crypto", subtitle: "Send almost any coin", icon: Icons.Coins },
+  {
+    method: "bank",
+    title: "Bank transfer",
+    subtitle: "Your own account number",
+    icon: Icons.Bank,
+  },
+  {
+    method: "card",
+    title: "Debit card",
+    subtitle: "Visa, Mastercard, Verve",
+    icon: Icons.Card,
+  },
+  {
+    method: "crypto",
+    title: "Crypto",
+    subtitle: "Send almost any coin",
+    icon: Icons.Coins,
+  },
 ] as const;
 
 function WalletPage() {
   const { data: wallet } = useSuspenseQuery(walletQuery());
   const { data: activity } = useSuspenseQuery(activityQuery());
   const [withdrawing, setWithdrawing] = useState(false);
-  const moves = activity.filter((r) => r.type === "deposit" || r.type === "withdrawal");
+  const moves = activity.filter(
+    (r) => r.type === "deposit" || r.type === "withdrawal",
+  );
 
   return (
     <>
@@ -48,10 +65,15 @@ function WalletPage() {
           <span className="font-serif text-5xl leading-none">
             {formatNaira(wallet.balance_ngn)}
           </span>
-          <span className="text-xs text-muted-foreground">ready for your bills</span>
+          <span className="text-xs text-muted-foreground">
+            ready for your bills
+          </span>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link to="/wallet/add" className={cn(buttonVariants(), "hover:text-white")}>
+          <Link
+            to="/wallet/add"
+            className={cn(buttonVariants(), "hover:text-white")}
+          >
             Add money
           </Link>
           <Button
@@ -63,12 +85,19 @@ function WalletPage() {
           </Button>
         </div>
         {withdrawing ? (
-          <Withdraw max={wallet.balance_ngn} onDone={() => setWithdrawing(false)} />
+          <Withdraw
+            max={wallet.balance_ngn}
+            onDone={() => setWithdrawing(false)}
+          />
         ) : null}
         <StatGrid>
-          <Stat label="Added this month">{formatNaira(wallet.added_this_month_ngn)}</Stat>
+          <Stat label="Added this month">
+            {formatNaira(wallet.added_this_month_ngn)}
+          </Stat>
           <Stat label="Spent this month">{formatNaira(wallet.spent_ngn)}</Stat>
-          <Stat label="Monthly limit left">{formatNaira(wallet.remaining_cap_ngn)}</Stat>
+          <Stat label="Monthly limit left">
+            {formatNaira(wallet.remaining_cap_ngn)}
+          </Stat>
           <Stat label="Pays from">This wallet</Stat>
         </StatGrid>
       </Card>
@@ -88,7 +117,11 @@ function WalletPage() {
             <IconTile>
               <Icon size={16} />
             </IconTile>
-            <RowText title={title} subtitle={subtitle} className="flex-none sm:flex-none" />
+            <RowText
+              title={title}
+              subtitle={subtitle}
+              className="flex-none sm:flex-none"
+            />
           </Link>
         ))}
       </div>
@@ -99,7 +132,9 @@ function WalletPage() {
           <ActivityRow key={r.id} receipt={r} />
         ))}
         {!moves.length ? (
-          <p className="m-0 text-[13px] text-muted-foreground">No money in or out yet.</p>
+          <p className="m-0 text-[13px] text-muted-foreground">
+            No money in or out yet.
+          </p>
         ) : null}
       </RowList>
     </>
@@ -116,7 +151,9 @@ function Withdraw({ max, onDone }: { max: number; onDone: () => void }) {
         label="Send to your bank"
         value={amount}
         onChange={setAmount}
-        presets={[5000, 10000, max].filter((v, i, a) => v > 0 && v <= max && a.indexOf(v) === i)}
+        presets={[5000, 10000, max].filter(
+          (v, i, a) => v > 0 && v <= max && a.indexOf(v) === i,
+        )}
       />
       {withdraw.error ? (
         <p role="alert" className="m-0 text-[13px] text-brand-soft">
@@ -127,7 +164,10 @@ function Withdraw({ max, onDone }: { max: number; onDone: () => void }) {
         <Button
           disabled={amount <= 0 || withdraw.isPending}
           onClick={() =>
-            withdraw.mutate({ amount_ngn: amount, request_id: key }, { onSuccess: onDone })
+            withdraw.mutate(
+              { amount_ngn: amount, request_id: key },
+              { onSuccess: onDone },
+            )
           }
         >
           {withdraw.isPending ? "Sending…" : `Withdraw ${formatNaira(amount)}`}

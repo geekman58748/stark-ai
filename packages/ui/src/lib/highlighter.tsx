@@ -1,8 +1,11 @@
 import type * as React from "react";
-import { createHighlighterCore, type GrammarState, type HighlighterCore } from "shiki/core";
+import {
+  createHighlighterCore,
+  type GrammarState,
+  type HighlighterCore,
+} from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 
-// Add the languages you need. Each one loads the first time it is used.
 const languages = {
   bash: () => import("shiki/langs/shellscript.mjs"),
   css: () => import("shiki/langs/css.mjs"),
@@ -35,7 +38,10 @@ let highlighter: Promise<HighlighterCore> | undefined;
 
 function getHighlighter() {
   highlighter ??= createHighlighterCore({
-    themes: [import("shiki/themes/github-light.mjs"), import("shiki/themes/github-dark.mjs")],
+    themes: [
+      import("shiki/themes/github-light.mjs"),
+      import("shiki/themes/github-dark.mjs"),
+    ],
     langs: [],
     engine: createJavaScriptRegexEngine({ forgiving: true }),
   });
@@ -87,7 +93,9 @@ export async function loadHighlighter(language: string) {
       // ANSI has no grammar state, so each line is tokenized on its own and
       // gets the same colors whether it arrives in one piece or streams.
       const tokens =
-        lang === "ansi" ? code.split("\n").flatMap((line) => tokenize(line)) : tokenize(code);
+        lang === "ansi"
+          ? code.split("\n").flatMap((line) => tokenize(line))
+          : tokenize(code);
 
       return {
         lines: tokens.map((line) =>

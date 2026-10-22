@@ -1,4 +1,10 @@
-import { errorCopy, limitsQuery, useResetDemo, useUpdateLimits } from "@stark/api";
+import { PageTitle } from "@/components/app-shell";
+import {
+  errorCopy,
+  limitsQuery,
+  useResetDemo,
+  useUpdateLimits,
+} from "@stark/api";
 import { AmountField } from "@stark/ui/components/amount-field";
 import { Button } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
@@ -8,10 +14,10 @@ import { formatNaira } from "@stark/utils/format";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { PageTitle } from "@/components/app-shell";
 
 export const Route = createFileRoute("/_app/settings")({
-  loader: ({ context }) => context.queryClient.ensureQueryData(limitsQuery()),
+  loader: ({ context }) =>
+    context.queryClient.query({ ...limitsQuery(), staleTime: "static" }),
   head: () => ({ meta: [{ title: "Settings · Stark" }] }),
   component: Settings,
 });
@@ -21,7 +27,8 @@ function Settings() {
   const [monthly, setMonthly] = useState(limits.monthly_cap_ngn);
   const [per, setPer] = useState(limits.per_payment_cap_ngn);
   const update = useUpdateLimits();
-  const dirty = monthly !== limits.monthly_cap_ngn || per !== limits.per_payment_cap_ngn;
+  const dirty =
+    monthly !== limits.monthly_cap_ngn || per !== limits.per_payment_cap_ngn;
   const invalid = monthly <= 0 || per <= 0 || per > monthly;
 
   return (
@@ -49,9 +56,9 @@ function Settings() {
           presets={[5000, 10000, 20000]}
         />
         <p className="m-0 text-[13px] text-fg-2">
-          If a request goes over, Stark says no and offers the most it can pay instead. Nobody, not
-          even Stark, can raise these but you. You’ve spent {formatNaira(limits.spent_ngn)} this
-          month.
+          If a request goes over, Stark says no and offers the most it can pay
+          instead. Nobody, not even Stark, can raise these but you. You’ve spent{" "}
+          {formatNaira(limits.spent_ngn)} this month.
         </p>
         {per > monthly ? (
           <p className="m-0 text-[13px] text-brand-soft">
@@ -64,7 +71,10 @@ function Settings() {
           </p>
         ) : null}
         {update.isSuccess && !dirty ? (
-          <p aria-live="polite" className="m-0 flex items-center gap-2 text-[13px] text-fg-2">
+          <p
+            aria-live="polite"
+            className="m-0 flex items-center gap-2 text-[13px] text-fg-2"
+          >
             <Icons.Check size={16} className="text-brand-warm" />
             Saved. Stark uses the new limits from its next payment.
           </p>
@@ -73,7 +83,12 @@ function Settings() {
           <div className="flex flex-wrap gap-2">
             <Button
               disabled={invalid || update.isPending}
-              onClick={() => update.mutate({ monthly_cap_ngn: monthly, per_payment_cap_ngn: per })}
+              onClick={() =>
+                update.mutate({
+                  monthly_cap_ngn: monthly,
+                  per_payment_cap_ngn: per,
+                })
+              }
             >
               Save {formatNaira(monthly)} a month, {formatNaira(per)} at once
             </Button>
@@ -94,8 +109,8 @@ function Settings() {
       <Card className="gap-2">
         <span className="font-medium">Telegram and the wall phone</span>
         <p className="m-0 text-[13px] text-fg-2">
-          Voice notes only count when they include the word “Stark”, so everyday talk in the room
-          never triggers a payment.
+          Voice notes only count when they include the word “Stark”, so everyday
+          talk in the room never triggers a payment.
         </p>
       </Card>
 
@@ -112,13 +127,16 @@ function ResetDemo() {
       <span className="flex flex-[1_1_240px] flex-col">
         <span className="font-medium">Reset the demo</span>
         <span className="text-[13px] text-muted-foreground">
-          Puts the seeded bills, balance and history back. Bills you added are removed.
+          Puts the seeded bills, balance and history back. Bills you added are
+          removed.
         </span>
       </span>
       {confirming ? (
         <Button
           disabled={reset.isPending}
-          onClick={() => reset.mutate(undefined, { onSettled: () => setConfirming(false) })}
+          onClick={() =>
+            reset.mutate(undefined, { onSettled: () => setConfirming(false) })
+          }
         >
           Yes, reset
         </Button>
