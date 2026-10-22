@@ -1,15 +1,38 @@
 {
-  "$schema": "https://turbo.build/schema.json",
-  "ui": "tui",
-  "globalDependencies": ["tsconfig.base.json"],
+  "$schema": "https://turborepo.org/schema.json",
+  "globalDependencies": ["**/.env"],
+  "ui": "stream",
   "tasks": {
-    "build": { "dependsOn": ["^build"], "outputs": ["build/**", ".react-router/**"] },
-    "typecheck": { "dependsOn": ["^typecheck"], "outputs": [] },
-    "test": { "outputs": [] },
+    "build": {
+      "inputs": ["$TURBO_DEFAULT$", ".env"],
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "build/**", ".output/**", ".react-router/**"],
+      "env": ["VITE_STARK_API_URL"]
+    },
+    "start": {
+      "cache": false,
+      "persistent": true
+    },
     "dev": {
       "cache": false,
       "persistent": true,
-      "passThroughEnv": ["NEAR_AI_*", "VTPASS_*", "TELEGRAM_*", "STARK_*"]
+      "passThroughEnv": ["NEAR_AI_*", "VTPASS_*", "TELEGRAM_*", "STARK_*", "VITE_STARK_*"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": []
+    },
+    "lint": {
+      "outputs": []
+    },
+    "lint:fix": {
+      "cache": false
+    },
+    "test": {
+      "outputs": []
+    },
+    "clean": {
+      "cache": false
     }
   }
 }

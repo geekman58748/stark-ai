@@ -4,24 +4,50 @@
   "version": "0.1.0",
   "type": "module",
   "description": "An AI agent that pays everyday bills from a crypto balance, within limits you set, by voice or chat.",
-  "packageManager": "pnpm@11.8.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev",
-    "web": "pnpm --filter @stark/web dev",
-    "dashboard": "pnpm --filter @stark/dashboard dev",
-    "backend": "pnpm --filter @stark/backend dev",
-    "test": "turbo run test",
-    "typecheck": "turbo run typecheck",
-    "check": "turbo run typecheck test",
-    "smoke": "pnpm --filter @stark/backend smoke"
+    "build": "turbo build",
+    "clean": "git clean -xdf node_modules",
+    "clean:workspaces": "turbo clean",
+    "dev": "turbo dev --parallel",
+    "dev:dashboard": "turbo dev --filter=@stark/dashboard",
+    "dev:website": "turbo dev --filter=@stark/website",
+    "dev:backend": "turbo dev --filter=@stark/backend",
+    "build:dashboard": "turbo build --filter=@stark/dashboard",
+    "build:website": "turbo build --filter=@stark/website",
+    "start:dashboard": "turbo start --filter=@stark/dashboard",
+    "start:website": "turbo start --filter=@stark/website",
+    "format": "biome format --write .",
+    "lint": "turbo lint",
+    "lint:fix": "turbo lint:fix",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "check": "turbo typecheck lint test",
+    "smoke": "bun --filter @stark/backend smoke"
+  },
+  "packageManager": "bun@1.4.2",
+  "catalog": {
+    "@tanstack/react-query": "^5.104.5",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.7.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "reicon-react": "^1.2.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.10",
     "turbo": "^2.10.9",
-    "typescript": "^5.9.3"
+    "typescript": "catalog:"
   },
   "engines": {
-    "node": ">=22",
-    "pnpm": ">=11"
+    "node": ">=22"
   }
 }

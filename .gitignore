@@ -2,6 +2,10 @@
 node_modules
 .turbo
 build
+dist
+.output
+.tanstack
+.vite
 .react-router
 .env
 .env.*

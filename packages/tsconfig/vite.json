@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Vite app",
+  "extends": "./react-library.json",
+  "compilerOptions": {
+    "types": ["node", "vite/client"]
+  }
+}

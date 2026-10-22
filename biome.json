@@ -1,0 +1,55 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/build",
+      "!**/.output",
+      "!**/node_modules",
+      "!**/.turbo",
+      "!**/.react-router",
+      "!**/.tanstack",
+      "!**/routeTree.gen.ts",
+      "!apps/backend",
+      "!apps/contracts"
+    ]
+  },
+  "css": {
+    "parser": {
+      "cssModules": true,
+      "tailwindDirectives": true
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": {
+        "noSvgWithoutTitle": "off",
+        "useKeyWithClickEvents": "off",
+        "noStaticElementInteractions": "off",
+        "useSemanticElements": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off"
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "off",
+        "noUnusedVariables": "warn"
+      },
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noUnknownAtRules": "off"
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "off"
+      }
+    }
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "lineWidth": 100
+  }
+}
