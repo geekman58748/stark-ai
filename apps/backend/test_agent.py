@@ -849,5 +849,208 @@ class AmountParsingTests(unittest.TestCase):
                 self.assertEqual(agent_mod.parse_amount(text), expected)
 
 
+# --- limits in the prompt, and an answer when the model dies -----------------
+#
+# Measured on live 2026-10-24: "pay ₦50,000 for electricity" came back as
+# "your current account balance is only ₦63,200. Would you like me to
+# proceed?" — the wrong reason, since the ₦10,000 per-payment cap is what
+# decides it, and an offer the gate would then refuse. The gate's numbers
+# were only ever in the prompt after a tool had already run.
+
+
+class LimitReasoningTests(unittest.TestCase):
+    def test_the_gates_numbers_are_in_the_snapshot(self):
+        system, ok = make_agent()._system_message()
+        self.assertTrue(ok)
+        limits = _snapshot(system)["limits"]
+        self.assertEqual(limits["monthly_cap_ngn"], MONTHLY)
+        self.assertEqual(limits["per_payment_cap_ngn"], PER_PAYMENT)
+        self.assertEqual(limits["remaining_cap_ngn"], MONTHLY - 12_400)
+
+    def test_remaining_cap_comes_from_state_when_state_states_it(self):
+        class WithRemaining(FakeToolbox):
+            def get_state(self):
+                state = super().get_state()
+                state["remaining_cap_ngn"] = 7_000
+                return state
+
+        system, ok = make_agent(WithRemaining())._system_message()
+        self.assertTrue(ok)
+        self.assertEqual(_snapshot(system)["limits"]["remaining_cap_ngn"], 7_000)
+
+    def test_a_broken_state_read_still_returns_the_prompt(self):
+        class Broken(FakeToolbox):
+            def get_state(self):
+                raise OSError("state gone")
+
+        system, ok = make_agent(Broken())._system_message()
+        self.assertFalse(ok)
+        self.assertEqual(system["role"], "system")
+        # The prompt still goes out, just without an account bolted to it —
+        # a broken read must not cost the answer.
+        self.assertNotIn("Current account:", system["content"])
+        self.assertIn("You are Stark", system["content"])
+
+    def test_the_prompt_says_name_the_limit_not_the_balance(self):
+        # The wording the demo relies on: refuse before proposing, and say
+        # which limit did it.
+        self.assertIn("per payment limit", agent_mod.SYSTEM_PROMPT)
+        self.assertIn("do not ask them to proceed", agent_mod.SYSTEM_PROMPT)
+
+
+class ModelFailureTests(unittest.TestCase):
+    """A dead model must cost a sentence, never a 500 or silence."""
+
+    @staticmethod
+    def boom(after=None):
+        class Boom:
+            def __init__(self):
+                self.calls = 0
+
+            def turn(self, messages, tools):
+                self.calls += 1
+                if after and self.calls == 1:
+                    return agent_mod.ModelTurn(
+                        tool_calls=[agent_mod.ToolCall(after, {})]
+                    )
+                raise RuntimeError("Could not reach NEAR AI: EOF occurred")
+
+        return Boom()
+
+    def test_an_unreachable_model_answers_in_words(self):
+        reply = make_agent(model=self.boom()).respond("hey stark whats my balance")
+        self.assertEqual(reply.actions, [])
+        self.assertEqual(reply.code, "model_unavailable")
+        self.assertIn("Say that again", reply.reply)
+
+    def test_a_failure_after_a_tool_says_to_check_activity(self):
+        reply = make_agent(model=self.boom(after="list_bills")).respond(
+            "hey stark pay my dstv"
+        )
+        self.assertEqual(reply.actions, ["list_bills"])
+        self.assertIn("Check your activity", reply.reply)
+
+    def test_a_payment_that_finished_is_not_called_a_failure(self):
+        class PayThenBoom:
+            def __init__(self):
+                self.calls = 0
+
+            def turn(self, messages, tools):
+                self.calls += 1
+                if self.calls == 1:
+                    return agent_mod.ModelTurn(
+                        tool_calls=[
+                            agent_mod.ToolCall(
+                                "pay_bill",
+                                {"bill_id": "bill_home_meter", "amount_ngn": 1_000},
+                            )
+                        ]
+                    )
+                raise RuntimeError("Could not reach NEAR AI: EOF occurred")
+
+        reply = make_agent(model=PayThenBoom()).respond("hey stark top up 1000")
+        self.assertIn("pay_bill", reply.actions)
+        self.assertTrue(reply.token or reply.receipt_id)
+        self.assertIn("went through", reply.reply)
+
+
+class NearAiRetryTests(unittest.TestCase):
+    """The live builder drops TLS mid-response roughly one turn in 18."""
+
+    OK = json.dumps({"choices": [{"message": {"content": "fine"}}]}).encode()
+
+    def model(self):
+        return agent_mod.NearAiModel(api_key="test-key")
+
+    @staticmethod
+    def response(data):
+        class Resp:
+            def read(self_inner):
+                return data
+
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *args):
+                return False
+
+        return Resp()
+
+    def test_two_network_failures_then_success(self):
+        from unittest import mock
+
+        attempts = []
+        fail_first = agent_mod.NearAiModel.ATTEMPTS - 1
+
+        def flaky(request, timeout=None):
+            attempts.append(1)
+            if len(attempts) <= fail_first:
+                raise agent_mod.urllib.error.URLError(
+                    "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred"
+                )
+            return self.response(self.OK)
+
+        with mock.patch.object(agent_mod.urllib.request, "urlopen", flaky), \
+                mock.patch.object(agent_mod.time, "sleep"):
+            turn = self.model().turn([{"role": "user", "content": "hi"}], [])
+
+        # Retried, not swallowed: every attempt reached the endpoint.
+        self.assertEqual(len(attempts), agent_mod.NearAiModel.ATTEMPTS)
+        self.assertEqual(turn.content, "fine")
+
+    def test_it_gives_up_and_says_why(self):
+        from unittest import mock
+
+        attempts = []
+
+        def dead(request, timeout=None):
+            attempts.append(1)
+            raise agent_mod.urllib.error.URLError("connection reset")
+
+        with mock.patch.object(agent_mod.urllib.request, "urlopen", dead), \
+                mock.patch.object(agent_mod.time, "sleep"):
+            with self.assertRaises(RuntimeError) as raised:
+                self.model().turn([{"role": "user", "content": "hi"}], [])
+
+        self.assertEqual(len(attempts), agent_mod.NearAiModel.ATTEMPTS)
+        self.assertIn("Could not reach NEAR AI", str(raised.exception))
+
+    def test_a_bad_request_is_not_retried(self):
+        from unittest import mock
+        from io import BytesIO
+
+        attempts = []
+
+        def rejected(request, timeout=None):
+            attempts.append(1)
+            raise agent_mod.urllib.error.HTTPError(
+                request.full_url, 401, "Unauthorized", {}, BytesIO(b"bad key")
+            )
+
+        with mock.patch.object(agent_mod.urllib.request, "urlopen", rejected), \
+                mock.patch.object(agent_mod.time, "sleep"):
+            with self.assertRaises(RuntimeError) as raised:
+                self.model().turn([{"role": "user", "content": "hi"}], [])
+
+        self.assertEqual(len(attempts), 1)
+        self.assertIn("HTTP 401", str(raised.exception))
+
+    def test_a_body_cut_in_half_is_retried(self):
+        from unittest import mock
+
+        attempts = []
+
+        def truncated(request, timeout=None):
+            attempts.append(1)
+            return self.response(b'{"choices": [{"message": {"content": "f')
+
+        with mock.patch.object(agent_mod.urllib.request, "urlopen", truncated), \
+                mock.patch.object(agent_mod.time, "sleep"):
+            with self.assertRaises(RuntimeError):
+                self.model().turn([{"role": "user", "content": "hi"}], [])
+
+        self.assertEqual(len(attempts), agent_mod.NearAiModel.ATTEMPTS)
+
+
 if __name__ == "__main__":
     unittest.main()

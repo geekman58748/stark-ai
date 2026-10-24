@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -62,6 +63,12 @@ Rules:
   than inventing it.
 - To pay, call pay_bill. The app enforces the user's limits itself; if it refuses,
   say the reason plainly and do not try a different amount to sneak past it.
+- Check an amount against the limits *before* you offer to pay: they are in the
+  account below, per payment, per month, and what is left of the month. If a limit
+  would refuse it, do not ask them to proceed. Name the limit and both numbers —
+  "that is over the ₦10,000 per payment limit", "you have ₦7,000 left of your
+  ₦30,000 monthly limit", "your balance is ₦6,000 against a ₦50,000 payment".
+  The balance is the reason only when it really is the lower number.
 - A payment is only done when the tool returns a token or status "delivered".
   "pending" means it is still going through — say so, and never claim it is done.
 - If they name no amount and the bill has no plan price, ask for the figure in one
@@ -78,7 +85,8 @@ Rules:
   Commas and full stops only.
 - A question is not an instruction. "If I pay this, how much is left?", "how much
   would it cost?", "should I?", or someone confused or asking why — answer the
-  question and pay nothing until they clearly ask you to pay.
+  question and pay nothing until they clearly ask you to pay. Answer and stop:
+  do not end with an offer to pay when they only asked what would happen.
 - Speech is transcribed and can be wrong. If a word looks misheard, work out what it
   must have been from the account and the recent payments. If two readings would pay
   different bills or different amounts, ask one short question instead of acting.
@@ -88,6 +96,8 @@ Rules:
 - The account below already carries each bill's plan, price, reference and renewal
   date, plus the last five payments. Never ask for a detail that is already there.
   Never say a payment happened, or when it happened, unless it is in that list.
+  It is also the read: pay_bill takes an id straight out of it, so a payment does
+  not need a second call to list the bills first.
 - `phone` in the account is the owner's own number. Read it out when asked for a
   phone number — it is not a secret, and it is the same digits as the airtime bill.
 - For a hypothetical about money, do the arithmetic on the numbers in the account and
@@ -575,6 +585,14 @@ class NearAiModel:
 
     name = "near-ai"
 
+    # The builder's egress drops TLS mid-response: measured 2026-10-24 on
+    # geddon.hellostark.xyz, [SSL: UNEXPECTED_EOF_WHILE_READING] arrived on about
+    # one turn in 18 and the server handed the client a 500 with nothing to say.
+    # A retry costs nothing when the network is healthy and turns a dropped
+    # reply into the answer that was asked for.
+    ATTEMPTS = 3
+    RETRY_DELAYS = (0.3, 0.9)
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -597,26 +615,7 @@ class NearAiModel:
             "tool_choice": "auto",
             "temperature": 0,
         }
-        request = urllib.request.Request(
-            f"{self.base_url}/v1/chat/completions",
-            data=json.dumps(payload).encode(),
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as resp:
-                body = json.loads(resp.read() or b"{}")
-        except urllib.error.HTTPError as err:
-            try:
-                detail = err.read().decode("utf-8", "replace")[:300]
-            finally:
-                err.close()
-            raise RuntimeError(f"NEAR AI returned HTTP {err.code}: {detail}") from err
-        except urllib.error.URLError as err:
-            raise RuntimeError(f"Could not reach NEAR AI: {err.reason}") from err
+        body = self._post(payload)
 
         choices = body.get("choices") or []
         if not choices:
@@ -634,6 +633,46 @@ class NearAiModel:
                 )
             )
         return ModelTurn(content=message.get("content"), tool_calls=calls)
+
+    def _post(self, payload: dict) -> dict:
+        """One completion, retried only where the failure is the network's.
+
+        A 4xx means the request itself is wrong (bad key, bad shape): retrying
+        is just a slower failure, so it raises at once. Everything else — a
+        dropped TLS handshake, a reset socket, a body cut in half, 429, 5xx —
+        gets `ATTEMPTS` goes before it becomes a real error.
+        """
+        last: RuntimeError | None = None
+        for attempt in range(self.ATTEMPTS):
+            request = urllib.request.Request(
+                f"{self.base_url}/v1/chat/completions",
+                data=json.dumps(payload).encode(),
+                method="POST",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                },
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as resp:
+                    return json.loads(resp.read() or b"{}")
+            except urllib.error.HTTPError as err:
+                try:
+                    detail = err.read().decode("utf-8", "replace")[:300]
+                finally:
+                    err.close()
+                message = f"NEAR AI returned HTTP {err.code}: {detail}"
+                if not (err.code == 429 or err.code >= 500):
+                    raise RuntimeError(message) from err
+                last = RuntimeError(message)
+            except urllib.error.URLError as err:
+                last = RuntimeError(f"Could not reach NEAR AI: {err.reason}")
+            except (OSError, json.JSONDecodeError) as err:
+                # ssl.SSLEOFError, a reset connection, a truncated body.
+                last = RuntimeError(f"Could not reach NEAR AI: {err}")
+            if attempt < self.ATTEMPTS - 1:
+                time.sleep(self.RETRY_DELAYS[min(attempt, len(self.RETRY_DELAYS) - 1)])
+        raise last if last else RuntimeError("NEAR AI failed without a reason")
 
 
 # --- toolbox -----------------------------------------------------------------
@@ -768,6 +807,24 @@ class Agent:
                           and b.get("reference")), "")
             if phone:
                 snapshot["phone"] = phone
+            # The gate's own numbers, so a refusal can be explained before the
+            # gate runs. Until 2026-10-24 the model only ever saw these when a
+            # tool had already refused, so the one time it never called a tool —
+            # "pay ₦50,000 for electricity" — it justified the hold-up with the
+            # balance ("your balance is only ₦63,200") instead of the ₦10,000
+            # per-payment cap that actually decides it.
+            state = snapshot.get("state") or {}
+            limits = {
+                "monthly_cap_ngn": self.limits.monthly_cap_ngn,
+                "per_payment_cap_ngn": self.limits.per_payment_cap_ngn,
+            }
+            if state.get("remaining_cap_ngn") is not None:
+                limits["remaining_cap_ngn"] = int(state["remaining_cap_ngn"])
+            elif state.get("cap_ngn") is not None and state.get("spent_ngn") is not None:
+                limits["remaining_cap_ngn"] = max(
+                    int(state["cap_ngn"]) - int(state["spent_ngn"]), 0
+                )
+            snapshot["limits"] = limits
         except Exception:  # a broken read must not cost the answer
             return {"role": "system", "content": SYSTEM_PROMPT}, False
         return ({
@@ -790,6 +847,24 @@ class Agent:
         reply = AgentReply(reply="Sorry, I didn't catch that.")
         effect: dict[str, Any] = {}
 
+        try:
+            return self._drive(messages, reply, effect, has_snapshot, transcript)
+        except Exception as err:
+            # The model is unreachable, timed out, or answered something that is
+            # not a turn. The user still gets a sentence: the alternative is a
+            # 500 JSON blob the wall phone renders as silence (measured
+            # 2026-10-24 — `stub_error: Could not reach NEAR AI`).
+            print(f"  agent model failed after {len(reply.actions)} action(s): {err}")
+            # Effects first: whether the sentence may claim a payment went
+            # through depends on the receipt, not on the reply's fields yet.
+            applied = self._apply_effects(reply, effect)
+            applied.reply = self._lost_reply(applied)
+            applied.code = applied.code or "model_unavailable"
+            return applied
+
+    def _drive(self, messages: list[dict], reply: AgentReply, effect: dict,
+               has_snapshot: bool, transcript: str) -> AgentReply:
+        """The model loop. Kept separate so one failure can be caught above it."""
         for _ in range(self.max_turns):
             turn = self.model.turn(
                 messages, self._tools_for(has_snapshot, transcript))
@@ -828,6 +903,19 @@ class Agent:
             messages[0], has_snapshot = self._system_message()
 
         return self._apply_effects(reply, effect)
+
+    @staticmethod
+    def _lost_reply(reply: AgentReply) -> str:
+        """A sentence a person can act on, never a stack trace.
+
+        What it may claim follows what is already known: a receipt or a token is
+        proof it went through, tools that ran without one are not.
+        """
+        if reply.token or reply.receipt_id:
+            return "That went through. I lost the reply after it, so check your activity."
+        if reply.actions:
+            return "I lost connection partway. Check your activity before you try again."
+        return "Sorry, I lost connection for a second. Say that again?"
 
     @staticmethod
     def _apply_effects(reply: AgentReply, effect: dict[str, Any]) -> AgentReply:
