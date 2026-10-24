@@ -32,8 +32,9 @@ watch = ["apps/backend/**"]
 port = 8000
 health = "/"
 
-[services.stark-api.network]
-domains = ["geddon.hellostark.xyz"]
+# Custom domains are attached in the Brimble dashboard, not here: a
+# `[services.*.network] domains` table makes every deploy fail before it builds
+# with "This feature is not available on the current plan".
 
 [services.stark-api.env]
 PUBLIC_URL = "https://geddon.hellostark.xyz"
@@ -60,9 +61,6 @@ watch = [
   "bun.lock",
   "turbo.json",
 ]
-
-[services.stark-dashboard.network]
-domains = ["dash.hellostark.xyz"]
 
 [services.stark-dashboard.env]
 PUBLIC_URL = "https://dash.hellostark.xyz"
