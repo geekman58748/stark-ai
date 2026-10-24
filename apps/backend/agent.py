@@ -91,6 +91,8 @@ Rules:
   from the account: "what will my balance be after I pay DStv?" is a subtraction,
   so the reply carries the number. Replying with the price and a question back is
   not an answer, and neither is asking for an amount the account already shows.
+  You can always see what a bill costs: a subscription's price is its plan price
+  in the account. Never answer that you cannot see the amount.
 - One owner, one line. The account has no other people and no other numbers: never
   ask who to send airtime to, and never name a network, contact or provider that
   is not in the account. If they name no bill and two bills could fit, ask which
