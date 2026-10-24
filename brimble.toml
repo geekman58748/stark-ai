@@ -64,7 +64,10 @@ watch = [
 
 [services.stark-dashboard.env]
 PUBLIC_URL = "https://dash.hellostark.xyz"
-VITE_STARK_API_URL = "{{@stark-api.PUBLIC_URL}}"
+# Literal, not `{{@stark-api.PUBLIC_URL}}`: the interpolation resolves to an empty
+# value, and a static build bakes the empty string into the bundle, so the app
+# called `/v1` on its own domain and got the SPA shell back.
+VITE_STARK_API_URL = "https://geddon.hellostark.xyz"
 
 # --- Website: React Router, pre-rendered to static HTML ---------------------------------------
 
