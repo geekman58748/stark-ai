@@ -1000,11 +1000,14 @@ def _turn_ms(started: float, *, has_clip: bool, stt_ms: int = 0) -> dict[str, in
 def _log_turn(*, outcome: str, clip: bytes | None, mime: str | None,
               heard: str = "", said: str | None = None,
               stt: str | None = None, payload: dict | None = None,
-              speak: bool = True, ms: dict[str, int] | None = None) -> None:
+              speak: bool = True, ms: dict[str, int] | None = None,
+              conversation: list[dict] | None = None) -> None:
     """Append one conversation turn — see `turnlog` for what each field means.
 
     Every exit from `h_voice` calls this: a turn Stark refused to hear and a
     turn it answered are exactly the two a person wants to compare afterwards.
+    `conversation` is present only when the agent ran, and carries the whole
+    exchange — prompt, account and all — so "why did it say that" has an answer.
     """
     result = payload or {}
     turnlog.record(turnlog.turn(
@@ -1012,6 +1015,7 @@ def _log_turn(*, outcome: str, clip: bytes | None, mime: str | None,
         reply=result.get("reply"), actions=result.get("actions"),
         code=result.get("code"), receipt_id=result.get("receipt_id"),
         token=result.get("token"), speak=speak, model=_model_name(), ms=ms,
+        conversation=conversation,
     ), clip=clip, mime=mime)
 
 
@@ -1098,7 +1102,9 @@ def h_voice(body, raw: bytes = b"", content_type: str = "") -> tuple[int, dict]:
                      **({"stt": stt_reason} if stt_reason else {})}
 
     since = time.perf_counter()
-    payload = AGENT.respond(said).as_voice_payload(transcript)
+    reply = AGENT.respond(said)
+    payload = reply.as_voice_payload(transcript)
+    conversation = reply.conversation
     ms_agent = _ms(since)
     if stt_reason:
         payload["stt"] = stt_reason
@@ -1118,7 +1124,7 @@ def h_voice(body, raw: bytes = b"", content_type: str = "") -> tuple[int, dict]:
         timings["tts"] = ms_tts
     _log_turn(outcome="answered", clip=clip, mime=mime, heard=transcript,
               said=said, stt=stt_reason, payload=payload, speak=wants_speak,
-              ms=timings)
+              ms=timings, conversation=conversation)
     return 200, payload
 
 
@@ -1225,6 +1231,33 @@ def h_tg(raw: bytes, headers) -> tuple[int, dict]:
     return 200, TG_ADAPTER.handle_update(update)
 
 
+def h_turnlog(params) -> tuple[int, dict]:
+    """`GET /v1/turnlog?limit=N` — read the conversation log back.
+
+    Additive debug route (2026-10-24). The log is a file on the box, and nobody
+    watching the demo has a shell there, so "hear what Stark actually heard and
+    said, and what it was looking at when it said it" needs an endpoint. 404
+    while `STARK_TURN_LOG` is off: the default everywhere is off, so a box that
+    was not asked to log does not claim to have a log.
+
+    `limit=0` returns the whole file; the default is the last 100 entries,
+    because dumping an afternoon of turns into one response is how a browser
+    starts to feel broken.
+    """
+    if not turnlog.enabled():
+        return 404, {"code": "turnlog_off",
+                     "message": "The turn log is off. Set STARK_TURN_LOG.",
+                     "detail": {}}
+    try:
+        limit = int(str((params or {}).get("limit") or "100").strip())
+    except (TypeError, ValueError):
+        limit = 100
+    entries = turnlog.lines()
+    if limit > 0:
+        entries = entries[-limit:]
+    return 200, {"enabled": True, "count": len(entries), "entries": entries}
+
+
 # (method, path regex, handler) — order matters, specific before generic.
 ROUTES = [
     ("GET", r"^/$", h_index),
@@ -1244,6 +1277,7 @@ ROUTES = [
     ("POST", r"^/v1/wallet/topup$", h_wallet_topup),
     ("POST", r"^/v1/wallet/withdraw$", h_wallet_withdraw),
     ("GET", r"^/v1/suggestions$", h_suggestions),
+    ("GET", r"^/v1/turnlog$", h_turnlog),
     ("POST", r"^/v1/telemetry$", h_telemetry),
     ("POST", r"^/v1/voice$", h_voice),
     ("POST", r"^/v1/speak$", h_speak),

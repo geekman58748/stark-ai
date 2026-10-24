@@ -737,6 +737,11 @@ class AgentReply:
     tx_hash: str | None = None
     code: str | None = None
     actions: list[str] = field(default_factory=list)
+    # What the model was shown and what it said back, in order — the whole
+    # exchange, snapshot included, so a strange answer can be judged against
+    # the exact words behind it. Read by `turnlog`, never by /v1/voice: that
+    # payload is built by hand in `as_voice_payload`.
+    conversation: list[dict] = field(default_factory=list)
 
     def as_voice_payload(self, transcript: str) -> dict:
         """The frozen `/v1/voice` shape. Extra fields are additive."""
@@ -858,7 +863,7 @@ class Agent:
         effect: dict[str, Any] = {}
 
         try:
-            return self._drive(messages, reply, effect, has_snapshot, transcript)
+            applied = self._drive(messages, reply, effect, has_snapshot, transcript)
         except Exception as err:
             # The model is unreachable, timed out, or answered something that is
             # not a turn. The user still gets a sentence: the alternative is a
@@ -870,7 +875,10 @@ class Agent:
             applied = self._apply_effects(reply, effect)
             applied.reply = self._lost_reply(applied)
             applied.code = applied.code or "model_unavailable"
-            return applied
+        # Every path returns this same `reply` object, so the exchange the model
+        # actually saw — prompt, account, tool results, answers — is attached once.
+        applied.conversation = messages
+        return applied
 
     def _drive(self, messages: list[dict], reply: AgentReply, effect: dict,
                has_snapshot: bool, transcript: str) -> AgentReply:

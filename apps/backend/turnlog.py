@@ -76,7 +76,8 @@ def turn(*, outcome: str, heard: str = "", said: str | None = None,
          actions: list[str] | None = None, code: str | None = None,
          receipt_id: str | None = None, token: str | None = None,
          speak: bool | None = None, model: str | None = None,
-         ms: dict[str, int] | None = None) -> dict[str, Any]:
+         ms: dict[str, int] | None = None,
+         conversation: list[dict] | None = None) -> dict[str, Any]:
     """The entry shape for one spoken exchange. Pure — nothing is written.
 
     - `heard`: the transcript as the recognizer produced it, verbatim.
@@ -88,8 +89,13 @@ def turn(*, outcome: str, heard: str = "", said: str | None = None,
       that sounds right can be checked against what actually happened.
     - `ms`: stage timings in whole milliseconds — `total`, `stt`, `agent`,
       `tts`.
+    - `conversation`: the whole exchange with the model — system prompt and
+      account snapshot first, then each user, assistant and tool message in
+      order. Present only on a turn that reached the agent. It is what makes
+      "why did it say that" answerable instead of arguable: the reply alone
+      never shows what the model was looking at.
     """
-    return {
+    entry = {
         "kind": "turn",
         "outcome": outcome,
         "heard": heard,
@@ -104,6 +110,9 @@ def turn(*, outcome: str, heard: str = "", said: str | None = None,
         "model": model,
         "ms": dict(ms or {}),
     }
+    if conversation:
+        entry["conversation"] = [dict(m) for m in conversation]
+    return entry
 
 
 def speak(*, text: str, ms: int, reason: str, stream: bool,

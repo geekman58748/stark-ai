@@ -40,6 +40,10 @@ health = "/"
 PUBLIC_URL = "https://geddon.hellostark.xyz"
 HOST = "0.0.0.0"
 STARK_VENDING = "dry"
+# One JSON line per turn — heard, said, replied, timings, and the whole
+# exchange with the model — read back with `GET /v1/turnlog`. On only here:
+# tests, smoke runs and local demos stay silent unless they ask for it.
+STARK_TURN_LOG = "1"
 # Optional integrations (NEAR_AI_API_KEY, VTPASS_*, TELEGRAM_*, STARK_SIGNER_*) are secrets:
 # set them in the dashboard, never here. See apps/backend/.env.example.
 

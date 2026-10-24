@@ -616,6 +616,51 @@ in the DM skip it — you already know who you are talking to.
 Errors: `webhook_unconfigured` (401), `webhook_unverified` (401),
 `bad_update` (400, body is not JSON).
 
+### `GET /v1/turnlog`
+
+**Debug route, not part of the product contract** (2026-10-24). The
+conversation log, readable from outside the box — because "why did it say
+that" is unanswerable from the reply alone.
+
+```json
+{
+  "enabled": true,
+  "count": 1,
+  "entries": [
+    {
+      "kind": "turn",
+      "ts": "2026-10-24T21:40:11.512Z",
+      "outcome": "answered",
+      "heard": "hey stark whats my balance",
+      "said": "whats my balance",
+      "reply": "Your current balance is ₦64,200.",
+      "actions": ["get_state"],
+      "model": "google/gemini-2.5-flash-lite",
+      "ms": { "total": 1450, "agent": 1380 },
+      "conversation": [
+        { "role": "system", "content": "You are Stark … Current account: {…}" },
+        { "role": "user", "content": "whats my balance" },
+        { "role": "assistant", "content": "Your current balance is ₦64,200." }
+      ]
+    }
+  ]
+}
+```
+
+`conversation` is the whole exchange with the model: prompt and account
+snapshot first, then every user, assistant and tool message in order. It is
+present only on turns that reached the agent — `asleep` and `unheard` turns
+have no `conversation` key at all. `kind: "speak"` entries record synthesis
+text and timings instead.
+
+`?limit=N` keeps the newest N entries (default **100**); `?limit=0` returns the
+whole file. A value that is not a number falls back to the default.
+
+**404 `turnlog_off`** while `STARK_TURN_LOG` is unset — off in every local run,
+set only on the deployed API. The file itself is
+`apps/backend/logs/turns/turns.jsonl` (gitignored). No secret is ever written
+into it, but it does contain what people said: treat it as user data.
+
 ### `POST /v1/_stub/reset`
 
 **Stub only — not part of the product contract.** Restores initial mock state so
@@ -652,3 +697,4 @@ Shapes will not change as these land. Only the values become real.
 | 2026-10-22 | Product breadth: airtime, data and TV vend through confirmed VTpass services. `Bill` gains `plan` and `plan_price_ngn`. Per-payment cap 5,000 → 10,000 (a DStv bouquet is 7,900). |
 | 2026-10-22 | Additive endpoints for the design's screens: `GET /v1/plans`, `POST`/`PATCH`/`DELETE /v1/bills`, `GET`/`PATCH /v1/limits`, `GET /v1/wallet`, `POST /v1/wallet/topup`, `POST /v1/wallet/withdraw`. New codes `over_per_payment_cap`, `bad_kind`, `bad_reference`, `bad_bill`, `unsupported_product`, `plan_required`, `unknown_plan`, `duplicate_bill`, `bill_in_flight`, `bad_limits`. `Receipt.type` gains `withdrawal`. No existing shape changed. |
 | 2026-10-24 | Reminders, real suggestions, real audio in. `Bill` gains `renews_on`; `/v1/state` gains `due_soon`; `PATCH /v1/bills` accepts and clears `renews_on`; `/v1/suggestions` computed from state instead of seeded copy; `/v1/voice` accepts base64/multipart `audio` and returns `stt`. New codes `bad_renews_on`, `bad_audio`, `audio_too_large`. `GET /v1/speak/stream` added. No existing shape changed. |
+| 2026-10-24 | Debug route added: `GET /v1/turnlog` reads the conversation log back (404 `turnlog_off` when the log is off), and a logged turn gains `conversation` — the full message exchange with the model. No existing shape changed. |

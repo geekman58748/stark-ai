@@ -130,7 +130,15 @@ class _FakeAgent:
 
     def respond(self, said: str) -> AgentReply:
         self.seen.append(said)
-        return AgentReply(reply="Your balance is 64,200 naira.")
+        return AgentReply(
+            reply="Your balance is 64,200 naira.",
+            # What the model was shown, in order — the entry must keep it.
+            conversation=[
+                {"role": "system", "content": "You are Stark."},
+                {"role": "user", "content": said},
+                {"role": "assistant", "content": "Your balance is 64,200 naira."},
+            ],
+        )
 
 
 class ServerTurnLogTests(unittest.TestCase):
@@ -215,6 +223,123 @@ class ServerTurnLogTests(unittest.TestCase):
         self.assertEqual(entry["tts"], "ok")
         self.assertIn(entry["provider"], {"elevenlabs", "kokoro"})
         self.assertIsInstance(entry["ms"], int)
+
+
+class ConversationTests(unittest.TestCase):
+    """The whole exchange, so "why did it say that" has an answer."""
+
+    def test_entry_carries_the_conversation_when_there_is_one(self) -> None:
+        entry = turnlog.turn(
+            outcome="answered", heard="hello stark", reply="Paid.",
+            conversation=[
+                {"role": "system", "content": "You are Stark."},
+                {"role": "user", "content": "hello stark"},
+            ],
+        )
+        self.assertEqual([m["role"] for m in entry["conversation"]],
+                         ["system", "user"])
+
+    def test_a_turn_the_agent_never_saw_has_no_conversation_key(self) -> None:
+        # asleep and unheard turns must not grow an empty list that every
+        # reader has to skip.
+        for outcome in ("asleep", "unheard"):
+            with self.subTest(outcome=outcome):
+                self.assertNotIn("conversation", turnlog.turn(outcome=outcome))
+
+    def test_the_conversation_is_copied_not_shared(self) -> None:
+        shared = [{"role": "user", "content": "hello"}]
+        entry = turnlog.turn(outcome="answered", conversation=shared)
+        entry["conversation"][0]["content"] = "rewritten"
+        self.assertEqual(shared[0]["content"], "hello")
+
+    def test_agent_replies_carry_the_exchange_they_produced(self) -> None:
+        from test_agent import FakeToolbox  # the double lives with the agent tests
+
+        import agent as agent_mod
+        toolbox = FakeToolbox()
+        reply = agent_mod.Agent(
+            model=agent_mod.FakeModel(), toolbox=toolbox,
+            limits=agent_mod.Limits(monthly_cap_ngn=30_000,
+                                    per_payment_cap_ngn=5_000,
+                                    allowed_meters=frozenset({"04512345678"})),
+        ).respond("hello stark whats my balance")
+
+        roles = [m["role"] for m in reply.conversation]
+        self.assertEqual(roles[0], "system")       # prompt + account snapshot
+        self.assertEqual(roles[1], "user")
+        self.assertIn("assistant", roles)
+        # It must not leak into the frozen /v1/voice shape.
+        self.assertNotIn("conversation", reply.as_voice_payload("hello stark"))
+
+
+class TurnLogEndpointTests(unittest.TestCase):
+    """`GET /v1/turnlog` — the log, readable from outside the box."""
+
+    def setUp(self) -> None:
+        import server
+        self.server = server
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.folder = Path(self.tmp.name)
+
+    def test_off_is_a_404_not_an_empty_log(self) -> None:
+        with mock.patch.dict(os.environ, {"STARK_TURN_LOG": "0"}):
+            status, payload = self.server.h_turnlog({})
+        self.assertEqual(status, 404)
+        self.assertEqual(payload["code"], "turnlog_off")
+
+    def test_on_returns_every_line_it_has(self) -> None:
+        with mock.patch.dict(os.environ, {"STARK_TURN_LOG": self.tmp.name}):
+            turnlog.record(turnlog.turn(outcome="answered", heard="hello stark",
+                                        reply="Hi."))
+            turnlog.record(turnlog.turn(outcome="asleep", heard="tell me a joke"))
+            status, payload = self.server.h_turnlog({})
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["enabled"])
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual([e["outcome"] for e in payload["entries"]],
+                         ["answered", "asleep"])
+
+    def test_limit_keeps_the_newest(self) -> None:
+        with mock.patch.dict(os.environ, {"STARK_TURN_LOG": self.tmp.name}):
+            for heard in ("one", "two", "three"):
+                turnlog.record(turnlog.turn(outcome="answered", heard=heard))
+            status, payload = self.server.h_turnlog({"limit": "1"})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["entries"][0]["heard"], "three")
+
+    def test_limit_zero_means_the_whole_file(self) -> None:
+        with mock.patch.dict(os.environ, {"STARK_TURN_LOG": self.tmp.name}):
+            for heard in ("one", "two", "three"):
+                turnlog.record(turnlog.turn(outcome="answered", heard=heard))
+            _, payload = self.server.h_turnlog({"limit": "0"})
+        self.assertEqual(payload["count"], 3)
+
+    def test_a_ragged_limit_falls_back_to_the_default(self) -> None:
+        with mock.patch.dict(os.environ, {"STARK_TURN_LOG": self.tmp.name}):
+            turnlog.record(turnlog.turn(outcome="answered", heard="one"))
+            status, payload = self.server.h_turnlog({"limit": "nonsense"})
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["count"], 1)
+
+    def test_the_answered_turn_reaches_the_file_with_its_conversation(self) -> None:
+        env = mock.patch.dict(os.environ, {"STARK_TURN_LOG": self.tmp.name})
+        env.start()
+        self.addCleanup(env.stop)
+        agent_patch = mock.patch.object(
+            self.server, "AGENT", _FakeAgent())
+        agent_patch.start()
+        self.addCleanup(agent_patch.stop)
+
+        self.server.h_voice({"transcript_hint": "hello stark whats my balance",
+                             "speak": "false"})
+
+        entry = [e for e in turnlog.lines(self.folder) if e["kind"] == "turn"][0]
+        self.assertEqual([m["role"] for m in entry["conversation"]],
+                         ["system", "user", "assistant"])
 
 
 if __name__ == "__main__":
