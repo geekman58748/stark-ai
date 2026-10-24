@@ -177,3 +177,38 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* ---------------------------------------------------------------------------
+  The helmet's visor glint.
+
+  Opt-in through LogoMark's `glint` prop, so chrome that does not ask for it
+  stays still. The band is a rect clipped to the helmet silhouette inside the
+  SVG, which is why it can sweep without spilling over the transparent corners
+  of the square viewBox. An idle scan every few seconds; hovering the mark
+  speeds the same scan up instead of starting a second animation.
+--------------------------------------------------------------------------- */
+
+.glint {
+  display: inline-flex;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .logo-glint {
+    animation: logo-glint-sweep 5.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  .glint:hover .logo-glint {
+    animation-duration: 1.4s;
+  }
+}
+
+@keyframes logo-glint-sweep {
+  0%,
+  58% {
+    transform: translateX(0);
+  }
+  88%,
+  100% {
+    transform: translateX(56px);
+  }
+}

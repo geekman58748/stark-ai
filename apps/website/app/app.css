@@ -28,3 +28,230 @@
     z-index: -1;
   }
 }
+
+/* ---------------------------------------------------------------------------
+  The closing section's power layer.
+
+  Six treatments on what was a static footer: the bill chips rise and then
+  drift, a current runs along the pill's rule, the status line cycles through
+  what is true, the rulebook scrolls underneath, and links wipe their underline
+  in. The helmet's glint lives with the mark itself (UI globals), because the
+  component owns it.
+
+  Every animated rule sits inside prefers-reduced-motion — reduced motion still
+  gets the chips, one status line, the rulebook at rest and the underline on
+  hover. Nothing here is information that only motion delivers.
+--------------------------------------------------------------------------- */
+
+/* The chips: a staggered rise when the section arrives, then a slow drift.
+   `scale` and `translate` are their own properties, so neither animation ever
+   touches `transform`, which still carries each chip's tilt. */
+@media (prefers-reduced-motion: no-preference) {
+  .closing.is-armed .floater {
+    opacity: 0;
+  }
+
+  .closing.is-in .floater {
+    animation:
+      floater-rise 560ms cubic-bezier(0.16, 1, 0.3, 1) var(--enter, 0ms) both,
+      floater-drift var(--drift, 11s) ease-in-out calc(var(--enter, 0ms) + 700ms) infinite alternate;
+  }
+}
+
+@keyframes floater-rise {
+  from {
+    opacity: 0;
+    scale: 0.92;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes floater-drift {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 -9px;
+  }
+}
+
+/* Current in the wire: one ember segment crossing the pill's top rule, then a
+   rest. Masked at both ends so it never appears from nowhere. */
+.powerline {
+  position: absolute;
+  inset-inline: 1.5rem;
+  top: 0;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+
+.powerline::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: -12%;
+  width: 96px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, var(--color-brand-warm), transparent);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .powerline::after {
+    animation: power-run 6.4s cubic-bezier(0.55, 0, 0.45, 1) infinite;
+  }
+}
+
+@keyframes power-run {
+  0% {
+    left: -12%;
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  48% {
+    left: 100%;
+    opacity: 1;
+  }
+  56%,
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+/* Three statuses in one grid cell, so the pill is as wide as the longest line
+   and never twitches when the text changes. */
+.status-rail {
+  display: grid;
+  text-align: left;
+}
+
+.status-line {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.status-line:first-child {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .status-line {
+    animation: status-cycle 13.5s ease-in-out infinite both;
+  }
+  .status-line:nth-child(2) {
+    animation-delay: 4.5s;
+  }
+  .status-line:nth-child(3) {
+    animation-delay: 9s;
+  }
+  .status-dot {
+    animation: status-breathe 3.6s ease-in-out infinite;
+  }
+}
+
+@keyframes status-cycle {
+  0% {
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  30% {
+    opacity: 1;
+  }
+  37% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes status-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    scale: 0.85;
+  }
+  50% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+/* The rulebook ticker. Eight copies of the same set, shifted by exactly one
+   set (100% / 8), so the seam can never show on any viewport narrower than
+   seven sets. The extra copies are hidden from screen readers. */
+.marquee {
+  position: absolute;
+  inset-inline: 0;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+}
+
+.marquee-set {
+  display: flex;
+}
+
+.marquee-line::after {
+  content: "·";
+  margin-inline: 1.15rem;
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .marquee-track {
+    animation: marquee-run 64s linear infinite;
+  }
+}
+
+@keyframes marquee-run {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-12.5%);
+  }
+}
+
+/* Footer links: an ember underline wiping left to right, and a 1px lift. */
+.sweep-link {
+  background-image: linear-gradient(var(--color-brand-warm), var(--color-brand-warm));
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0% 1px;
+  transition: background-size 180ms ease;
+}
+
+.sweep-link:hover,
+.sweep-link:focus-visible {
+  background-size: 100% 1px;
+  color: var(--color-ink);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sweep-link {
+    transition:
+      background-size 180ms ease,
+      translate 180ms ease;
+  }
+  .sweep-link:hover,
+  .sweep-link:focus-visible {
+    translate: 0 -1px;
+  }
+}
