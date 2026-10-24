@@ -9,7 +9,7 @@
 kokoro>=0.9.4
 soundfile>=0.12
 numpy>=2
-torch>=2.4
+torch>=2.6  # CVE-2025-32434 is fixed in 2.6.0; Brimble blocks anything lower
 spacy>=3.8
 # English G2P needs this spaCy model. misaki (Kokoro's phonemizer) tries to
 # auto-download it at first run — which dies with exit code 2 inside a uv
