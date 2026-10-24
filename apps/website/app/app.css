@@ -32,20 +32,21 @@
 /* ---------------------------------------------------------------------------
   The closing section's power layer.
 
-  Six treatments on what was a static footer: the bill chips rise and then
+  Four treatments on what was a static footer: the bill chips rise and then
   drift, a current runs along the pill's rule, the status line cycles through
-  what is true, the rulebook scrolls underneath, and links wipe their underline
-  in. The helmet's glint lives with the mark itself (UI globals), because the
-  component owns it.
+  what is true, and links wipe their underline in. The helmet's glint lives
+  with the mark itself (UI globals), because the component owns it.
 
   Every animated rule sits inside prefers-reduced-motion — reduced motion still
-  gets the chips, one status line, the rulebook at rest and the underline on
-  hover. Nothing here is information that only motion delivers.
+  gets the chips, one status line and the underline on hover. Nothing here is
+  information that only motion delivers.
 --------------------------------------------------------------------------- */
 
-/* The chips: a staggered rise when the section arrives, then a slow drift.
-   `scale` and `translate` are their own properties, so neither animation ever
-   touches `transform`, which still carries each chip's tilt. */
+/* The chips: a staggered rise when the section arrives, then a drift with real
+   travel in it — 10–18px a side on 4.5–6.5s loops, so the four visibly breathe
+   without marching in step. `scale` and `translate` are their own properties,
+   so neither animation ever touches `transform`, which still carries each
+   chip's tilt. */
 @media (prefers-reduced-motion: no-preference) {
   .closing.is-armed .floater {
     opacity: 0;
@@ -53,8 +54,9 @@
 
   .closing.is-in .floater {
     animation:
-      floater-rise 560ms cubic-bezier(0.16, 1, 0.3, 1) var(--enter, 0ms) both,
-      floater-drift var(--drift, 11s) ease-in-out calc(var(--enter, 0ms) + 700ms) infinite alternate;
+      floater-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) var(--enter, 0ms) both,
+      floater-drift var(--drift, 5.5s) ease-in-out calc(var(--enter, 0ms) + 700ms) infinite
+      alternate;
   }
 }
 
@@ -74,7 +76,7 @@
     translate: 0 0;
   }
   to {
-    translate: 0 -9px;
+    translate: 0 calc(var(--amp, 14px) * -1);
   }
 }
 
@@ -95,7 +97,7 @@
   position: absolute;
   inset-block: 0;
   left: -12%;
-  width: 96px;
+  width: 132px;
   border-radius: 9999px;
   background: linear-gradient(90deg, transparent, var(--color-brand-warm), transparent);
   opacity: 0;
@@ -103,7 +105,7 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .powerline::after {
-    animation: power-run 6.4s cubic-bezier(0.55, 0, 0.45, 1) infinite;
+    animation: power-run 4.6s cubic-bezier(0.55, 0, 0.45, 1) infinite;
   }
 }
 
@@ -112,14 +114,14 @@
     left: -12%;
     opacity: 0;
   }
-  6% {
+  5% {
     opacity: 1;
   }
-  48% {
+  42% {
     left: 100%;
     opacity: 1;
   }
-  56%,
+  48%,
   100% {
     left: 100%;
     opacity: 0;
@@ -145,16 +147,16 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .status-line {
-    animation: status-cycle 13.5s ease-in-out infinite both;
+    animation: status-cycle 9s ease-in-out infinite both;
   }
   .status-line:nth-child(2) {
-    animation-delay: 4.5s;
+    animation-delay: 3s;
   }
   .status-line:nth-child(3) {
-    animation-delay: 9s;
+    animation-delay: 6s;
   }
   .status-dot {
-    animation: status-breathe 3.6s ease-in-out infinite;
+    animation: status-breathe 2.4s ease-in-out infinite;
   }
 }
 
@@ -179,53 +181,14 @@
 @keyframes status-breathe {
   0%,
   100% {
-    opacity: 0.5;
-    scale: 0.85;
+    opacity: 0.45;
+    scale: 0.8;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand-warm) 55%, transparent);
   }
   50% {
     opacity: 1;
     scale: 1;
-  }
-}
-
-/* The rulebook ticker. Eight copies of the same set, shifted by exactly one
-   set (100% / 8), so the seam can never show on any viewport narrower than
-   seven sets. The extra copies are hidden from screen readers. */
-.marquee {
-  position: absolute;
-  inset-inline: 0;
-  overflow: hidden;
-  pointer-events: none;
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-}
-
-.marquee-track {
-  display: flex;
-  width: max-content;
-}
-
-.marquee-set {
-  display: flex;
-}
-
-.marquee-line::after {
-  content: "·";
-  margin-inline: 1.15rem;
-  opacity: 0.55;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .marquee-track {
-    animation: marquee-run 64s linear infinite;
-  }
-}
-
-@keyframes marquee-run {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-12.5%);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-brand-warm) 0%, transparent);
   }
 }
 

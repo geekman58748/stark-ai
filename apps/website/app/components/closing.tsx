@@ -10,30 +10,34 @@ const floaters = [
     icon: Icons.Electricity,
     className: "left-[6%] top-10 size-[72px] -rotate-8",
     enter: "0ms",
-    drift: "11s",
+    drift: "5.5s",
+    amp: "14px",
   },
   {
     icon: Icons.Airtime,
     className: "right-[7%] top-[30px] size-[72px] rotate-10",
-    enter: "70ms",
-    drift: "13.5s",
+    enter: "180ms",
+    drift: "6.5s",
+    amp: "18px",
   },
-  { icon: Icons.Tv, className: "left-[12%] bottom-[120px] size-14", enter: "140ms", drift: "9.5s" },
+  {
+    icon: Icons.Tv,
+    className: "left-[12%] bottom-[120px] size-14",
+    enter: "360ms",
+    drift: "4.5s",
+    amp: "10px",
+  },
   {
     icon: Icons.Data,
     className: "right-[12%] bottom-[130px] size-14 -rotate-6",
-    enter: "210ms",
-    drift: "12.5s",
+    enter: "540ms",
+    drift: "6s",
+    amp: "16px",
   },
 ];
 
 /** Three true things, one at a time. The first line is the one reduced motion keeps. */
 const statuses = ["Voice ready · Daniel", "Dry-run · nothing charged", "Built on NEAR"];
-
-/** The rulebook, scrolling under the pill. The safety section says the same three things. */
-const rules = ["a limit it can’t cross", "bills, and nothing else", "a receipt for every naira"];
-
-const marqueeCopies = 8;
 
 export function Closing() {
   const ref = useRef<HTMLElement>(null);
@@ -49,6 +53,15 @@ export function Closing() {
       return;
     }
 
+    // Already on screen (a short page, a tall monitor, a deep link): reveal now.
+    // Arming here would leave the chips at opacity 0 forever, because there is
+    // nothing left to scroll and the observer would never cross its margin.
+    const rect = node.getBoundingClientRect();
+    if (rect.top < window.innerHeight && rect.bottom > 0) {
+      setPhase("in");
+      return;
+    }
+
     setPhase("armed");
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -56,7 +69,7 @@ export function Closing() {
         setPhase("in");
         observer.disconnect();
       },
-      { rootMargin: "0px 0px -12% 0px" },
+      { rootMargin: "0px 0px -8% 0px" },
     );
 
     observer.observe(node);
@@ -72,7 +85,7 @@ export function Closing() {
         phase === "in" && "is-in",
       )}
     >
-      <div className="relative mx-auto flex max-w-[720px] flex-col items-center gap-7 px-4 pt-28 pb-44 text-center sm:px-6 sm:pt-[120px] sm:pb-[180px]">
+      <div className="relative mx-auto flex max-w-[720px] flex-col items-center gap-7 px-4 pt-28 pb-32 text-center sm:px-6 sm:pt-[120px] sm:pb-[136px]">
         <h2 className="relative z-0 m-0 font-serif text-[clamp(30px,4.4vw,60px)] leading-[1.08] font-normal tracking-[-0.02em]">
           Keep the lights on,
           <br />
@@ -93,11 +106,11 @@ export function Closing() {
           </a>
         </div>
       </div>
-      {floaters.map(({ icon: Icon, className, enter, drift }) => (
+      {floaters.map(({ icon: Icon, className, enter, drift, amp }) => (
         <span
           key={className}
           aria-hidden="true"
-          style={{ "--enter": enter, "--drift": drift } as CSSProperties}
+          style={{ "--enter": enter, "--drift": drift, "--amp": amp } as CSSProperties}
           className={cn(
             "floater absolute hidden items-center justify-center rounded-full bg-white text-brand shadow-[0_4px_12px_rgba(15,17,21,0.12)] sm:flex",
             className,
@@ -106,19 +119,6 @@ export function Closing() {
           <Icon size={26} />
         </span>
       ))}
-      <div className="marquee bottom-[118px] font-mono text-[10.5px] tracking-[0.2em] text-ink-2/60 uppercase sm:bottom-[92px]">
-        <div className="marquee-track">
-          {Array.from({ length: marqueeCopies }, (_, copy) => (
-            <span key={copy} aria-hidden={copy > 0 || undefined} className="marquee-set">
-              {rules.map((rule) => (
-                <span key={rule} className="marquee-line">
-                  {rule}
-                </span>
-              ))}
-            </span>
-          ))}
-        </div>
-      </div>
       <footer className="absolute inset-x-4 bottom-6 mx-auto flex max-w-[1240px] flex-wrap items-center justify-between gap-3 rounded-full border border-white/70 bg-white/42 px-6 py-3.5 text-xs text-ink-2 shadow-[0_8px_30px_rgba(15,17,21,0.08)] backdrop-blur-lg backdrop-saturate-140 sm:inset-x-6">
         <span className="powerline" aria-hidden="true" />
         <span className="flex items-center gap-2">
