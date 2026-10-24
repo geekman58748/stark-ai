@@ -26,6 +26,7 @@ const tabs = [
 
 const pageNames: [string, string][] = [
   ["/bills", "Bills"],
+  ["/connect", "Connect a chat"],
   ["/pay", "Pay a bill"],
   ["/activity", "Activity"],
   ["/wallet", "Wallet"],

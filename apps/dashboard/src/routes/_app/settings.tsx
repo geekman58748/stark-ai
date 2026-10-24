@@ -18,7 +18,7 @@ import { SectionHeading } from "@stark/ui/components/section-heading";
 import { Spinner } from "@stark/ui/components/spinner";
 import { formatNaira } from "@stark/utils/format";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageTitle } from "@/components/app-shell";
 
@@ -114,6 +114,15 @@ function Settings() {
           Voice notes only count when they include the word “Stark”, so everyday talk in the room
           never triggers a payment.
         </p>
+        <Button
+          variant="secondary"
+          nativeButton={false}
+          render={<Link to="/connect" />}
+          className="min-h-10 self-start"
+        >
+          <Icons.Telegram size={16} />
+          Connect a chat
+        </Button>
       </Card>
 
       {import.meta.env.DEV ? <ResetDemo /> : null}

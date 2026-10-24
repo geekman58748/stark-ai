@@ -1213,6 +1213,20 @@ def h_reset(_body=None, _params=None) -> tuple[int, dict]:
     return 200, {"reset": True}
 
 
+def h_link_code(_body) -> tuple[int, dict]:
+    """`POST /v1/link/code` — one single-use code that ties a chat to this account.
+
+    Additive (2026-10-25). The Telegram door only trusts an identity bound in
+    `identities.py`, and nothing minted codes, so every `/link` was refused.
+    The response carries the bot's username and a `t.me` deep link when the
+    token is configured and Telegram answers, so the Connect screen can offer
+    one tap instead of six digits typed by hand.
+    """
+    payload = TG_ADAPTER.link_code()
+    payload["user_id"] = OWNER_USER_ID
+    return 200, payload
+
+
 def h_tg(raw: bytes, headers) -> tuple[int, dict]:
     """Telegram webhook. Verifies before parsing, per HANDOFF §8A.
 
@@ -1282,6 +1296,7 @@ ROUTES = [
     ("POST", r"^/v1/voice$", h_voice),
     ("POST", r"^/v1/speak$", h_speak),
     ("GET", r"^/v1/speak/stream$", h_speak_stream),
+    ("POST", r"^/v1/link/code$", h_link_code),
     ("POST", r"^/v1/tg/webhook$", h_tg),
     # Stub-only. Not part of the product contract; safe to ignore from the frontend.
     ("POST", r"^/v1/_stub/reset$", h_reset),

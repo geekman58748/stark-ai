@@ -109,6 +109,16 @@ export function useVoiceAudio() {
   });
 }
 
+/**
+ * Mint a link code on demand. Deliberately not a query: each call creates a
+ * new code, and a cached one would be a code the user cannot see.
+ */
+export function useLinkCode() {
+  return useMutation({
+    mutationFn: () => api.linkCode(),
+  });
+}
+
 export function useResetDemo() {
   const qc = useQueryClient();
   return useMutation({

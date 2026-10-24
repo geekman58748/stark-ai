@@ -1144,6 +1144,19 @@ Item 7 is the next code.**
    (§10.3) *before* any README claim — the wake gate already sits server-side
    (`h_voice`), so nothing there is waiting.
 
+   **Identity linking is finished (2026-10-25).** The gap was that nothing except
+   tests could mint a code, so every `/link` in a real chat was refused. Now
+   `POST /v1/link/code` mints one (single-use, 10 minutes) with the bot's `t.me`
+   deep link, `/start <code>` redeems it as well as `/link <code>`, and the
+   dashboard's **Connect a chat** screen (`/connect`, linked from Settings) shows
+   the digits and the one-tap link. The bot exists on BotFather as
+   **@hellostarkai_bot** and the webhook is registered against
+   `https://geddon.hellostark.xyz/v1/tg/webhook`. Still human-gated: the deployed
+   `stark-api` needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` in the
+   Brimble dashboard, because secrets live there and not in `brimble.toml`.
+   Until then the live webhook answers `401 webhook_unconfigured` and Telegram
+   reports a delivery error — the code path itself is verified locally.
+
 **Never without explicit human confirmation:** submit the application, publish on X, make
 the repo public, sign transactions, spend tokens, deploy to mainnet, or commit secrets.
 

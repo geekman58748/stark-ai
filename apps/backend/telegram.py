@@ -48,6 +48,7 @@ import audio
 import stt
 import tts
 import wake
+from identities import CODE_TTL_SECONDS
 
 CHANNEL = "telegram"
 
@@ -136,6 +137,32 @@ def send_message(chat_id: int, text: str, *, bot_token: str,
         return False
 
 
+_USERNAME_CACHE: dict[str, str | None] = {}
+
+
+def bot_username(bot_token: str | None, *, timeout: float = 8.0) -> str | None:
+    """The bot's own @username, for a `t.me` deep link.
+
+    Cached per token — a username never changes, and the Connect screen asks
+    every time it opens. Failures are deliberately *not* cached: a box that was
+    offline when it booted should not be stuck without a deep link for life.
+    """
+    if not bot_token:
+        return None
+    if bot_token in _USERNAME_CACHE:
+        return _USERNAME_CACHE[bot_token]
+    try:
+        with urllib.request.urlopen(
+            f"{TELEGRAM_API}/bot{bot_token}/getMe", timeout=timeout
+        ) as res:
+            info = json.loads(res.read() or b"{}")
+        username = (info.get("result") or {}).get("username")
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return None
+    _USERNAME_CACHE[bot_token] = username
+    return username
+
+
 def send_voice_note(chat_id: int, ogg: bytes, *, bot_token: str,
                     timeout: float = 30.0) -> bool:
     """One voice note (OGG/Opus). Never raises — same rule as `send_message`:
@@ -172,6 +199,9 @@ class TelegramAdapter:
     download: Callable[[str], bytes | None] | None = None
     transcribe: Callable[[bytes], tuple[str | None, str]] | None = None
     send: Callable[[int, str], bool] | None = None
+    # Resolving the bot's @username for a deep link. Injected in tests so the
+    # Connect screen's payload is asserted without a network call.
+    username_lookup: Callable[[str | None], str | None] | None = None
     # Speaking the reply: text → OGG/Opus bytes, and how those bytes go out.
     # Both injected in tests; live they default to tts.voice_note / the API.
     speak: Callable[[str], bytes | None] | None = None
@@ -186,6 +216,25 @@ class TelegramAdapter:
     def enabled(self) -> bool:
         """Both secrets present. Otherwise every update is refused."""
         return bool(self.bot_token and self.secret)
+
+    def link_code(self) -> dict[str, Any]:
+        """Mint one single-use code, plus the deep link that spends it.
+
+        The code is the only thing that binds a chat to this account (see
+        `identities.py`), so it is returned exactly once and never logged.
+        `deep_link` is None when the bot has no token or Telegram could not be
+        reached — the code still works, typed by hand as `link 482913`.
+        """
+        code = self.identities.issue_code(self.owner_user_id)
+        lookup = self.username_lookup or bot_username
+        username = lookup(self.bot_token)
+        return {
+            "code": code,
+            "channel": CHANNEL,
+            "expires_in": CODE_TTL_SECONDS,
+            "bot_username": username,
+            "deep_link": f"https://t.me/{username}?start={code}" if username else None,
+        }
 
     def verify_secret(self, header_value: str | None) -> None:
         """Raise TelegramError unless the webhook is authenticated."""
@@ -336,24 +385,36 @@ class TelegramAdapter:
             self.log(f"telegram stt failed: {why}")
         return text
 
+    def link_with(self, code: str, channel_user_id: str,
+                  display_name: str | None) -> str:
+        """Redeem a link code for this chat — the `/link` and deep-link path."""
+        if self.identities.resolve(CHANNEL, channel_user_id):
+            return "This chat is already linked. /whoami to check, /unlink to remove."
+        if not code:
+            return "Send the code from the app like this: link 482913"
+        user_id = self.identities.consume_code(code, CHANNEL, channel_user_id, display_name)
+        if user_id is None:
+            return ("That code did not work. Codes expire after 10 minutes and "
+                    "are single-use — get a fresh one in the app.")
+        return "Linked. Ask me for your balance, or say 'hello stark pay 5000 for electricity'."
+
     def _command(self, text: str, channel_user_id: str, display_name: str | None) -> str:
         parts = text.split()
         verb = parts[0].split("@")[0].lower()
 
         if verb in ("/start", "/help"):
+            # A deep link (t.me/<bot>?start=482913) arrives as "/start 482913".
+            # Only a six-digit payload is treated as a code: anything else must
+            # stay the welcome text, because every failed redeem burns one of
+            # the chat's five attempts in `identities.py`.
+            payload = parts[1] if len(parts) > 1 else ""
+            if len(payload) == 6 and payload.isdigit():
+                return self.link_with(payload, channel_user_id, display_name)
             return HELP_TEXT
 
         if verb == "/link":
-            if self.identities.resolve(CHANNEL, channel_user_id):
-                return "This chat is already linked. /whoami to check, /unlink to remove."
             code = parts[1] if len(parts) > 1 else ""
-            if not code:
-                return "Send the code from the app like this: link 482913"
-            user_id = self.identities.consume_code(code, CHANNEL, channel_user_id, display_name)
-            if user_id is None:
-                return ("That code did not work. Codes expire after 10 minutes and "
-                        "are single-use — get a fresh one in the app.")
-            return f"Linked. Ask me for your balance, or say 'hello stark pay 5000 for electricity'."
+            return self.link_with(code, channel_user_id, display_name)
 
         if verb == "/whoami":
             user_id = self.identities.resolve(CHANNEL, channel_user_id)

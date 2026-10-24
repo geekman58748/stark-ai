@@ -150,6 +150,21 @@ export type BillPatch = {
   /** Additive: set a date (YYYY-MM-DD) or clear it with "". */
   renews_on?: string;
 };
+/**
+ * A single-use code that binds a chat to this account. Returned once, by
+ * `POST /v1/link/code`; the server keeps only a hash of it.
+ */
+export type LinkCode = {
+  code: string;
+  channel: string;
+  /** Seconds until it expires. */
+  expires_in: number;
+  bot_username: string | null;
+  /** `https://t.me/<bot>?start=<code>` — null when the bot has no token. */
+  deep_link: string | null;
+  user_id?: string;
+};
+
 export type LimitsPatch = { monthly_cap_ngn?: number; per_payment_cap_ngn?: number };
 export type PaymentInput = { bill_id: string; amount_ngn: number };
 export type TopUpInput = { amount_ngn: number; request_id?: string; source?: string };

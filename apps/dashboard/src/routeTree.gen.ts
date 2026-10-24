@@ -13,6 +13,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as TalkRouteImport } from './routes/talk'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppActivityRouteImport } from './routes/_app/activity'
+import { Route as AppConnectRouteImport } from './routes/_app/connect'
 import { Route as AppPayRouteImport } from './routes/_app/pay'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as StartIndexRouteImport } from './routes/start/index'
@@ -41,6 +42,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppActivityRoute = AppActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppConnectRoute = AppConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPayRoute = AppPayRouteImport.update({
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/talk': typeof TalkRoute
   '/activity': typeof AppActivityRoute
+  '/connect': typeof AppConnectRoute
   '/pay': typeof AppPayRoute
   '/settings': typeof AppSettingsRoute
   '/start/bill': typeof StartBillRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/talk': typeof TalkRoute
   '/activity': typeof AppActivityRoute
+  '/connect': typeof AppConnectRoute
   '/pay': typeof AppPayRoute
   '/settings': typeof AppSettingsRoute
   '/start/bill': typeof StartBillRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/talk': typeof TalkRoute
   '/_app/activity': typeof AppActivityRoute
+  '/_app/connect': typeof AppConnectRoute
   '/_app/pay': typeof AppPayRoute
   '/_app/settings': typeof AppSettingsRoute
   '/start/bill': typeof StartBillRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/'
     | '/talk'
     | '/activity'
+    | '/connect'
     | '/pay'
     | '/settings'
     | '/start/bill'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
   to:
     | '/talk'
     | '/activity'
+    | '/connect'
     | '/pay'
     | '/settings'
     | '/start/bill'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/talk'
     | '/_app/activity'
+    | '/_app/connect'
     | '/_app/pay'
     | '/_app/settings'
     | '/start/bill'
@@ -226,6 +238,13 @@ declare module '@tanstack/react-router' {
       path: '/activity'
       fullPath: '/activity'
       preLoaderRoute: typeof AppActivityRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/connect': {
+      id: '/_app/connect'
+      path: '/connect'
+      fullPath: '/connect'
+      preLoaderRoute: typeof AppConnectRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/pay': {
@@ -303,6 +322,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppActivityRoute: typeof AppActivityRoute
+  AppConnectRoute: typeof AppConnectRoute
   AppPayRoute: typeof AppPayRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
@@ -315,6 +335,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppActivityRoute: AppActivityRoute,
+  AppConnectRoute: AppConnectRoute,
   AppPayRoute: AppPayRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,

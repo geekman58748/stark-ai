@@ -616,6 +616,37 @@ in the DM skip it — you already know who you are talking to.
 Errors: `webhook_unconfigured` (401), `webhook_unverified` (401),
 `bad_update` (400, body is not JSON).
 
+### `POST /v1/link/code`
+
+**Additive (2026-10-25).** The app half of identity linking: mints one
+single-use code that binds a chat to this account. Before this existed, only
+tests could mint a code, so every `/link` in a real chat was refused.
+
+The server stores a hash of the code, never the code itself, so this response is
+the only time it is readable.
+
+```json
+{
+  "code": "491804",
+  "channel": "telegram",
+  "expires_in": 600,
+  "bot_username": "hellostarkai_bot",
+  "deep_link": "https://t.me/hellostarkai_bot?start=491804",
+  "user_id": "user_tunde"
+}
+```
+
+`deep_link` is `null` when the server has no `TELEGRAM_BOT_TOKEN` or Telegram
+was unreachable — the code still works, typed by hand as `link 491804`. The
+code expires after `expires_in` seconds (10 minutes), is single-use, and a chat
+gets five redeem attempts before it is locked out. Redeeming it links the chat
+(`/start <code>` from the deep link, or `/link <code>` typed); an already-linked
+chat is never rebound and must `/unlink` first.
+
+No request body. Errors: none specific — a failure to reach Telegram degrades to
+`deep_link: null` rather than an error, because the code is the part that
+matters.
+
 ### `GET /v1/turnlog`
 
 **Debug route, not part of the product contract** (2026-10-24). The
@@ -698,3 +729,4 @@ Shapes will not change as these land. Only the values become real.
 | 2026-10-22 | Additive endpoints for the design's screens: `GET /v1/plans`, `POST`/`PATCH`/`DELETE /v1/bills`, `GET`/`PATCH /v1/limits`, `GET /v1/wallet`, `POST /v1/wallet/topup`, `POST /v1/wallet/withdraw`. New codes `over_per_payment_cap`, `bad_kind`, `bad_reference`, `bad_bill`, `unsupported_product`, `plan_required`, `unknown_plan`, `duplicate_bill`, `bill_in_flight`, `bad_limits`. `Receipt.type` gains `withdrawal`. No existing shape changed. |
 | 2026-10-24 | Reminders, real suggestions, real audio in. `Bill` gains `renews_on`; `/v1/state` gains `due_soon`; `PATCH /v1/bills` accepts and clears `renews_on`; `/v1/suggestions` computed from state instead of seeded copy; `/v1/voice` accepts base64/multipart `audio` and returns `stt`. New codes `bad_renews_on`, `bad_audio`, `audio_too_large`. `GET /v1/speak/stream` added. No existing shape changed. |
 | 2026-10-24 | Debug route added: `GET /v1/turnlog` reads the conversation log back (404 `turnlog_off` when the log is off), and a logged turn gains `conversation` — the full message exchange with the model. No existing shape changed. |
+| 2026-10-25 | `POST /v1/link/code` added: a single-use, 10-minute code plus the bot's `t.me` deep link, so a chat can be linked from the app. `/start <code>` now redeems it too. No existing shape changed. |

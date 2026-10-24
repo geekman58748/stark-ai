@@ -148,6 +148,43 @@ class TestIdentityGate(AdapterCase):
         self.assertEqual(self.adapter.stats["duplicates"], 1)
 
 
+class TestLinkCode(AdapterCase):
+    """The app half of linking: mint a code, then redeem it from a chat."""
+
+    def _say(self, text: str, chat_id: int = 42):
+        return self.adapter._route(_update(text=text).get("message"), text,
+                                   str(chat_id), "Tunde", chat_id)
+
+    def test_payload_carries_a_code_and_a_deep_link(self):
+        self.adapter.username_lookup = lambda token: "hellostarkai_bot"
+        payload = self.adapter.link_code()
+        self.assertRegex(payload["code"], r"^\d{6}$")
+        self.assertEqual(payload["expires_in"], identities.CODE_TTL_SECONDS)
+        self.assertEqual(payload["bot_username"], "hellostarkai_bot")
+        self.assertEqual(payload["deep_link"],
+                         f"https://t.me/hellostarkai_bot?start={payload['code']}")
+
+    def test_deep_link_redeems_the_code(self):
+        code = self.adapter.link_code()["code"]
+        self.assertIn("Linked", self._say(f"/start {code}"))
+        self.assertEqual(self.ids.resolve(telegram.CHANNEL, "42"), "user_tunde")
+
+    def test_no_username_means_no_deep_link_but_the_code_still_works(self):
+        self.adapter.username_lookup = lambda token: None
+        payload = self.adapter.link_code()
+        self.assertIsNone(payload["deep_link"])
+        self.assertIn("Linked", self._say(f"/link {payload['code']}"))
+
+    def test_start_without_a_code_stays_the_welcome_text(self):
+        # A stray payload must not burn one of the chat's five attempts.
+        self.assertEqual(self._say("/start hello"), telegram.HELP_TEXT)
+
+    def test_a_code_never_rebinds_a_linked_chat(self):
+        self.linked()
+        code = self.adapter.link_code()["code"]
+        self.assertIn("already linked", self._say(f"/start {code}"))
+
+
 class TestVoice(AdapterCase):
     def setUp(self):
         super().setUp()

@@ -5,6 +5,7 @@ import type {
   BillPatch,
   Limits,
   LimitsPatch,
+  LinkCode,
   NewBill,
   PaymentInput,
   Plan,
@@ -86,6 +87,8 @@ export const api = {
   topUp: (input: TopUpInput) => request<WalletMovement>("POST", "/v1/wallet/topup", input),
   withdraw: (input: WithdrawInput) => request<WalletMovement>("POST", "/v1/wallet/withdraw", input),
   suggestions: () => request<Suggestion[]>("GET", "/v1/suggestions"),
+  /** A fresh single-use code for linking a chat. Every call mints a new one. */
+  linkCode: () => request<LinkCode>("POST", "/v1/link/code", {}),
   voice: (transcript_hint: string, opts?: { speak?: boolean }) =>
     request<VoiceReply>("POST", "/v1/voice", {
       transcript_hint,
