@@ -15,10 +15,14 @@ Ikeja Electric "Home meter", DStv Compact, MTN airtime, "4 days left").
 from __future__ import annotations
 
 import base64
+import binascii
 import copy
+import itertools
 import json
 import os
 import re
+import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,10 +34,15 @@ import catalog
 import identities
 import payments
 import receipts
+import reminders
+import stt
+import suggestions
 import telegram
 import tts
+import turnlog
 import vault_signer
 import vending
+import wake
 
 
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -68,6 +77,15 @@ def ago(days: int = 0, hours: int = 0, minutes: int = 0) -> str:
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def in_days(days: int) -> str:
+    """A calendar date `days` from now, as `renews_on` wants it (YYYY-MM-DD).
+
+    Seeded dates move with the clock, like every other timestamp here, so a
+    demo run always has one bill inside the reminder window.
+    """
+    return (datetime.now(timezone.utc) + timedelta(days=days)).date().isoformat()
+
+
 # Meter / phone / smartcard numbers are fake but shaped like the real thing.
 BILLS: dict[str, dict[str, Any]] = {
     b["id"]: b
@@ -93,7 +111,10 @@ BILLS: dict[str, dict[str, Any]] = {
             # different bouquet. See `catalog.py`.
             "plan": "dstv79",
             # No DStv payment in the seeded history: the artboards show it due
-            # on Nov 3, not recently paid.
+            # on Nov 3, not recently paid. The renewal date is seeded relative
+            # (like every timestamp) so the reminder window always has a bill
+            # in it — see `reminders.py`.
+            "renews_on": in_days(3),
             "last_amount_ngn": None,
             "last_units": None,
             "last_paid_at": None,
@@ -296,10 +317,14 @@ class ApiError(Exception):
         self.body = {"code": code, "message": message, "detail": detail or {}}
 
 
+def has_electricity() -> bool:
+    return any(b["kind"] == "electricity" for b in BILLS.values())
+
+
 def state() -> dict[str, Any]:
     wallet = STORE.wallet() or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
     balance, spent = wallet["balance_ngn"], wallet["spent_ngn"]
-    has_electricity = any(b["kind"] == "electricity" for b in BILLS.values())
+    powered = has_electricity()
     return {
         "user_id": "user_tunde",
         "first_name": "Tunde",
@@ -308,9 +333,13 @@ def state() -> dict[str, Any]:
         "cap_ngn": LIMITS.monthly_cap_ngn,
         "spent_ngn": spent,
         "remaining_cap_ngn": max(LIMITS.monthly_cap_ngn - spent, 0),
-        "units_left": UNITS_LEFT if has_electricity else None,
-        "days_left": DAYS_LEFT if has_electricity else None,
+        "units_left": UNITS_LEFT if powered else None,
+        "days_left": DAYS_LEFT if powered else None,
         "bills": list(BILLS.values()),
+        # Additive (docs/API.md): bills with a renewal inside the reminder
+        # window, soonest first. The agent's snapshot and the dashboard's
+        # "Stark noticed" block both read it from here.
+        "due_soon": reminders.due_soon(BILLS.values()),
         "as_of": now_iso(),
     }
 
@@ -415,6 +444,12 @@ def h_bill_add(body) -> tuple[int, dict]:
     label = str(body.get("label") or "").strip() or provider
     plan = str(body.get("plan") or "").strip() or None
     plan_price: int | None = None
+    renews_on: str | None = None
+    if body.get("renews_on"):
+        day = reminders.parse_date(body["renews_on"])
+        if day is None:
+            raise ApiError(400, "bad_renews_on", "renews_on must be a date like 2026-11-03.")
+        renews_on = day.isoformat()
 
     if kind == "electricity":
         # Only Ikeja is confirmed. Pretending another DISCO works would vend on
@@ -463,6 +498,8 @@ def h_bill_add(body) -> tuple[int, dict]:
         bill["plan"] = plan
     if plan_price is not None:
         bill["plan_price_ngn"] = plan_price
+    if renews_on:
+        bill["renews_on"] = renews_on
     BILLS[bill["id"]] = bill
     _rebuild_limits()
     return 201, bill
@@ -489,6 +526,17 @@ def h_bill_update(body, params) -> tuple[int, dict]:
             raise ApiError(400, "unknown_plan", f"No '{code}' plan for {product.name}.")
         bill["plan"] = chosen.code
         bill["plan_price_ngn"] = chosen.price_ngn
+    if "renews_on" in body:
+        # A user repairing the calendar is the point of the field: set it to a
+        # date, or clear it with "" for a bill that does not renew on a cycle.
+        raw_date = str(body.get("renews_on") or "").strip()
+        if not raw_date:
+            bill.pop("renews_on", None)
+        else:
+            day = reminders.parse_date(raw_date)
+            if day is None:
+                raise ApiError(400, "bad_renews_on", "renews_on must be a date like 2026-11-03.")
+            bill["renews_on"] = day.isoformat()
     return 200, bill
 
 
@@ -621,16 +669,79 @@ AGENT = agent_layer.build_agent(
     ServerToolbox(), LIMITS, signer=vault_signer.signer_from_env()
 )
 
+OWNER_USER_ID = os.environ.get("STARK_TG_OWNER_ID", "user_tunde")
+
 # M4: the Telegram door. Same database as the receipts. Refuses every update
 # until TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET are set (fail closed).
+# Voice notes transcribe through the same Whisper the web door uses; the OGG
+# mime is Telegram's own format.
 TG_ADAPTER = telegram.TelegramAdapter(
     agent=AGENT,
     identities=identities.IdentityStore(STORE.path),
     bot_token=os.environ.get("TELEGRAM_BOT_TOKEN"),
     secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
-    owner_user_id=os.environ.get("STARK_TG_OWNER_ID", "user_tunde"),
+    owner_user_id=OWNER_USER_ID,
+    transcribe=lambda clip: stt.transcribe(clip, mime="audio/ogg"),
     log=lambda line: print(f"  [tg] {line}"),
 )
+
+
+# --- reminder loop -----------------------------------------------------------
+# The push half of the reminders feature, stubbed honestly: when a saved bill
+# is inside its renewal window and a Telegram chat is linked, Stark says so
+# first instead of waiting to be asked. It runs only when a bot token exists
+# (there is nowhere to push without one) and the same facts are always in
+# /v1/state and the agent's snapshot, so nothing depends on the thread.
+
+REMINDERS = reminders.NotifyLog()
+REMINDER_TICK_SECONDS = int(os.environ.get("STARK_REMINDER_TICK", "300"))
+
+
+def due_reminder_lines() -> list[str]:
+    """The reminders due right now, as spoken lines. Pure read: claims nothing."""
+    return [reminders.line(item) for item in reminders.due_soon(BILLS.values())]
+
+
+def push_due_reminders() -> list[str]:
+    """Nudge linked Telegram chats about unclaimed renewals. Returns the lines.
+
+    Without a token nothing is claimed and nothing is sent — the caller (or a
+    test) can still read what *would* go out. With one, each renewal is
+    claimed before it is sent, so a chat is never nudged twice for one date.
+    """
+    if not TG_ADAPTER.bot_token:
+        return [reminders.push_text(item) for item in reminders.due_soon(BILLS.values())]
+
+    sent: list[str] = []
+    for item in reminders.due_for_push(BILLS.values(), log=REMINDERS):
+        text = reminders.push_text(item)
+        for ident in TG_ADAPTER.identities.identities_for(OWNER_USER_ID):
+            if ident["channel"] != "telegram":
+                continue
+            try:
+                chat_id = int(ident["channel_user_id"])
+            except ValueError:
+                continue
+            telegram.send_message(chat_id, text, bot_token=TG_ADAPTER.bot_token)
+        TG_ADAPTER.log(f"reminder: {text}")
+        sent.append(text)
+    return sent
+
+
+def start_reminder_loop(tick_seconds: int = REMINDER_TICK_SECONDS) -> threading.Event:
+    """Daemon thread; returns the stop event. Started from main(), never on
+    import — a unit test must not inherit a background loop."""
+    stop = threading.Event()
+
+    def run() -> None:
+        while not stop.wait(tick_seconds):
+            try:
+                push_due_reminders()
+            except Exception as err:  # a broken tick must not kill the server
+                print(f"  reminder tick failed: {err}")
+
+    threading.Thread(target=run, daemon=True, name="reminders").start()
+    return stop
 
 
 def _limits_payload() -> dict[str, Any]:
@@ -786,20 +897,25 @@ def h_wallet_withdraw(body) -> tuple[int, dict]:
 
 
 def h_suggestions(_) -> tuple[int, dict]:
-    return 200, [
-        {
-            "id": "sug_units",
-            "text": f"About {UNITS_LEFT:g} units left — roughly {DAYS_LEFT} days.",
-            "severity": "warn",
-            "reason": "units_low",
-        },
-        {
-            "id": "sug_ac",
-            "text": "Your AC is 78% of your usage this week.",
-            "severity": "info",
-            "reason": "load_imbalance",
-        },
-    ]
+    """What Stark notices on its own — computed from live state, never invented.
+
+    Every line comes from `suggestions.build`: the meter, the wallet, delivered
+    receipts, telemetry and the renewal calendar. A signal without data behind
+    it is not returned — the old hardcoded "AC is 78%" line is gone, and an
+    empty list is the honest answer when nothing needs attention.
+    """
+    wallet = STORE.wallet() or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
+    powered = has_electricity()
+    return 200, suggestions.build(
+        bills=list(BILLS.values()),
+        units_left=UNITS_LEFT if powered else None,
+        days_left=DAYS_LEFT if powered else None,
+        spent_ngn=wallet["spent_ngn"],
+        cap_ngn=LIMITS.monthly_cap_ngn,
+        telemetry=TELEMETRY,
+        receipts=PAYMENTS.recent(50),
+        tariff_ngn_per_kwh=TARIFF_NGN_PER_KWH,
+    )
 
 
 def h_telemetry(body) -> tuple[int, dict]:
@@ -817,31 +933,256 @@ def h_telemetry(body) -> tuple[int, dict]:
     return 202, {"accepted": True, "count": len(TELEMETRY)}
 
 
-def h_voice(body) -> tuple[int, dict]:
+MAX_AUDIO_BYTES = 8 * 1024 * 1024   # a minute of clipped speech, generously
+
+# Why a clip came back unheard. Both are honest: one says what is missing,
+# one asks for the words again. Neither pretends the speech was understood.
+VOICE_UNHEARD = {
+    stt.NO_KEY: "I can't hear voice yet, this server has no speech key. Type instead.",
+    stt.FAILED: "I didn't catch that. Say it again?",
+}
+
+
+def _audio_bytes(body, raw: bytes, content_type: str) -> tuple[bytes | None, str | None]:
+    """The clip a client uploaded, if any: `(bytes, mime)`, else `(None, None)`.
+
+    Two shapes on purpose — base64 JSON for `packages/api`, multipart file for
+    anything that streams one — so one broken encoding cannot mute a whole
+    door. `parse_form` decodes binary as text, so the bytes always come from
+    the raw body or the base64 field, never from the parsed form.
+    """
+    field = str(body.get("audio") or "")
+    if field:
+        b64 = field.split(",", 1)[1] if field.startswith("data:") else field
+        try:
+            data = base64.b64decode(b64, validate=True)
+        except (ValueError, binascii.Error) as err:
+            raise ApiError(400, "bad_audio", "`audio` must be base64 audio data.") from err
+        if len(data) > MAX_AUDIO_BYTES:
+            raise ApiError(413, "audio_too_large", "That clip is too long. Keep it under a minute.")
+        return data, (str(body.get("audio_type") or "").strip() or None)
+    if "multipart/form-data" in (content_type or "").lower():
+        match = re.search(
+            rb'name="audio"[^>]*?\r\n(?:Content-Type:\s*([^\r\n]+)\r\n)?\r\n(.*?)\r\n--',
+            raw, re.S,
+        )
+        if match:
+            data = match.group(2)
+            if len(data) > MAX_AUDIO_BYTES:
+                raise ApiError(413, "audio_too_large", "That clip is too long. Keep it under a minute.")
+            return data, ((match.group(1) or b"").decode() or None)
+    return None, None
+
+
+def _ms(since: float) -> int:
+    """Whole milliseconds since `since` — the log is read by humans."""
+    return int((time.perf_counter() - since) * 1000)
+
+
+def _model_name() -> str | None:
+    """Which model answered. Defensive: `model` sits behind a protocol."""
+    model = getattr(AGENT, "model", None)
+    return getattr(model, "model", None) or getattr(model, "name", None)
+
+
+def _turn_ms(started: float, *, has_clip: bool, stt_ms: int = 0) -> dict[str, int]:
+    """Stage timings, with `stt` only when there was a clip to transcribe.
+
+    A missing key means "this stage did not run"; `0` would read as "instant",
+    and the two are different complaints.
+    """
+    ms = {"total": _ms(started)}
+    if has_clip:
+        ms["stt"] = stt_ms
+    return ms
+
+
+def _log_turn(*, outcome: str, clip: bytes | None, mime: str | None,
+              heard: str = "", said: str | None = None,
+              stt: str | None = None, payload: dict | None = None,
+              speak: bool = True, ms: dict[str, int] | None = None) -> None:
+    """Append one conversation turn — see `turnlog` for what each field means.
+
+    Every exit from `h_voice` calls this: a turn Stark refused to hear and a
+    turn it answered are exactly the two a person wants to compare afterwards.
+    """
+    result = payload or {}
+    turnlog.record(turnlog.turn(
+        outcome=outcome, heard=heard, said=said, stt=stt,
+        reply=result.get("reply"), actions=result.get("actions"),
+        code=result.get("code"), receipt_id=result.get("receipt_id"),
+        token=result.get("token"), speak=speak, model=_model_name(), ms=ms,
+    ), clip=clip, mime=mime)
+
+
+def _tts_provider(why: str) -> str:
+    """The voice believed to have spoken: which one is *configured*.
+
+    `tts.synthesize` reports ok/failure, not which of the two providers
+    answered (both return `ok`), so this is a first-configured guess, not a
+    measurement. `why` when nothing spoke.
+    """
+    if why != tts.OK:
+        return why
+    return "elevenlabs" if os.environ.get("ELEVENLABS_API_KEY") else "kokoro"
+
+
+def h_voice(body, raw: bytes = b"", content_type: str = "") -> tuple[int, dict]:
     """One shape for Telegram, the wall phone and any future speaker.
 
     The wake gate stays here, in front of the agent, so Telegram and the phone
     share one implementation. Everything past it is M2: the model picks tools,
     the policy gate decides, and `reply` comes back already speakable.
 
+    M4 finish (2026-10-24): real audio in. Send the clip as base64 `audio`
+    (JSON) or an `audio` file part (multipart) and the server hears it —
+    Whisper transcribes, then the same wake gate and agent run on what came
+    back. `transcript_hint` still works and still wins nothing: audio is
+    checked first, so a browser that can record never has to pretend. The
+    `stt` field reports ok/no_key/failed — a transcript is never invented.
+
     Additive since the TTS sidecar: `audio` is the reply spoken by Kokoro, as
     a WAV data URL, and `null` whenever voice is off — no sidecar, sidecar
     down, or an ignored transcript. Clients that ignore the field see exactly
     the old behaviour (contract rule: additive only).
+
+    `speak: false` skips synthesis entirely: the words come back now and the
+    client fetches the voice from `POST /v1/speak` a moment later. The Talk
+    screen does this, because a reply you cannot read yet is not fast — and
+    speaking should never decide when text appears.
     """
-    transcript = body.get("transcript_hint") or "hello stark what's my light bill"
+    clip, mime = _audio_bytes(body, raw, content_type)
+    started = time.perf_counter()
+    # `parse_form` stringifies JSON, so `speak: false` arrives as "False" —
+    # accept every false-y spelling, and default to speaking. Read once, up
+    # front, so every exit from this handler can log whether voice was asked
+    # for, not just the one that synthesises it.
+    speak = str(body.get("speak", "true")).strip().lower()
+    wants_speak = speak not in ("false", "0", "no", "off")
+    transcript: str | None = None
+    stt_reason: str | None = None
+    ms_stt = 0
+    if clip is not None:
+        # `hear`, not `transcribe`: a browser records WebM/MP4, which the
+        # provider refuses as a container, so stt decodes those to WAV first.
+        since = time.perf_counter()
+        transcript, stt_reason = stt.hear(clip, mime=mime)
+        ms_stt = _ms(since)
+        if transcript is None:
+            # Unheard, honestly: empty transcript, the reason, and words the
+            # user can act on. The agent is never called on a guess.
+            unheard = VOICE_UNHEARD.get(stt_reason, VOICE_UNHEARD[stt.FAILED])
+            _log_turn(outcome="unheard", clip=clip, mime=mime, stt=stt_reason,
+                      payload={"reply": unheard}, speak=wants_speak,
+                      ms=_turn_ms(started, has_clip=True, stt_ms=ms_stt))
+            return 200, {
+                "transcript": "", "ignored": False,
+                "reply": unheard,
+                "token": None, "receipt_id": None, "audio": None,
+                "stt": stt_reason,
+            }
+    if transcript is None:
+        transcript = body.get("transcript_hint") or "hello stark what's my light bill"
 
-    if "stark" not in transcript.lower():
+    # One wake rule for every door (wake.py): a recognizer's "start" or "stock"
+    # for a spoken "stark" is still an address, and the agent is handed the
+    # words as if the wake word had been heard properly.
+    said = wake.wake_attempt(transcript)
+    if said is None:
+        _log_turn(outcome="asleep", clip=clip, mime=mime, heard=transcript,
+                  stt=stt_reason, speak=wants_speak,
+                  ms=_turn_ms(started, has_clip=clip is not None,
+                              stt_ms=ms_stt))
         return 200, {"transcript": transcript, "ignored": True, "reply": None,
-                     "token": None, "receipt_id": None, "audio": None}
+                     "token": None, "receipt_id": None, "audio": None,
+                     **({"stt": stt_reason} if stt_reason else {})}
 
-    payload = AGENT.respond(transcript).as_voice_payload(transcript)
-    wav, _why = tts.synthesize(payload["reply"])
+    since = time.perf_counter()
+    payload = AGENT.respond(said).as_voice_payload(transcript)
+    ms_agent = _ms(since)
+    if stt_reason:
+        payload["stt"] = stt_reason
+    if wants_speak:
+        since_tts = time.perf_counter()
+        wav, _why = tts.synthesize(payload["reply"])
+        ms_tts = _ms(since_tts)
+    else:
+        wav, ms_tts = None, 0
     payload["audio"] = (
         "data:audio/wav;base64," + base64.b64encode(wav).decode("ascii")
         if wav else None
     )
+    timings = _turn_ms(started, has_clip=clip is not None, stt_ms=ms_stt)
+    timings["agent"] = ms_agent
+    if wants_speak:
+        timings["tts"] = ms_tts
+    _log_turn(outcome="answered", clip=clip, mime=mime, heard=transcript,
+              said=said, stt=stt_reason, payload=payload, speak=wants_speak,
+              ms=timings)
     return 200, payload
+
+
+def h_speak(body) -> tuple[int, dict]:
+    """Speak text the client already has. `POST {"text": ...}` → `{"audio": ...}`.
+
+    Additive route (2026-10-23): the dashboard shows `/v1/voice` text first,
+    then calls this with the reply so the voice arrives without delaying the
+    reading. Always 200 with `audio: null` when voice is off — fail closed,
+    same as every other voice path — except for text that is not there to
+    speak, which is a 400.
+    """
+    text = (body.get("text") or "").strip() if isinstance(body, dict) else ""
+    if not text:
+        return 400, {"code": "bad_text", "message": "`text` is required.",
+                     "detail": {}}
+    since = time.perf_counter()
+    wav, _why = tts.synthesize(text)
+    turnlog.record(turnlog.speak(text=text, ms=_ms(since), reason=_why,
+                                 stream=False, provider=_tts_provider(_why)))
+    audio = (
+        "data:audio/wav;base64," + base64.b64encode(wav).decode("ascii")
+        if wav else None
+    )
+    return 200, {"audio": audio}
+
+
+def h_speak_stream(params) -> tuple[int, str | None, Any]:
+    """`GET /v1/speak/stream?text=...` → audio, sent as it is produced.
+
+    Additive route (2026-10-24). `POST /v1/speak` hands back a complete WAV,
+    which cannot start playing until synthesis is done (~1.4s); this one keeps
+    the socket fed so the player starts on the first few kilobytes. Returns
+    `(status, content_type, body)` where `body` is an iterable of chunks — the
+    handler streams it instead of buffering.
+
+    Fail closed like every other voice path: no text is a 400, and no provider
+    at all is a 503 with a JSON body, so a client that expected audio can tell
+    the difference between "quiet" and "refused".
+    """
+    text = (params.get("text") or "").strip()
+    if not text:
+        return 400, None, {"code": "bad_text", "message": "`text` is required.",
+                           "detail": {}}
+
+    # Peek at the first chunk: a key that cannot pay for the call, or a key
+    # that is not there, must not reach the client as a 200 of nothing.
+    # Timed to that first byte, because that is what the ear waits for.
+    since = time.perf_counter()
+    chunks = tts.stream_elevenlabs(text)
+    first = next(chunks, None)
+    if first is not None:
+        turnlog.record(turnlog.speak(text=text, ms=_ms(since), reason=tts.OK,
+                                     stream=True, provider="elevenlabs"))
+        return 200, "audio/mpeg", itertools.chain([first], chunks)
+
+    wav, _why = tts.synthesize(text)   # Kokoro (or nothing at all)
+    turnlog.record(turnlog.speak(text=text, ms=_ms(since), reason=_why,
+                                 stream=True,
+                                 provider=("kokoro" if wav else None)))
+    if wav:
+        return 200, "audio/wav", iter([wav])
+    return 503, None, {"code": "no_voice",
+                       "message": "No voice provider is available.", "detail": {}}
 
 
 def h_reset(_body=None, _params=None) -> tuple[int, dict]:
@@ -861,6 +1202,7 @@ def h_reset(_body=None, _params=None) -> tuple[int, dict]:
     _rebuild_limits(monthly_cap_ngn=CAP_NGN, per_payment_cap_ngn=PER_PAYMENT_CAP_NGN)
     UNITS_LEFT = SEED_UNITS_LEFT
     TELEMETRY = []
+    REMINDERS.clear()
     TG_ADAPTER.identities.clear()
     return 200, {"reset": True}
 
@@ -904,6 +1246,8 @@ ROUTES = [
     ("GET", r"^/v1/suggestions$", h_suggestions),
     ("POST", r"^/v1/telemetry$", h_telemetry),
     ("POST", r"^/v1/voice$", h_voice),
+    ("POST", r"^/v1/speak$", h_speak),
+    ("GET", r"^/v1/speak/stream$", h_speak_stream),
     ("POST", r"^/v1/tg/webhook$", h_tg),
     # Stub-only. Not part of the product contract; safe to ignore from the frontend.
     ("POST", r"^/v1/_stub/reset$", h_reset),
@@ -921,6 +1265,29 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+    def _stream(self, status: int, content_type: str, chunks) -> None:
+        """Send a body as it is produced — no Content-Length, so no buffering.
+
+        HTTP/1.0 (the default here) allows close-delimited bodies, which is why
+        the player can start before the last byte exists. A chunk that blows up
+        mid-stream ends the response rather than killing the server: the client
+        hears a truncated reply, not a dead API.
+        """
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-store")
+            self._cors()
+            self.end_headers()
+            for chunk in chunks:
+                if chunk:
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            self.close_connection = True
 
     def _send(self, status: int, payload: Any) -> None:
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode()
@@ -950,7 +1317,17 @@ class Handler(BaseHTTPRequestHandler):
 
             params = {**query, **match.groupdict()}
             try:
-                if method == "GET":
+                if method == "GET" and handler is h_speak_stream:
+                    status, ctype, body = handler(params)
+                    if ctype is None:
+                        self._send(status, body)
+                    else:
+                        self._stream(status, ctype, body)
+                    # Streamed responses are already written; falling through
+                    # would `_send(status, payload)` with `payload` unbound —
+                    # a 500 logged after the audio, and JSON appended to it.
+                    return
+                elif method == "GET":
                     status, payload = handler(params)
                 elif method == "DELETE":
                     status, payload = handler(params)
@@ -960,6 +1337,12 @@ class Handler(BaseHTTPRequestHandler):
                         status, payload = handler(raw, self.headers)
                     elif handler is h_telemetry:
                         status, payload = handler(body)
+                    elif handler is h_voice:
+                        # The raw body matters here: a multipart upload's bytes
+                        # cannot survive parse_form's text decoding.
+                        status, payload = handler(
+                            body, raw, self.headers.get("Content-Type", "")
+                        )
                     elif handler in (h_payment, h_bill_update):
                         status, payload = handler(body, params)
                     else:
@@ -968,6 +1351,9 @@ class Handler(BaseHTTPRequestHandler):
             except ApiError as err:
                 self._send(err.status, err.body)
             except Exception as err:  # keep the stub from dying mid-demo
+                # Logged, not just returned: a 500 the operator never sees is
+                # how "nothing happens" stays unexplained.
+                print(f"  error {method} {parsed.path}: {err}")
                 self._send(500, {"code": "stub_error", "message": str(err), "detail": {}})
             return
 
@@ -994,6 +1380,9 @@ def main() -> None:
     print(f"Stark API stub {VERSION} — mock data only, nothing is charged.")
     print(f"  http://{HOST}:{PORT}/")
     print("  Ctrl-C to stop.\n")
+    if os.environ.get("STARK_REMINDERS", "1") != "0":
+        # No-op without a bot token (push_due_reminders reports, claims nothing).
+        start_reminder_loop()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 

@@ -24,6 +24,9 @@ apps/backend/stark.db-journal
 apps/backend/stark.db-wal
 apps/backend/stark.db-shm
 
+# Conversation log (turnlog). Runtime data, never committed.
+apps/backend/logs/
+
 # Rust / cargo. A near-sdk build is ~1 GB — never commit it.
 target/
 

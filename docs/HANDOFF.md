@@ -1,6 +1,7 @@
 # Stark — handoff
 
-**Written 2026-10-20, last resumed 2026-10-22 (M2, M3 and the frontend routes landed).** If you are an agent picking this
+**Written 2026-10-20, last resumed 2026-10-24 (reminders, computed suggestions, real
+audio in, streamed voice).** If you are an agent picking this
 up, read §0 and then §1–3 before touching anything. Sections 9–11 are the honest list of
 what is broken, guessed, or still unproven. Nothing in this repo is production code — it
 is a contract stub, a bill-API client, an agent that can sign but has never broadcast,
@@ -8,9 +9,98 @@ and an undeployed vault contract, built to unblock a frontend developer working 
 
 ---
 
-## 0. Resume here — state as of 2026-10-22 (M2 + M3 + frontend routes + M4 built)
+## 0. Resume here — state as of 2026-10-24 (M2 + M3 + M4 built, reminders, real audio in)
 
-### M4 — Telegram door, audio pipeline, identity linking (latest)
+### The intelligence layer, probed (2026-10-24)
+
+Eleven real questions through `/v1/voice` against the live model
+(`google/gemini-2.5-flash-lite`, chosen for speed). Right without help: balance, most
+recent subscription, reference/meter digits, renewal date, units left, a typo'd
+"subscripshun", and an honest refusal for WhatsApp/Telegram. One model call each, no
+tool round trip: **1.1–1.5s**, with occasional 2.6–3.2s provider outliers.
+
+**Two failures were serious and are fixed.** With `pay_bill` the only tool offered,
+questions that merely mentioned money reached for it: "if I pay DStv and top up 5
+thousand, how much is left?" **paid ₦5,000 of airtime**, and "I'm confused, DStv says I
+owe, what should I do?" tried to pay DStv. Three defences now, and the first two are
+code rather than prompt:
+
+1. `_tools_for(has_snapshot, transcript)` offers **no tools at all** on a question —
+   read questions (what/read/show/when/how…), hypotheticals (if/what if/how much
+   would), advice (should I/confused/why/explain). Nothing to call, nothing to spend.
+2. `asks_instead_of_paying()` is also checked inside `pay_bill`
+   (`not_a_payment_request`), so a model that ignores every instruction still cannot
+   charge on a question.
+3. The prompt says a question is not an instruction, and that a hypothetical is
+   arithmetic to answer, not a payment.
+
+Permission and confirmation still pay: "can you pay my DStv" and a bare "yes" are not
+questions under the rule. Verified after the fix: all five question shapes attempted
+nothing (`actions: []`), the hypothetical returned the right subtraction (₦64,200 −
+₦7,900 − ₦5,000 = ₦51,300), and "pay 5000 for electricity" still delivered with a
+token. 295 unit tests, 70/70 smoke.
+
+Also fixed in the same pass: the model invented "you paid your last DStv bill last
+week" (no such payment existed). The prompt now forbids claiming a past payment that is
+not in the last five, and the answer is honest: "the last payment recorded was for your
+electricity bill". What it still cannot do is in the README: no sending or forwarding
+anywhere, no new meter number, no bill it has not been given.
+
+### Reminders, computed suggestions, real audio in (2026-10-24, latest)
+
+Three things that were promised in copy are now code, and one lie was deleted.
+
+| Check | Command | Result |
+|---|---|---|
+| Whole backend suite | `python3 -m unittest test_agent test_tg test_tts test_vending test_vtpass test_wake test_reminders test_suggestions test_live_paths` | **281/281 OK** |
+| API smoke | `python3 smoke_test.py` (server running) | **70/70** |
+| Frontend | `tsc --noEmit` (dashboard, `packages/api`), `biome check apps packages` | clean |
+
+**Reminders (`reminders.py`).** A bill can carry `renews_on` (additive `Bill` field,
+`PATCH /v1/bills/{id}` sets, `""` clears, nonsense is 400 `bad_renews_on`). Every bill
+inside a **7-day window** appears in `state.due_soon` — including overdue inside that
+window, which is the loudest reminder there is — and `/v1/suggestions` renders it as
+`bill_due`. A background loop (`start_reminder_loop`, `STARK_REMINDER_TICK`, default
+300s) pushes the same line to linked Telegram chats **only when a bot token exists**;
+the claim is logged in memory so one renewal is never nudged twice in a run. Nothing
+depends on the thread: the same facts are in `/v1/state` and the agent's snapshot.
+
+**Suggestions are computed (`suggestions.py`).** The old hardcoded list is gone —
+including `"Your AC is 78% of your usage"`, which no data ever supported. Each line
+now needs the data behind it: meter runway from ≥2 delivered electricity top-ups on
+different days (`units_low`), else from the state's own estimate (`units_low_estimate`,
+worded as an estimate); ≥80% of the monthly cap (`cap_near`); ≥2 devices reporting
+telemetry in 24h with one at ≥60% of average load (`load_imbalance`); renewals inside
+the window (`bill_due`). **No data, no line** — an empty list is honest, so no check
+asserts a minimum length. Capped at 4, worst first.
+
+**M4 finished: real audio in.** `/v1/voice` accepts the clip itself — base64 `audio`
+(+`audio_type`) or a multipart `audio` part, ≤8MB — and sends it to Whisper before the
+wake gate and agent. The response carries `stt: ok|failed|no_key`; when nothing was
+heard the transcript is `""`, the agent is never called and the reply says so. A
+transcript is never invented. `transcript_hint` stays as a probe for tests only, and
+the Talk screen now sends the recorded blob. Whisper's MIME naming is fixed: the clip
+is filed as `audio.webm`/`audio.ogg`/`audio.wav` from what the browser actually
+recorded, not `audio.wav` regardless (which mis-decoded a webm).
+
+**Two bugs found on the way out, both measured.** (1) `GET /v1/speak/stream` fell
+through to the JSON sender after streaming, so it wrote the audio, threw
+`UnboundLocalError: payload`, and appended/500'd behind a valid clip — the smoke
+check passed because it only looked at the first bytes. Fixed in the dispatcher, and
+the smoke check now asserts no error body trails the audio. (2) The provider **refuses
+WebM as a container** (HTTP 400 "audio could not be processed", any filename), which
+is exactly what a Chrome `MediaRecorder` produces — so the browser path could never
+transcribe as first written. `stt.hear` now decodes non-WAV/OGG clips to 16 kHz mono
+WAV with `ffmpeg` before sending. Verified live 2026-10-24: the same spoken sentence
+sent as WAV, OGG/Opus and WebM all return the right transcript. **`ffmpeg` is now a
+requirement for voice input, not just Telegram**; without it a WebM comes back
+`stt: failed`, never guessed.
+
+**Still true, and unchanged by the above:** no Telegram bot token has ever been set
+(so no reminder has been pushed, and the webhook still refuses every real update),
+VTpass is still fixture-backed (§10.1), and none of this is deployed.
+
+### M4 — Telegram door, audio pipeline, identity linking
 
 `/v1/voice` is no longer the only way in. A Telegram bot now runs the same agent
 behind the same policy gate, and the §8A identity design is real code:
@@ -55,16 +145,46 @@ the webhook at `/v1/tg/webhook` with `secret_token` set to that same value.
   attempts per sender per 10 minutes.
 - **Dedupe** on `message_id`: Telegram re-delivers updates, and a second delivery
   cannot pay twice.
-- **The wake gate applies to voice, not typing.** A voice note must contain
-  "stark" — the same rule `/v1/voice` uses — because a note can be recorded by
-  accident. A typed message in a DM is deliberate. One brain, one gate policy,
-two sensible UIs.
+- **The wake gate applies to voice, not typing.** A voice note must open with an
+  attempt at the wake word — the same rule `/v1/voice` uses — because a note can be
+  recorded by accident. The rule lives in **one place (`wake.py`)** and tolerates
+  what recognizers do to "stark": reported transcripts of `start`, `stock`, `starn`
+  and `stop` are treated as the address and rewritten to `Stark, …` before the
+  agent sees them (2026-10-24 — before this, saying the wake word through an accent
+  got you silence, which is worse than a false wake). The attempt has to open the
+  utterance, possibly after filler (`hey`, `um`, `so`), so "I start the car" is not
+  a wake word. Ordinary speech is still ignored. A typed message in a DM is
+deliberate. One brain, one gate policy, two sensible UIs.
 
 **What M4 is not:** no TTS yet (replies are text; the provider is still an open
 decision), and the bot has never received a real update. Whisper itself is now
 live-verified (2026-10-22): `stt.py` returned real transcripts from generated speech,
 including "Hello Stark, what is my light bill?". `test_tg.py` stays hermetic: agent,
 transport and transcription are injected.
+
+### Talk screen is hands-free (2026-10-24)
+
+The mic no longer needs a tap per question. One wake ("Hey Stark", or a near-miss
+the server accepts) opens a session that **has no idle timeout** — after each answer
+the recognizer restarts itself, so a follow-up needs no wake word, and a pause does
+not end it. It sleeps only on an explicit dismissal ("go to sleep", "stop
+listening", "that's all", "I'm done" — `isSleepIntent`, checked client-side before
+any API call), a tap on the orb, a real microphone error, or the tab going hidden.
+*2026-10-24, second pass:* the first version refreshed a 20-second window on every
+exchange, which measured a long answer plus a moment's thought as "gone quiet" and
+hung up a normal five-turn conversation.
+
+What it deliberately does *not* do:
+
+- **It does not listen while Stark is speaking** (the recognizer would hear the
+  reply), and it does not listen while a request is in flight. Both resume when
+  the clip ends or the words land.
+- **The session is client-side.** Continuation turns are prefixed `Stark, …` by the
+  Talk screen — the same thing typing and `?q=` do — so the server's wake gate is
+  unchanged and still refuses anything raw. No session token, no new endpoint.
+- `console.debug("[wake] ignored: …")` in DEV logs transcripts the gate refused:
+  that log is the feed for `wake.py`'s alias set. Add to it only what was actually
+  heard.
 
 ### Frontend contract breadth (2026-10-22)
 
@@ -468,7 +588,7 @@ days of runway the original plan did not assume.
 | M1 | Oct 27–31 | Vault contract: monthly cap, per-payment cap, meter allowlist, `pay()`, events, unit tests | **built** — 38/38 tests, clippy clean, 203 KB wasm builds. **Not deployed** — needs a funded testnet account (§0.3) |
 | M2 | Nov 1–3 | Agent server: NEAR AI LLM + tools, signs `pay()` with a function-call key | **built 2026-10-22** — 59 tests, gate enforced in code, signature dry-run. LLM client and RPC path unproven (§10.11–12) |
 | M3 | Nov 4–5 | Real vending wired in, receipt store (tx hash ↔ token) | **built 2026-10-22** — 44 tests, 4 product families, dry-run; live blocked by VTpass `028` provisioning (§10.1) |
-| M4 | Nov 6–7 | Telegram bot + Whisper voice + TTS | **built 2026-10-22** (Telegram + Whisper + identity linking, 16 tests, fail-closed until secrets). **TTS still open** — replies are text |
+| M4 | Nov 6–7 | Telegram bot + Whisper voice + TTS | **built 2026-10-22, finished 2026-10-24** — Telegram + identity linking + Whisper (now fed real audio from both doors) + TTS (ElevenLabs Flash, Kokoro sidecar fallback, streamed). Fail-closed until secrets; no bot token has ever been set |
 | M5 | Nov 8 | NEAR Intents funding, one cross-chain deposit | not started |
 | M6 | Nov 9–10 | AC telemetry + suggestion engine | not started |
 | M7 | Nov 11 | Frontend wired to the live API, **record the token clip** | not started |
@@ -710,8 +830,11 @@ Do not assume any of this exists:
   until the human configures `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET`.
   No real Telegram update has ever been received or answered. WhatsApp, SMS and
   Apple are still design-only (§8A).
-- **Telemetry → suggestions** — `/v1/telemetry` stores readings but nothing reads them.
-  `/v1/suggestions` returns fixed copy.
+- **Telemetry → suggestions** — `/v1/telemetry` readings now feed `load_imbalance`,
+  but the sensor only exists in demo data: no real meter has ever posted. The line
+  needs two devices, which is why it is quiet in a fresh install.
+- **Reminder pushes** — the loop, the de-dupe and the Telegram send are written and
+  tested; **no push has ever left the machine** because no bot token is configured.
 - **Frontend** — being built by a human teammate against `docs/API.md`.
 - **Demo video, X post, submission** — none.
 
@@ -779,6 +902,45 @@ Do not assume any of this exists:
     parsed tool call (`get_balance`). `stt.transcribe` returned real Whisper
     transcripts. `openai/gpt-5-nano` was `is_ready: false` and is Incognito, so the
     default is now the NEAR-hosted Private TEE model.
+
+    **2026-10-24 — the model changed for speed.** `NEAR_AI_MODEL` in `.env` is now
+    `google/gemini-2.5-flash-lite`, because the demo was too slow to wait for:
+
+    | Model (same prompt, 4 samples) | Median turn |
+    |---|---|
+    | `Qwen/Qwen3.8-27B` (was default) | **7.1s** (range 6.0–9.3) |
+    | `Qwen/Qwen3.6-35B-A3B-FP8` | 9.8s |
+    | `google/gemini-2.5-flash-lite` | **1.35s** |
+
+    Three supporting changes in `agent.py`, in order of how much they saved:
+
+    1. **The system prompt carries a snapshot** — `get_state()` + `list_bills()` +
+       the five most recent payments — and when it is present the **read tools are
+       not offered** (`Agent._tools_for`): only `pay_bill` goes to the model, because
+       a prompt cannot act. First the reads were merely unnecessary, then they kept
+       being called anyway (`list_bills` half the time, then `recent_activity`),
+       each one costing a round trip. A snapshot read that throws puts every tool
+       back — a wrong number is worse than a slow one.
+    2. **An empty final message is retried once with the tools removed** — gemini
+       returns zero tokens when tools are offered and the answer is already in hand,
+       which used to surface as `Sorry, I didn't catch that.` after a payment had
+       already gone through.
+    3. **The voice streams** (`GET /v1/speak/stream`, see API.md) instead of arriving
+       as one finished `data:` URL.
+
+    Measured end to end against the live API (2026-10-24):
+
+    | | before (today) | now |
+    |---|---|---|
+    | text for a read question | 2.3–2.8s, was 7.1s median at model level | **1.1–1.6s** (median 1.35, `actions: []`) |
+    | text for a payment | 4.3s (two model rounds) | ~2.5s |
+    | voice, first byte | 1.9s (Kokoro), 1.3s (buffered ElevenLabs) | **0.53–0.82s** streamed |
+    | **first sound after asking** | 9–10s | **~1.9s** (a payment ~3.0s) |
+
+    **The privacy note above is now stale, and that is deliberate:** this is a demo
+    speed call, not a TEE one. If a judge asks about the model tier, either say
+    `gemini-2.5-flash-lite` plainly or flip `NEAR_AI_MODEL` back to `Qwen/Qwen3.8-27B`;
+    one env var, restart the server.
 13. **Limits do not survive a restart.** `PATCH /v1/limits` mutates the agent's live
     `Limits` object, so both paths enforce the new caps immediately — but the values live
     in memory. A restart, or `_stub/reset`, restores ₦30,000 / ₦10,000. (The per-payment
@@ -807,14 +969,35 @@ Do not assume any of this exists:
     "pay DStv ₦7,900 end to end" demo needs a lower `spent_ngn` or a fresh month. The
     plan path itself is still covered by `test_vending.py`.
 20. **The TTS sidecar has never spoken to a real Telegram chat.** Kokoro-82M is
-    live-verified locally (2026-10-23): `/v1/voice` returns a spoken reply as a WAV
-    data URL in ~2s (RTF ~0.25–0.3 on MPS *and* CPU), the OGG/Opus encode for
-    `sendVoice` is proven with ffmpeg, and `bun smoke` passes 54/54 with the sidecar up
-    and 53/53 with it down — but no note has reached a real chat, because the bot has
-    no live token. Two honest gaps on top: **Kokoro has no Nigerian English voice**
-    (default `af_heart` is US female; Chatterbox cloning is the accent path), and the
-    sidecar venv needs spaCy's `en_core_web_sm` installed explicitly
-    (`tts-requirements.txt`) — misaki's auto-download dies inside a uv venv.
+    live-verified locally (2026-10-23): the Talk screen shows text first (`speak:
+    false`) and plays the voice fetched from `POST /v1/speak` a beat later; warm
+    synthesis runs ~0.5–1.5s (MPS, RTF ~0.1), ~3s if the GPU re-warmed from idle
+    (the sidecar's keepalive ping exists to prevent that); the OGG/Opus encode for
+    `sendVoice` is proven with ffmpeg; and `bun smoke` passes **60/60 with a
+    voice up, 58/58 with voice off** — against a *live* model (Qwen when written,
+    `google/gemini-2.5-flash-lite` since 2026-10-24), which is why two smoke
+    assertions were rewritten to stop pinning deterministic phrasing. No note
+    has reached a real chat, because the bot has no live token. Two honest gaps on
+    top: **Kokoro has no Nigerian English voice** (default `af_heart` is US female;
+    Chatterbox cloning is the accent path), and the sidecar venv needs spaCy's
+    `en_core_web_sm` installed explicitly (`tts-requirements.txt`) — misaki's
+    auto-download dies inside a uv venv.
+
+    **2026-10-24 — ElevenLabs Flash is now the first voice, live-verified the same
+    day.** `tts.py` asks ElevenLabs (`ELEVENLABS_API_KEY`, set in `.env`) for every
+    reply, wraps its 24 kHz PCM into a WAV, and falls through to Kokoro on any
+    refusal, so the chain is ElevenLabs → sidecar → text. Four new tests in
+    `test_tts.py` pin that chain against local fakes.
+
+    Measured against the real API with a free key: **1.0–1.1s** for a Stark-length
+    reply on `eleven_flash_v2_5`, against **1.4–1.9s** for Kokoro — the accuracy is
+    the real win, the speed is the bonus. Two facts the docs did not hand us:
+    **library voices are HTTP 402 `paid_plan_required` on a free key** (Rachel's id
+    is rejected; only the account's **premade** voices work — default is now
+    `onwK4e9ZLuTAKqWW03F9`, Daniel, and `GET /v1/voices` lists what a key owns), and
+    `output_format=pcm_24000` is inside the free tier while 44.1 kHz needs Pro. The
+    free tier is 10,000 credits/month, non-commercial — fine for the demo, worth
+    knowing before a launch claim.
 
 ---
 

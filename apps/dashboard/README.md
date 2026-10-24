@@ -56,8 +56,36 @@ These come from [`docs/FRONTEND.md`](../../docs/FRONTEND.md) and are enforced in
 - Never render `tx_hash` or `actions`. No "vault", "USDC" or addresses in the UI.
 - Amounts are typed fields plus quick-pick chips. No sliders.
 - Every screen has a phone layout (bottom tab bar under `md`).
-- The Talk screen plays `VoiceReply.audio` when present (a WAV data URL from the local
-  voice sidecar) and never blocks on it — the text `reply` is always shown.
+- The Talk screen shows `VoiceReply` text **first** (it asks for `speak: false`), then
+  plays the streamed voice from `GET /v1/speak/stream` — which starts on the first
+  bytes instead of waiting for a whole clip, falling back to `POST /v1/speak` if it
+  errors — and always says why the mic failed or the wake gate ignored them, never a
+  silent no-op.
+- **The mic is hands-free and has no idle timeout.** One wake opens a session: after
+  each answer the recognizer restarts itself, so follow-ups need no wake word, and a
+  pause to think never ends it — the old 20s window made a five-turn conversation
+  hang up on its own. It sleeps only when the user says so (`isSleepIntent` in
+  `lib/speech.ts`: "go to sleep", "stop listening", "that's all", "I'm done"…) —
+  matched whole-utterance **or** found inside a longer sentence, because "I think
+  that's enough goodbye I don't need your help anymore" reached the server and the mic
+  stayed awake (2026-10-24). The short ambiguous words ("sleep", a bare "stop") stay
+  anchored to the whole utterance, so "stop paying my DStv" is still a command.
+  It also sleeps when they tap the orb, on a real mic error, or when the tab is hidden. It never
+  listens while Stark is speaking or while a request is in flight. The session lives
+  entirely in `talk.tsx` — continuation turns are prefixed `Stark, …` and the
+  server's wake gate is untouched.
+- **The voice section is animated in CSS only** (`styles.css`: `.voice-orb`,
+  `.voice-aura`, `.voice-ring`, `.voice-orbit`, `.voice-eq`, `.voice-in`,
+  `.voice-scan`) — no animation library. Every keyframe is inside
+  `prefers-reduced-motion: no-preference`; add new motion there too.
+- **Renewals are reminders; paying still takes a tap on a confirm screen.**
+  `state.due_soon` arrives already sorted, and the UI never re-sorts or invents a
+  date: the soonest renewal gets one action strip on Home (Pay → `/pay` with the bill
+  and plan price prefilled) and a status card on Talk that opens the same screen. A
+  bill with `renews_on` reads "Renews Oct 27" in its row and turns warm while the
+  window holds it. A kind that cannot be paid yet (internet, water) gets no Pay
+  button rather than a dead one. Copy for "today", "tomorrow", "in 3 days" and
+  "2 days ago" lives in `src/lib/renewals.ts`, shared by both screens.
 
 ## Not wired yet
 

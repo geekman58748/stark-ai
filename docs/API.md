@@ -46,6 +46,9 @@ Every non-2xx response has this body:
 | `bad_kind` | 400 | Bill or plan `kind` is not one of the supported kinds |
 | `bad_reference` | 400 | Bill reference is not 4–32 characters |
 | `bad_bill` | 400 | A bill add/patch field is invalid (e.g. empty label) |
+| `bad_renews_on` | 400 | `renews_on` is not a date like `2026-11-03` |
+| `bad_audio` | 400 | `/v1/voice` `audio` is not valid base64 |
+| `audio_too_large` | 413 | `/v1/voice` clip is over 8 MB |
 | `unsupported_product` | 400 | No confirmed vendor product for that provider |
 | `plan_required` | 400 | A data/TV bill was sent without a `plan` |
 | `unknown_plan` | 400 | `plan` is not a code in the vendor catalogue |
@@ -79,12 +82,31 @@ Everything the dashboard needs in one call. Poll or refetch after any payment.
   "units_left": 11.4,
   "days_left": 4,
   "bills": [ /* Bill objects, see below */ ],
+  "due_soon": [
+    {
+      "id": "bill_dstv",
+      "kind": "tv",
+      "provider": "DStv",
+      "label": "Living room TV",
+      "renews_on": "2026-10-27",
+      "days_until": 3,
+      "price_ngn": 7900
+    }
+  ],
   "as_of": "2026-10-20T19:33:13Z"
 }
 ```
 
 `units_left` and `days_left` are `null` when the user has no electricity bill.
 `days_left` is an **estimate** from purchase history until the AC sensor is wired in.
+
+`due_soon` is **additive** (2026-10-24): every bill whose `renews_on` is inside the
+**7-day window**, soonest first — including one that went overdue inside that window
+(`days_until` is then negative, which is the loudest reminder there is). A renewal
+further out, or a date months in the past, is not listed: one is not due yet and the
+other is stale data to fix. `price_ngn` is the plan's price, else the last amount
+paid, else `null` — estimate it, never invent it. An empty list is the normal 
+answer for a user with no renewal dates set.
 
 After a **delivered** payment, that bill's `last_amount_ngn`, `last_units` and
 `last_paid_at` update, and `units_left` increases by the delivered units. A `pending`
@@ -101,7 +123,8 @@ or `failed` payment changes none of them. `days_left` stays the seeded estimate.
   "reference": "04512345678",
   "last_amount_ngn": 5000,
   "last_units": 23.9,
-  "last_paid_at": "2026-10-14T19:33:13Z"
+  "last_paid_at": "2026-10-14T19:33:13Z",
+  "renews_on": "2026-10-27"
 }
 ```
 
@@ -113,6 +136,11 @@ or `failed` payment changes none of them. `days_left` stays the seeded estimate.
   `plan_price_ngn` or the payment is refused — a plan is not discountable. Electricity
   and airtime have no plan and take any amount inside the owner's limits.
 - `last_units` and `last_amount_ngn` are `null` for a new bill.
+- `renews_on` is **additive** (2026-10-24): a calendar date (`YYYY-MM-DD`) when the
+  bill renews on a schedule — a DStv bouquet, an internet plan. **Absent** when unset
+  (meters and phone lines usually are), not `null`. It is what puts the bill in
+  `state.due_soon` and behind a reminder, so do not default it: a date a client made
+  up is a nudge about nothing.
 
 ### `GET /v1/plans?kind=data&provider=mtn`
 
@@ -170,11 +198,14 @@ Add a bill. Returns **201** with the `Bill` object.
 - `plan` — required when the product is sold as a plan (data, DStv/GOtv/Showmax).
   Take the `plan` value from `GET /v1/plans`; the price is stored server-side as
   `plan_price_ngn`, so the client never sends a price the user could edit.
+- `renews_on` — optional **additive** (2026-10-24): `YYYY-MM-DD` for a subscription
+  that renews on a schedule. Validated exactly like the `PATCH` field below
+  (`bad_renews_on`); omitting it saves a bill that never reminds.
 - Adding a bill updates the payer's meter allowlist immediately — the agent can pay
   the new bill in the next turn.
 
-Errors: `bad_kind`, `bad_reference`, `unsupported_product`, `plan_required`,
-`unknown_plan`, and `duplicate_bill` (same `kind` + `reference`).
+Errors: `bad_kind`, `bad_reference`, `bad_renews_on`, `unsupported_product`,
+`plan_required`, `unknown_plan`, and `duplicate_bill` (same `kind` + `reference`).
 
 ### `PATCH /v1/bills/{bill_id}`
 
@@ -182,12 +213,25 @@ Rename a bill, or change a data/TV plan. Every field is optional; returns the fu
 `Bill`.
 
 ```json
-{ "label": "Living room", "plan": "dstv-yanga" }
+{ "label": "Living room", "plan": "dstv-yanga", "renews_on": "2026-11-03" }
 ```
 
 Changing `plan` also rewrites `plan_price_ngn`. Errors: `unknown_bill`,
 `bad_bill` (empty label, or a plan on a kind that has none), `unsupported_product`,
-`unknown_plan`.
+`unknown_plan`, and `bad_renews_on`.
+
+`renews_on` is **additive** (2026-10-24) and has three states, because clearing a date
+is a real thing users do:
+
+| Sent | Result |
+|---|---|
+| `"2026-11-03"` (or any ISO string starting with a date) | stored as `YYYY-MM-DD` |
+| `""` or `null` | the field is **removed** from the bill — it stops reminding |
+| omitted | unchanged |
+
+A date that does not parse is **400 `bad_renews_on`** — never silently dropped. A date
+set to today or tomorrow shows up in `state.due_soon` on the next read, so a client can
+prove the reminder works without waiting a week.
 
 ### `DELETE /v1/bills/{bill_id}`
 
@@ -365,16 +409,65 @@ bills, not cash movement. Errors: `bad_amount`, and `insufficient_balance` (409)
 `severity` is `info` | `warn` | `alert`. `reason` is for debugging, not display.
 Copy arrives as finished sentences — render, don't reassemble.
 
+**Computed, not seeded** (2026-10-24). Every line comes from state the server
+actually holds, and a signal without the data behind it is simply **not returned** —
+the old hardcoded "your AC is 78% of your usage" line is gone. An empty list is a
+normal answer, not an error. Worst news first, at most **4** items.
+
+| `reason` | Fires when | `severity` |
+|---|---|---|
+| `units_low` | Meter runway ≤ 5 days, from **two or more delivered electricity top-ups on different days** (units/day) | `alert` ≤ 2 days, `warn` ≤ 4, else `info` |
+| `units_low_estimate` | Same, but the pace is the state's own `days_left` estimate — the text says "roughly" | as above |
+| `cap_near` | ≥ 80% of the monthly limit spent | `alert` ≥ 95%, else `warn` |
+| `load_imbalance` | Two or more devices reported telemetry in the last 24h and one average draw is ≥ 60% of measured load | `info` |
+| `bill_due` | A `renews_on` inside the reminder window (the `state.due_soon` rule), at most two items | `alert` on the day or overdue, `warn` ≤ 3 days, else `info` |
+
+The `id`s are stable (`sug_units`, `sug_cap`, `sug_load`, `sug_due_<bill_id>`) — key a
+dismissal on the `id`, not the copy, which is live text.
+
 ### `POST /v1/voice`
 
 One endpoint for Telegram, the wall phone and any future speaker.
 
 **Accepts either:**
-- `multipart/form-data` with `audio` (file, the recording) and optional `transcript_hint`
-- `application/json` with `{"transcript_hint": "hello stark what's my light bill"}`
+- `application/json` with `{"audio": "<base64>", "audio_type": "audio/webm"}` — what
+  the dashboard sends, because it records a Blob in the browser
+- `multipart/form-data` with an `audio` file part (and optional `audio_type`) — what
+  Telegram-style clients send
+- `{"transcript_hint": "hello stark what's my light bill"}` — **no audio**, for probes
+  and tests only
 
-`transcript_hint` is a **stub-only** stand-in for Whisper. Real requests will send
-only audio once STT lands.
+**Real audio in** (M4 finish, 2026-10-24). `audio` may be bare base64 or a full
+`data:` URL. `audio_type` is the clip's MIME (`audio/webm`, `audio/ogg`, `audio/wav`,
+`audio/mp4`). Send it: it decides how the clip is decoded. Max **8 MB**
+(`audio_too_large`, 413). It is checked **before** `transcript_hint`, so a client that
+can record never has to fake words with the hint.
+
+**WebM and MP4 are decoded server-side.** The speech provider accepts WAV and
+OGG/Opus and refuses WebM whatever it is called (measured 2026-10-24 — HTTP 400,
+"audio could not be processed"), so the server transcodes any other container to
+16 kHz mono WAV with `ffmpeg` before it is sent. That means:
+
+- **Send the true MIME — the label decides.** WAV and OGG/Opus go straight through;
+everything else is transcoded. A webm labelled `audio/wav` skips the conversion and
+is then refused by the provider (`stt: failed`), because the provider sniffs the
+bytes after the server has decided not to touch them.
+- `ffmpeg` must be on the server for a browser clip to work. Without it the clip is
+sent unchanged and comes back `stt: failed` — never a guessed transcript.
+- A clip ffmpeg cannot decode also comes back `stt: failed`, not `bad_audio`:
+the upload was well-formed, the sound was not usable.
+
+The transcript is echoed in `transcript`. Every audio answer carries `stt`:
+
+| `stt` | Meaning | What the client should do |
+|---|---|---|
+| `ok` | Whisper transcribed; the wake gate and agent ran on the words | normal |
+| `failed` | Nothing was heard (`transcript: ""`, `reply: "I didn't catch that. Say it again?"`) | stay silent, keep listening |
+| `no_key` | The server has no speech key (`transcript: ""`, reply says so) | offer the keyboard |
+
+**A transcript is never invented.** When the clip is not understood the agent is not
+called at all, `transcript` is empty, and no `audio` is synthesised. Bad base64 is
+**400 `bad_audio`**, not a silent miss.
 
 ```json
 {
@@ -385,31 +478,99 @@ only audio once STT lands.
   "receipt_id": null,
   "actions": ["get_state"],
   "tx_hash": null,
-  "audio": "data:audio/wav;base64,UklGRi…"
+  "audio": "data:audio/wav;base64,UklGRi…",
+  "stt": "ok"
 }
 ```
+
+`stt` is **additive** (2026-10-24) and only present on a request that carried audio —
+a `transcript_hint` request keeps the exact old shape.
 
 `actions` and `tx_hash` are **additive** (2026-10-22). `actions` lists the tools the
 agent ran, which is useful for debugging a bad answer; `tx_hash` is set only when a
 payment was signed onchain. Neither is user-facing copy — do not render them.
 
-`audio` is **additive** (2026-10-23): the same reply, spoken by the local voice
-(Kokoro-82M), as a WAV data URL — or `null` whenever voice is off (no sidecar
-configured, sidecar down, synthesis failed, or `ignored: true`). Play it when
-present; when it is `null`, render `reply` as text. `reply` stays the source of
-either way.
+`audio` is **additive** (2026-10-23): the same reply, spoken by the configured voice
+(ElevenLabs when keyed, else the local Kokoro sidecar), as a WAV data URL — or `null`
+whenever voice is off (no provider configured, provider down, synthesis failed, or
+`ignored: true`). Play it when present; when it is `null`, render `reply` as text.
+`reply` stays the source of either way.
+
+**The voice does not read `₦`.** Neither provider has it in a pronunciation
+dictionary — both say the letter N (measured 2026-10-24 by synthesising and
+transcribing the clip back) — so amounts are handed to the voice as `64,200 naira`.
+`reply` keeps the sign for display; do not treat the two as byte-identical, and do not
+send your own text to a voice expecting `₦` to be read.
+
+**Text first, always.** Send `{"speak": false}` to skip synthesis entirely: the
+words come back in one model turn and `audio` is `null`. Speak afterwards with
+`POST /v1/speak` (below). The dashboard does exactly this, because a reply you
+cannot read yet is not fast — speaking must never decide when text appears.
+`speak` defaults to `true`, so clients that ignore it keep the old behaviour.
 
 Since M2 the reply is produced by the agent: a model picks tool calls, the policy
 gate checks them against the same caps the contract enforces, and `reply` comes back
 already speakable. With no model key configured the server uses a deterministic
 rule-based model, so the endpoint behaves and tests identically without a key.
 
-**The wake gate is server-side.** If the transcript has no `"stark"`, the response is
-`{"ignored": true, "reply": null}` and the client must stay silent. Do not play
-anything on `ignored: true`.
+**The wake gate is server-side.** If the transcript does not look like it was aimed
+at Stark, the response is `{"ignored": true, "reply": null}` and the client must stay
+silent. Do not play anything on `ignored: true`.
+
+The rule tolerates what recognizers do to the wake word — see `wake.py` in
+`apps/backend`, one implementation shared with the Telegram voice path:
+
+- `stark` (or `hey stark`) **anywhere** in the transcript passes untouched.
+- A **wake attempt at the opening** — `start`, `stock`, `starn`, `stop`, or anything
+  within two edits of "stark" — sitting in the first few tokens **behind filler**
+  (`hey`, `um`, `so`, …) is rewritten as `Stark, …` with the misheard token dropped,
+  so "um start what's my light bill" reaches the agent as
+  "Stark, what's my light bill". It has to open with the address: "I start the car"
+  is not a wake word.
+- Everything else is `ignored`, because a gate that fires on every sentence is not
+  a gate. `transcript` in the response always echoes what was actually said, not
+  the rewritten form.
 
 `reply` is already speakable text. When `audio` is present, play it instead — it *is*
 this reply, spoken. Only fall back to your own TTS for `audio: null`.
+
+### `POST /v1/speak`
+
+**Additive** (2026-10-23). Speak text the client already has — normally the `reply`
+of an answered `/v1/voice`.
+
+```json
+{ "text": "You've got ₦64,200 in your wallet…" }
+```
+
+```json
+{ "audio": "data:audio/wav;base64,UklGR…" }
+```
+
+`audio` is a WAV data URL, or `null` when voice is off — **200 either way** (voice is
+an enhancement, never an error). Missing/empty `text` is **400 `bad_text`**. Keep the
+text within ~2000 characters: beyond that the synthesiser refuses and the field
+comes back `null`.
+
+### `GET /v1/speak/stream`
+
+**Additive** (2026-10-24). The same voice, sent as it is produced, for a player that
+can start on partial data:
+
+```
+GET /v1/speak/stream?text=Your%20light%20bill%20is%205%2C000%20naira.
+```
+
+- **200**, `Content-Type: audio/mpeg` when streaming (no `Content-Length` — the body
+  is deliberately not buffered), `audio/wav` when a whole local clip is substituted.
+- **400 `bad_text`** with no text, **503 `no_voice`** (JSON) when no provider is
+  configured at all, so a client expecting audio can tell "quiet" from "refused".
+- Measured 2026-10-24: first byte **~0.5s**, whole clip ~1.0s, against **~1.3s** for
+  the buffered `POST /v1/speak` before a single sample could play.
+
+`POST /v1/speak` remains the simple contract — Telegram and anything that needs one
+complete `data:` URL should keep using it. The dashboard plays this stream and
+falls back to `POST /v1/speak` if it errors.
 
 ### `POST /v1/telemetry`
 
@@ -419,7 +580,10 @@ From the AC meter bridge. Returns **202**.
 { "device_id": "ac-plug-1", "watts": 1480, "ts": "2026-10-20T19:33:13Z" }
 ```
 
-`ts` is optional; the server fills it. This does not feed `/v1/suggestions` yet.
+`ts` is optional; the server fills it. **It feeds `/v1/suggestions`** (2026-10-24):
+the `load_imbalance` line needs two or more `device_id`s in the last 24 hours, and
+reads each device's **average** watts — ten samples of one plug are one habit, not
+ten air conditioners. One device alone can never trigger it, by design.
 
 ### `POST /v1/tg/webhook`
 
@@ -470,8 +634,8 @@ outside a demo reset button.
 | Balances | ₦64,200 seeded | M1 (vault read) |
 | Payments | agent policy-checked; `tx_hash` stays `null` unless a signing key is configured | M2 — **signed and signed-only; nothing is broadcast yet** |
 | Token | **vended through VTpass**, fixtures in dry-run, real when `STARK_VENDING=live` | M3 — **live credentials still missing, so no real token has ever been bought** |
-| Voice | text only, `transcript_hint` | M4 (Whisper) |
-| Suggestions | fixed copy | M6 (telemetry) |
+| Voice | **real** — Whisper hears the clip; `transcript_hint` remains a probe | M4a done. Voice notes in Telegram and the browser both work |
+| Suggestions | **computed** from meter, telemetry, delivered receipts and renewals; empty when the data is not there | M6 (the AC sensor makes `load_imbalance` routine rather than demo data) |
 | Persistence | **SQLite** (`apps/backend/stark.db`): receipts and wallet, consistent across restarts. Bills, limits and `units_left` are in memory and reset on restart | M3 |
 
 Shapes will not change as these land. Only the values become real.
@@ -487,3 +651,4 @@ Shapes will not change as these land. Only the values become real.
 | 2026-10-22 | M3: `Receipt` gains `status` and `request_id`; new error `vendor_failed` (502). Receipts and wallet persist in SQLite. No shape changes. |
 | 2026-10-22 | Product breadth: airtime, data and TV vend through confirmed VTpass services. `Bill` gains `plan` and `plan_price_ngn`. Per-payment cap 5,000 → 10,000 (a DStv bouquet is 7,900). |
 | 2026-10-22 | Additive endpoints for the design's screens: `GET /v1/plans`, `POST`/`PATCH`/`DELETE /v1/bills`, `GET`/`PATCH /v1/limits`, `GET /v1/wallet`, `POST /v1/wallet/topup`, `POST /v1/wallet/withdraw`. New codes `over_per_payment_cap`, `bad_kind`, `bad_reference`, `bad_bill`, `unsupported_product`, `plan_required`, `unknown_plan`, `duplicate_bill`, `bill_in_flight`, `bad_limits`. `Receipt.type` gains `withdrawal`. No existing shape changed. |
+| 2026-10-24 | Reminders, real suggestions, real audio in. `Bill` gains `renews_on`; `/v1/state` gains `due_soon`; `PATCH /v1/bills` accepts and clears `renews_on`; `/v1/suggestions` computed from state instead of seeded copy; `/v1/voice` accepts base64/multipart `audio` and returns `stt`. New codes `bad_renews_on`, `bad_audio`, `audio_too_large`. `GET /v1/speak/stream` added. No existing shape changed. |

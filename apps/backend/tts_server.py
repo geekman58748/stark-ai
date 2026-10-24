@@ -34,6 +34,10 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# Before torch is ever imported: some phoneme/LSTM ops have no MPS kernel, and
+# without this torch raises instead of falling back to CPU.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 HOST = os.environ.get("STARK_TTS_HOST", "127.0.0.1")
 PORT = int(os.environ.get("STARK_TTS_PORT", "8010"))
 DEFAULT_VOICE = os.environ.get("STARK_TTS_VOICE", "af_heart")
@@ -44,6 +48,50 @@ MAX_INPUT_CHARS = 2000          # an agent reply is 1-3 sentences; this is gener
 MAX_BODY_BYTES = 64 * 1024      # JSON in, so 2000 chars has room to spare.
 
 OK = "ok"
+
+# --- text normalisation ------------------------------------------------------
+# Kokoro's phonemizer (misaki) butchers symbols it does not know: `₦30,000`
+# comes out as "three zero zero zero zero", and `—` / `(` pass through raw, so
+# the voice says "dash" and "bracket". Verified against misaki's own output
+# 2026-10-23. Everything is fixed in text, before synthesis — the voice itself
+# was never the problem.
+
+_DIGIT_WORDS = {
+    "zero": "0", "oh": "0", "one": "1", "two": "2", "three": "3",
+    "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8",
+    "nine": "9",
+}
+_DIGIT_WORD_RUN = re.compile(
+    r"\b(?:zero|oh|one|two|three|four|five|six|seven|eight|nine)"
+    r"(?:\s+(?:zero|oh|one|two|three|four|five|six|seven|eight|nine))+\b",
+    re.I,
+)
+
+
+def _digit_run(match: re.Match) -> str:
+    """"five nine two zero zero" → "59200" — numerals read naturally.
+
+    Runs of 3 to 8 digit-words are amounts (nothing in the app speaks larger
+    ones digit-wise) and become numerals, which misaki reads properly. Longer
+    runs are a token or meter number spelled out — returned untouched, because
+    those must be repeated digit by digit.
+    """
+    words = match.group(0).split()
+    if not 3 <= len(words) <= 8:
+        return match.group(0)
+    return "".join(_DIGIT_WORDS[w.lower()] for w in words)
+
+
+def normalize_for_speech(text: str) -> str:
+    """Text in; text the phonemizer will not butcher out."""
+    s = text.replace("₦", " naira ")          # ₦30,000 → naira 30,000
+    s = re.sub(r"[—–‒]", ",", s)              # dashes become a pause, not "dash"
+    s = re.sub(r"[()\[\]{}]", " ", s)         # brackets are not spoken words
+    s = s.replace("/", " ")
+    s = s.replace("%", " percent ")
+    s = s.replace("&", " and ")
+    s = _DIGIT_WORD_RUN.sub(_digit_run, s)
+    return re.sub(r"\s+", " ", s).strip()
 
 
 def pick_device(explicit: str | None = None) -> str:
@@ -75,12 +123,20 @@ class Synthesizer:
         device = pick_device(self.device)
         started = time.perf_counter()
         pipe = KPipeline(lang_code="a", device=device)
-        # Warm: pays the voice-pack download and kernel setup now, not later.
-        list(pipe("Warm.", voice=self.voice, speed=1.0))
+        # Warm: pays the voice-pack download, MPS kernel JIT and digit handling
+        # now, not on the first customer. Numbers matter — tokens and amounts
+        # are what Stark reads aloud.
+        for line in (
+            "Warm.",
+            "Done — ₦5,000 paid to Home. Your token is 4821 0937 5512 8846 3019.",
+            "You've got 59,200 naira in your wallet and about 11 units left.",
+        ):
+            list(pipe(line, voice=self.voice, speed=1.0))
         self._pipe = pipe
         print(
             f"  kokoro ready on {device} in {time.perf_counter() - started:.1f}s "
-            f"(voice {self.voice})"
+            f"(voice {self.voice})",
+            flush=True,
         )
 
     def synthesize(self, text: str, voice: str) -> bytes:
@@ -139,7 +195,7 @@ def build_response(payload, synth: Synthesizer) -> tuple[int, str, bytes]:
         return error(400, f"Unknown voice {voice!r} — expected e.g. af_heart.")
 
     try:
-        wav = synth.synthesize(text.strip(), voice)
+        wav = synth.synthesize(normalize_for_speech(text.strip()), voice)
     except Exception as err:  # a bad voice or a dead model: refuse, don't guess
         return error(500, str(err), "server_error")
     if not wav:
@@ -189,17 +245,39 @@ def make_handler(synth: Synthesizer):
             self._reply(status, content_type, body)
 
         def log_message(self, fmt: str, *args) -> None:
-            print(f"  tts {fmt % args}")
+            print(f"  tts {fmt % args}", flush=True)
 
     return Handler
 
 
+def keepalive(synth: Synthesizer, every: float) -> None:
+    """Metal idles its kernels after a few quiet seconds, and the first reply
+    after a pause then pays ~3s of re-warm. A cheap background ping keeps the
+    device hot, so the first customer of the minute isn't the one who pays
+    for it. `STARK_TTS_KEEPALIVE=0` disables."""
+
+    def loop():
+        while True:
+            time.sleep(every)
+            try:
+                synth.synthesize("Warm.", synth.voice)
+            except Exception:
+                pass  # a failed ping must never take the sidecar down
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def main() -> None:
     synth = Synthesizer()
-    print(f"Stark TTS sidecar (Kokoro-82M) — loading…")
+    print("Stark TTS sidecar (Kokoro-82M) — loading…", flush=True)
     synth.load()
-    print(f"  http://{HOST}:{PORT}/v1/audio/speech  (POST, OpenAI shape)")
-    print("  Ctrl-C to stop.\n")
+    print(f"  http://{HOST}:{PORT}/v1/audio/speech  (POST, OpenAI shape)", flush=True)
+    ping = float(os.environ.get("STARK_TTS_KEEPALIVE", "45") or 0)
+    if ping > 0:
+        keepalive(synth, ping)
+        print(f"  keepalive every {ping:.0f}s (STARK_TTS_KEEPALIVE=0 to disable)",
+              flush=True)
+    print("  Ctrl-C to stop.\n", flush=True)
     ThreadingHTTPServer((HOST, PORT), make_handler(synth)).serve_forever()
 
 

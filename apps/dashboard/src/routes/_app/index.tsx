@@ -1,4 +1,4 @@
-import { activityQuery, stateQuery } from "@stark/api";
+import { activityQuery, stateQuery, suggestionsQuery } from "@stark/api";
 import { Button } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
 import {
@@ -22,13 +22,15 @@ import { Notice } from "@stark/ui/components/notice";
 import { SectionHeading } from "@stark/ui/components/section-heading";
 import { Stat, StatGrid } from "@stark/ui/components/stat";
 import { StatusPill } from "@stark/ui/components/status-pill";
+import { cn } from "@stark/ui/utils/cn";
 import { formatNaira, greeting } from "@stark/utils/format";
 import { noop, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ActivityRow } from "@/components/activity-row";
-import { BillRow } from "@/components/bill-row";
-import { LOW_DAYS, meterBill } from "@/lib/bills";
+import { BillIcon, BillRow } from "@/components/bill-row";
+import { isPayable, LOW_DAYS, meterBill } from "@/lib/bills";
+import { nextRenewal, renewalDetail, renewalTitle } from "@/lib/renewals";
 
 export const Route = createFileRoute("/_app/")({
   loader: ({ context }) => {
@@ -48,8 +50,23 @@ function runway(balance: number, spentThisMonth: number) {
 function Home() {
   const { data: state } = useSuspenseQuery(stateQuery());
   const { data: activity } = useQuery(activityQuery());
+  const { data: suggestions } = useQuery(suggestionsQuery());
   const meter = meterBill(state);
   const low = meter && state.days_left !== null && state.days_left <= LOW_DAYS;
+  // Reminders the server already judged due (state.due_soon): the soonest one gets
+  // its own action strip, the rest stay in "Stark noticed" as finished sentences.
+  const due = nextRenewal(state.due_soon);
+  // The meter Notice and the renewal Notice own their warnings; suggestions say the rest.
+  const noticed = (suggestions ?? []).filter(
+    (sug) => !(low && sug.reason.startsWith("units_low")) && sug.id !== `sug_due_${due?.id}`,
+  );
+  const needing = Number(Boolean(low)) + Number(Boolean(due));
+  const headline =
+    needing === 0
+      ? "Everything’s covered"
+      : needing === 1
+        ? "One thing needs you"
+        : "Two things need you";
 
   return (
     <>
@@ -59,7 +76,7 @@ function Home() {
         </span>
         <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="m-0 font-serif text-[34px] leading-[1.1] font-medium tracking-[-0.01em]">
-            {low ? "One thing needs you" : "Everything’s covered"}
+            {headline}
           </h1>
           <StatusPill>Stark is on</StatusPill>
         </div>
@@ -93,6 +110,28 @@ function Home() {
         </StatGrid>
       </Card>
 
+      {due ? (
+        <Notice
+          tone={due.days_until <= 0 ? "brand" : "muted"}
+          icon={<BillIcon bill={due} />}
+          title={renewalTitle(due)}
+          actions={
+            isPayable(due) ? (
+              <Button
+                nativeButton={false}
+                render={
+                  <Link to="/pay" search={{ bill: due.id, amount: due.price_ngn ?? undefined }} />
+                }
+              >
+                Pay{due.price_ngn ? ` ${formatNaira(due.price_ngn)}` : " it"}
+              </Button>
+            ) : null
+          }
+        >
+          {renewalDetail(due)}
+        </Notice>
+      ) : null}
+
       {low && meter ? (
         <Notice
           icon={
@@ -122,6 +161,28 @@ function Home() {
         >
           About {state.days_left} days left at your usual use.
         </Notice>
+      ) : null}
+
+      {noticed.length ? (
+        <Card className="gap-2.5">
+          <Eyebrow>Stark noticed</Eyebrow>
+          {noticed.map((sug) => (
+            <div key={sug.id} className="flex items-start gap-2.5">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "mt-1.5 size-1.5 shrink-0 rounded-full",
+                  sug.severity === "alert"
+                    ? "bg-destructive"
+                    : sug.severity === "warn"
+                      ? "bg-brand-warm"
+                      : "bg-faint",
+                )}
+              />
+              <span className="text-sm leading-relaxed">{sug.text}</span>
+            </div>
+          ))}
+        </Card>
       ) : null}
 
       <AskStark />

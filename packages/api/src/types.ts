@@ -16,6 +16,22 @@ export type Bill = {
   /** Data and TV only: the vendor plan code and its fixed price. */
   plan?: string;
   plan_price_ngn?: number;
+  /** Additive: when this bill is supposed to be paid, YYYY-MM-DD. Absent for
+   *  meters and lines that do not renew on a schedule. */
+  renews_on?: string;
+};
+
+/** A bill with a renewal inside the reminder window — the shape of `State.due_soon`. */
+export type DueBill = {
+  id: string;
+  kind: BillKind;
+  provider: string;
+  label: string;
+  /** YYYY-MM-DD. */
+  renews_on: string;
+  /** 0 is today, negative is overdue. */
+  days_until: number;
+  price_ngn: number | null;
 };
 
 export type State = {
@@ -31,6 +47,8 @@ export type State = {
   /** An estimate from purchase history, not a precise number. */
   days_left: number | null;
   bills: Bill[];
+  /** Additive: bills due inside the reminder window, soonest first. */
+  due_soon: DueBill[];
   as_of: string;
 };
 
@@ -105,6 +123,15 @@ export type VoiceReply = {
   /** Additive: the reply spoken by the local voice, as a WAV data URL.
    *  null when voice is off (no sidecar configured, or it did not answer). */
   audio?: string | null;
+  /** Additive: set when the transcript came from server-side speech-to-text
+   *  (an uploaded clip). `"ok"`, or why the clip came back unheard — in which
+   *  case `transcript` is empty and `reply` says so. */
+  stt?: "ok" | "no_key" | "failed";
+};
+
+/** Reply of `POST /v1/speak` — a fetched voice, WAV data URL or null. */
+export type SpeakReply = {
+  audio: string | null;
 };
 
 export type NewBill = {
@@ -113,9 +140,16 @@ export type NewBill = {
   reference: string;
   label?: string;
   plan?: string;
+  /** Additive: when the bill should be paid, YYYY-MM-DD. */
+  renews_on?: string;
 };
 
-export type BillPatch = { label?: string; plan?: string };
+export type BillPatch = {
+  label?: string;
+  plan?: string;
+  /** Additive: set a date (YYYY-MM-DD) or clear it with "". */
+  renews_on?: string;
+};
 export type LimitsPatch = { monthly_cap_ngn?: number; per_payment_cap_ngn?: number };
 export type PaymentInput = { bill_id: string; amount_ngn: number };
 export type TopUpInput = { amount_ngn: number; request_id?: string; source?: string };

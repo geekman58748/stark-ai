@@ -98,17 +98,19 @@ broadcast and no contract deployed. The NEAR AI model and Whisper were called li
 | Piece | Status |
 |---|---|
 | API contract | **frozen** — see [`docs/API.md`](docs/API.md) |
-| Stub server | working, 53/53 smoke checks (54 with the voice sidecar up) |
+| Stub server | working, 70/70 smoke checks, 281 unit tests |
 | App routes | **built** — plans, bill add/edit/delete, limits and wallet, additive to `/v1` |
 | VTpass client | **live auth + meter verify confirmed 2026-10-22** (33 tests) — purchases blocked by VTpass `028` product not whitelisted, **live token still unproven** |
 | Vending (M3) | **wired** — electricity, airtime, data and TV. Dry-run by default, 44 tests |
 | Receipts | **persisted** in SQLite: token ↔ tx hash ↔ request_id, survives restart |
 | Vault contract | **built** — 38/38 tests, wasm target checks clean, clippy clean. Ledger-only: it does not move tokens yet |
-| Agent + LLM | **built (M2)** — tool routing, policy gate, `pay()` signing. 59 tests. Real NEAR AI turn verified 2026-10-22. Signs but does not broadcast |
-| Telegram bot (M4) | **built, fail-closed** — webhook auth, identity linking, dedupe, voice wake gate. 16 tests. Needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` to go live |
-| Voice (Whisper) | **live-verified 2026-10-22** — real transcripts from NEAR AI Whisper over generated speech |
-| TTS | **built and live-verified 2026-10-23** — Kokoro-82M sidecar (`bun tts`): `/v1/voice` speaks replies (WAV data URL), Telegram voice notes reply in voice, Talk screen plays them. Fails closed to text. No Nigerian voice in Kokoro — cloning is the accent path |
-| AC telemetry | not started (M6) |
+| Agent + LLM | **built (M2)** — tool routing, policy gate, `pay()` signing. 59 tests. Real NEAR AI turn verified 2026-10-22. Signs but does not broadcast. **Fast model for the demo (2026-10-24):** `google/gemini-2.5-flash-lite`, 1.35s a turn vs 7.1s for `Qwen/Qwen3.8-27B`, with the account snapshot in the prompt — one env var back if the TEE claim matters |
+| Telegram bot (M4) | **built, fail-closed** — webhook auth, identity linking, dedupe, voice wake gate, renewal pushes. 22 tests. Needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` to go live; no real update has ever arrived |
+| Reminders | **built 2026-10-24** — a bill carries `renews_on`, appears in `state.due_soon` inside a 7-day window, and the same line is pushed to a linked chat. No push has ever been sent (no bot token) |
+| Voice (Whisper) | **live-verified 2026-10-22, real audio in 2026-10-24** — `/v1/voice` now takes the clip itself (base64 or multipart) from both the browser and Telegram; a transcript is never invented (`stt: ok\|failed\|no_key`) |
+| TTS | **built 2026-10-24, two providers, streamed** — ElevenLabs Flash (`ELEVENLABS_API_KEY`) answers a reply in well under a second, Kokoro-82M sidecar (`bun tts`) is the local fallback, text is always the floor. Talk shows text first (`speak: false`), then plays `GET /v1/speak/stream`, which speaks on the first bytes (falls back to `POST /v1/speak`); Telegram voice notes reply in voice. Kokoro has no Nigerian voice and a free ElevenLabs key gets premade voices only (library voices are HTTP 402) — cloning is the accent path |
+| Suggestions | **computed 2026-10-24**, not seeded — meter runway, cap usage, load imbalance, due bills; a line with no data behind it is not returned, so the old "AC is 78%" fake is gone |
+| AC telemetry | `/v1/telemetry` stores readings and `load_imbalance` reads them; **no real meter exists** (M6) |
 
 ## Ground rules
 

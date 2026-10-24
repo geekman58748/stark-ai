@@ -11,8 +11,10 @@ checks mutate in-memory state, so run it against a freshly started server.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BASE = "http://127.0.0.1:8000"
@@ -29,9 +31,10 @@ def call(method: str, path: str, body: dict | None = None) -> tuple[int, dict | 
         headers={"Content-Type": "application/json"} if data else {},
     )
     try:
-        # 15s, not 5: a /v1/voice reply may be spoken server-side (TTS
-        # sidecar) on top of the agent turn, and neither should hit the ceiling.
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        # 30s: a /v1/voice reply can be a live LLM turn (or two) plus a
+        # spoken reply on top. Genuine failures refuse instantly anyway —
+        # this ceiling only guards against a hang.
+        with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.status, json.loads(resp.read() or b"null"), dict(resp.headers)
     except urllib.error.HTTPError as err:
         raw = err.read()
@@ -55,7 +58,7 @@ call("POST", "/v1/_stub/reset")
 
 # --- read endpoints ---------------------------------------------------------
 status, index, _ = call("GET", "/")
-check("GET / lists routes", status == 200 and len(index.get("routes", [])) == 21,
+check("GET / lists routes", status == 200 and len(index.get("routes", [])) == 23,
       f"status={status}")
 
 status, health, _ = call("GET", "/health")
@@ -66,6 +69,14 @@ check("GET /v1/state 200", status == 200, f"status={status}")
 check("state balance is 64200", st.get("balance_ngn") == 64200, str(st.get("balance_ngn")))
 check("state cap is 30000", st.get("cap_ngn") == 30000, str(st.get("cap_ngn")))
 check("state has 3 bills", len(st.get("bills", [])) == 3, str(len(st.get("bills", []))))
+
+# Reminders: the DStv bill renews inside the window (seeded 3 days out), and
+# state carries it so the agent's snapshot and the dashboard both see it.
+due = st.get("due_soon", [])
+check("state due_soon carries the DStv renewal",
+      len(due) == 1 and due[0].get("id") == "bill_dstv"
+      and due[0].get("days_until") == 3 and due[0].get("price_ngn") == 7900,
+      str(due))
 
 status, bills, _ = call("GET", "/v1/bills")
 check("GET /v1/bills 200", status == 200 and len(bills) == 3, f"status={status}")
@@ -109,8 +120,34 @@ status, gone, _ = call("GET", f"/v1/bills/{added.get('id')}")
 check("deleted bill -> 404",
       status == 404 and gone.get("code") == "unknown_bill", f"status={status}")
 
+# Suggestions are computed now (suggestions.py): the meter line and the DStv
+# renewal come from live state; the old hardcoded "AC is 78%" line is gone.
 status, sugg, _ = call("GET", "/v1/suggestions")
-check("suggestions returns 2", status == 200 and len(sugg) == 2, f"status={status}")
+sug_text = " ".join(s.get("text", "") for s in sugg)
+check("suggestions computed from state",
+      status == 200 and any(s.get("id") == "sug_units" for s in sugg)
+      and any(s.get("reason") == "bill_due" for s in sugg)
+      and "78%" not in sug_text,
+      f"status={status} {[s.get('id') for s in sugg]}")
+
+# --- renews_on --------------------------------------------------------------
+status, patched, _ = call("PATCH", "/v1/bills/bill_dstv", {"renews_on": "2026-11-05"})
+check("PATCH renews_on sets a date",
+      status == 200 and patched.get("renews_on") == "2026-11-05", f"status={status}")
+status, bad_date, _ = call("PATCH", "/v1/bills/bill_dstv", {"renews_on": "whenever"})
+check("PATCH renews_on rejects nonsense -> 400 bad_renews_on",
+      status == 400 and bad_date.get("code") == "bad_renews_on", f"status={status}")
+status, cleared, _ = call("PATCH", "/v1/bills/bill_dstv", {"renews_on": ""})
+check("PATCH renews_on clears with an empty string",
+      status == 200 and "renews_on" not in cleared, f"status={status} {cleared}")
+status, gone_due, _ = call("GET", "/v1/state")
+check("a cleared renewal leaves due_soon", gone_due.get("due_soon") == [],
+      str(gone_due.get("due_soon")))
+call("PATCH", "/v1/bills/bill_dstv", {"renews_on": "2099-01-01"})   # far future: not due
+status, back, _ = call("GET", "/v1/state")
+check("a far-future renewal is not due", back.get("due_soon") == [],
+      str(back.get("due_soon")))
+call("POST", "/v1/_stub/reset")                                       # restore the seed
 
 status, activity, _ = call("GET", "/v1/activity")
 check("activity seeded with 6", status == 200 and len(activity) == 6, f"status={status}")
@@ -163,19 +200,64 @@ call("POST", "/v1/_stub/reset")
 
 # --- voice ------------------------------------------------------------------
 status, answer, _ = call("POST", "/v1/voice", {"transcript_hint": "hello stark what's my light bill"})
-check("voice query answers with units",
-      status == 200 and "units left" in (answer.get("reply") or ""), str(answer.get("reply")))
+# Phrasing-independent: a live model words this differently every time, and
+# since 2026-10-24 the account comes in the prompt as a snapshot, so `get_state`
+# need not be in `actions` any more. What must still hold is that the answer is
+# *grounded*: every number it says is a number the state holds. A reply with no
+# number at all passes — inventing one is the failure this catches.
+status, st, _ = call("GET", "/v1/state")
+state_text = json.dumps(st)
+spoken = re.findall(r"\d[\d,]*(?:\.\d+)?", answer.get("reply") or "")
+grounded = all(d.replace(",", "") in state_text for d in spoken)
+check("voice query answers from state",
+      status == 200 and bool(answer.get("reply")) and grounded,
+      f"{answer.get('actions')} {(answer.get('reply') or '')[:60]}")
+
+# Real audio in (M4 finish): the clip goes up as base64, the server hears it
+# with Whisper. Garbage bytes must never 500 and never be answered as if
+# understood — the reply either explains the miss or asks for the words again.
+import base64                                       # noqa: E402 - section-local
+
+garbage = base64.b64encode(b"this is not audio at all").decode()
+status, unheard, _ = call("POST", "/v1/voice",
+                         {"audio": garbage, "audio_type": "audio/webm",
+                          "speak": False})
+check("voice hears a clip or says why it cannot",
+      status == 200 and unheard.get("stt") in ("ok", "failed", "no_key")
+      and isinstance(unheard.get("reply"), str) and bool(unheard.get("reply")),
+      f"status={status} stt={unheard.get('stt')} {unheard.get('reply')}")
+check("an unheard clip carries no fabricated transcript",
+      unheard.get("stt") == "ok" or unheard.get("transcript") == "",
+      str(unheard.get("transcript")))
+
+status, bad_audio, _ = call("POST", "/v1/voice", {"audio": "!!! not base64 !!!"})
+check("bad base64 -> 400 bad_audio",
+      status == 400 and bad_audio.get("code") == "bad_audio", f"status={status}")
 
 status, ig, _ = call("POST", "/v1/voice", {"transcript_hint": "what time is it"})
-check("no wake word -> ignored", status == 200 and ig.get("ignored") is True)
+# Two halves of one gate (wake.py): plain speech stays silent, and a wake word
+# the recognizer wrote as "start" is still an address — the half that used to
+# fail for anyone whose "stark" came back as "start", "stock" or "starn".
+near_status, near, _ = call("POST", "/v1/voice",
+                            {"transcript_hint": "start what's my light bill",
+                             "speak": False})
+check("wake gate ignores plain speech and accepts a misheard wake word",
+      status == 200 and ig.get("ignored") is True
+      and near_status == 200 and near.get("ignored") is False
+      and bool(near.get("reply")),
+      f"ignored={ig.get('ignored')} near={near.get('ignored')} {near.get('reply')}")
 
-status, pay, _ = call("POST", "/v1/voice", {"transcript_hint": "hello stark top it up"})
-check("voice pay returns token", status == 200 and bool(pay.get("token")))
+# The canonical pay phrase (the same one /help advertises): unambiguous for a
+# live LLM, which asks a clarifying question on vaguer input — correct product
+# behaviour, but this check exists to prove the pay path fires.
+status, pay, _ = call("POST", "/v1/voice",
+                     {"transcript_hint": "hello stark pay 5000 for electricity",
+                      "speak": False})
+check("voice pay returns token", status == 200 and bool(pay.get("token")),
+      str(pay.get("reply"))[:80])
 
 # The reply comes back spoken when the TTS sidecar is up (STARK_TTS_URL), and
 # the additive `audio` field is present either way — null when voice is off.
-import base64                                       # noqa: E402 - section-local
-
 audio_field = answer.get("audio", "missing")
 check("voice reply carries audio field", audio_field != "missing")
 check("audio is a WAV data URL or null",
@@ -188,6 +270,53 @@ if isinstance(audio_field, str) and audio_field.startswith("data:audio/wav;base6
     check("sidecar audio decodes to a real WAV",
           spoken[:4] == b"RIFF" and len(spoken) > 1000, f"len={len(spoken)}")
 check("ignored reply never carries audio", ig.get("audio") is None, str(ig.get("audio"))[:40])
+
+# Text-first path: the dashboard asks for words only (speak: false), then
+# fetches the voice from /v1/speak — reading never waits on synthesis.
+status, fast, _ = call("POST", "/v1/voice",
+                      {"transcript_hint": "hello stark what is my light bill",
+                       "speak": False})
+check("speak:false answers text without audio",
+      status == 200 and fast.get("audio") is None and bool(fast.get("reply")),
+      str(fast.get("audio"))[:40])
+
+status, spoken, _ = call("POST", "/v1/speak", {"text": "hello stark, your meter is fine"})
+check("POST /v1/speak answers with the audio field",
+      status == 200 and "audio" in spoken, f"status={status}")
+speak_audio = spoken.get("audio")
+check("speak audio is a WAV data URL or null",
+      speak_audio is None or (isinstance(speak_audio, str)
+                              and speak_audio.startswith("data:audio/wav;base64,")),
+      str(speak_audio)[:60])
+if isinstance(speak_audio, str) and speak_audio.startswith("data:audio/wav;base64,"):
+    said = base64.b64decode(speak_audio.split(",", 1)[1])
+    check("speak audio decodes to a real WAV", said[:4] == b"RIFF" and len(said) > 1000,
+          f"len={len(said)}")
+
+status, no_text, _ = call("POST", "/v1/speak", {})
+check("POST /v1/speak without text -> 400 bad_text",
+      status == 400 and no_text.get("code") == "bad_text", f"status={status}")
+
+# --- streamed voice ---------------------------------------------------------
+# Raw, not JSON: the whole point is that the body arrives before it is finished.
+req = urllib.request.Request(BASE + "/v1/speak/stream?text="
+                             + urllib.parse.quote("Your light bill is 5,000 naira."))
+try:
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        s_status, s_type, s_len, s_body = resp.status, resp.headers.get("Content-Type", ""), resp.headers.get("Content-Length"), resp.read()
+except urllib.error.HTTPError as err:
+    s_status, s_type, s_len, s_body = err.code, err.headers.get("Content-Type", ""), err.headers.get("Content-Length"), err.read()
+check("GET /v1/speak/stream is audio, unbuffered, or an honest 503",
+      (s_status == 200 and s_type.startswith("audio/") and s_len is None
+       and len(s_body) > 1000)
+      or (s_status == 503 and b"no_voice" in s_body),
+      f"status={s_status} type={s_type} content-length={s_len} len={len(s_body)}")
+# The stream handler writes its own body; the dispatcher used to fall through and
+# send a 500 JSON body after the audio, corrupting the clip for the player. A
+# trailing error is the bug, so assert the tail is audio and nothing else.
+check("streamed audio is not followed by an error body",
+      s_status != 200 or b"stub_error" not in s_body[-512:],
+      str(s_body[-120:]))
 
 # --- limits and wallet ------------------------------------------------------
 status, limits, _ = call("GET", "/v1/limits")

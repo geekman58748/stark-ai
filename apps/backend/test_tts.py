@@ -13,6 +13,7 @@ import io
 import json
 import os
 import threading
+import time
 import unittest
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -70,11 +71,18 @@ class ClientCase(unittest.TestCase):
     """`tts` reads STARK_TTS_URL at call time, so the tests own the env."""
 
     def setUp(self):
-        self.saved = os.environ.pop("STARK_TTS_URL", None)
+        # ElevenLabs keys are common in a demo shell: without popping them the
+        # "no url" case would go looking for a live API instead of refusing.
+        self.saved = {k: os.environ.pop(k, None)
+                      for k in ("STARK_TTS_URL", "ELEVENLABS_API_KEY",
+                                "ELEVENLABS_API_URL")}
 
     def tearDown(self):
-        if self.saved is not None:
-            os.environ["STARK_TTS_URL"] = self.saved
+        for key, value in self.saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     def test_no_url_is_a_refusal_not_a_guess(self):
         wav, why = tts.synthesize("hello stark")
@@ -144,6 +152,171 @@ class ClientCase(unittest.TestCase):
             side.close()
         self.assertIsNotNone(note)
         self.assertTrue(note.startswith(b"OggS"), note[:8] if note else None)
+
+
+class FakeEleven:
+    """A local stand-in for api.elevenlabs.io returning raw PCM."""
+
+    def __init__(self, payload: bytes = b"\x00\x01" * 240, status: int = 200,
+                 dribble: bool = False):
+        self.payload = payload
+        self.status = status
+        self.dribble = dribble
+        self.requests: list[tuple[str, dict, str | None]] = []
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802 - required name
+                length = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(length) if length else 0
+                outer.requests.append((
+                    self.path,
+                    json.loads(raw or b"{}"),
+                    self.headers.get("xi-api-key"),
+                ))
+                self.send_response(outer.status)
+                self.send_header("Content-Type", "audio/mpeg")
+                if not outer.dribble:
+                    self.send_header("Content-Length", str(len(outer.payload)))
+                self.end_headers()
+                if outer.dribble:
+                    # Three writes with gaps, the way a real stream arrives:
+                    # a reader that only returns after EOF sees one chunk, a
+                    # streaming reader sees three.
+                    third = max(1, len(outer.payload) // 3)
+                    for i in range(0, len(outer.payload), third):
+                        self.wfile.write(outer.payload[i:i + third])
+                        self.wfile.flush()
+                        time.sleep(0.15)
+                else:
+                    self.wfile.write(outer.payload)
+
+            def log_message(self, fmt, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class ElevenLabsCase(unittest.TestCase):
+    """ElevenLabs is preferred when keyed, and never the only voice."""
+
+    KEYS = ("ELEVENLABS_API_KEY", "ELEVENLABS_API_URL", "STARK_TTS_URL")
+
+    def setUp(self):
+        self.saved = {k: os.environ.pop(k, None) for k in self.KEYS}
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_keyed_elevenlabs_wins_and_answers_wav(self):
+        eleven = FakeEleven(payload=b"\x01\x02" * 400)
+        try:
+            os.environ["ELEVENLABS_API_KEY"] = "test-key"
+            os.environ["ELEVENLABS_API_URL"] = eleven.url
+            wav, why = tts.synthesize("Your light bill is ₦5,000.")
+        finally:
+            eleven.close()
+        self.assertEqual(why, tts.OK)
+        self.assertTrue(wav.startswith(b"RIFF"), wav[:4])
+        with wave.open(io.BytesIO(wav)) as w:
+            self.assertEqual(w.getframerate(), tts.ELEVENLABS_PCM_RATE)
+            self.assertEqual(w.getnchannels(), 1)
+
+        path, sent, key = eleven.requests[0]
+        self.assertIn("text-to-speech/", path)
+        self.assertIn("output_format=pcm_24000", path)
+        # Not "₦5,000": both voices say the letter N for the sign (measured
+        # 2026-10-24), so the amount goes over as it is spoken.
+        self.assertEqual(sent["text"], "Your light bill is 5,000 naira.")
+        self.assertEqual(sent["model_id"], tts.ELEVENLABS_MODEL)
+        self.assertEqual(key, "test-key")
+
+    def test_elevenlabs_down_falls_through_to_the_sidecar(self):
+        side = FakeSidecar(payload=b"RIFF" + b"\x00" * 60)
+        try:
+            os.environ["ELEVENLABS_API_KEY"] = "test-key"
+            os.environ["ELEVENLABS_API_URL"] = "http://127.0.0.1:1"  # refused
+            os.environ["STARK_TTS_URL"] = side.url
+            wav, why = tts.synthesize("hello stark")
+        finally:
+            side.close()
+        self.assertEqual(why, tts.OK)
+        self.assertEqual(wav, b"RIFF" + b"\x00" * 60)
+
+    def test_elevenlabs_refused_with_no_sidecar_is_failed_not_audio(self):
+        os.environ["ELEVENLABS_API_KEY"] = "test-key"
+        os.environ["ELEVENLABS_API_URL"] = "http://127.0.0.1:1"
+        wav, why = tts.synthesize("hello stark")
+        self.assertIsNone(wav)
+        self.assertEqual(why, tts.ELEVENLABS_FAILED)
+
+    def test_without_a_key_nothing_calls_elevenlabs(self):
+        side = FakeSidecar(payload=b"RIFF" + b"\x00" * 60)
+        try:
+            os.environ["STARK_TTS_URL"] = side.url
+            wav, why = tts.synthesize("hello stark")
+        finally:
+            side.close()
+        self.assertEqual(why, tts.OK)
+        self.assertEqual(wav, b"RIFF" + b"\x00" * 60)
+
+    def test_the_sidecar_hears_the_same_words_as_elevenlabs(self):
+        side = FakeSidecar(payload=b"RIFF" + b"\x00" * 60)
+        try:
+            os.environ["STARK_TTS_URL"] = side.url
+            tts.synthesize("You have ₦64,200 left of your ₦30,000 cap.")
+        finally:
+            side.close()
+        self.assertEqual(side.requests[0]["input"],
+                         "You have 64,200 naira left of your 30,000 naira cap.")
+
+    def test_stream_naira_is_spelled_for_the_voice_too(self):
+        # The dashboard plays this stream, not the buffered call — a fix that
+        # only covered `synthesize` would leave the reported bug in place.
+        eleven = FakeEleven(payload=b"ID3" + b"\xff" * 900)
+        try:
+            os.environ["ELEVENLABS_API_KEY"] = "test-key"
+            os.environ["ELEVENLABS_API_URL"] = eleven.url
+            list(tts.stream_elevenlabs("Your balance is ₦64,200."))
+        finally:
+            eleven.close()
+        self.assertEqual(eleven.requests[0][1]["text"], "Your balance is 64,200 naira.")
+
+    def test_stream_arrives_in_pieces_not_at_the_end(self):
+        payload = b"ID3" + b"\xff" * 3000
+        eleven = FakeEleven(payload=payload, dribble=True)
+        try:
+            os.environ["ELEVENLABS_API_KEY"] = "test-key"
+            os.environ["ELEVENLABS_API_URL"] = eleven.url
+            chunks = list(tts.stream_elevenlabs("hello stark"))
+        finally:
+            eleven.close()
+        self.assertGreaterEqual(len(chunks), 2,
+                                "the body arrived as one blob — that is buffering")
+        self.assertEqual(b"".join(chunks), payload)
+        self.assertIn("/stream", eleven.requests[0][0])
+
+    def test_stream_without_a_key_yields_nothing(self):
+        self.assertEqual(list(tts.stream_elevenlabs("hello stark")), [])
+
+    def test_stream_refusal_is_empty_not_an_error(self):
+        eleven = FakeEleven(payload=b"no", status=500)
+        try:
+            os.environ["ELEVENLABS_API_KEY"] = "test-key"
+            os.environ["ELEVENLABS_API_URL"] = eleven.url
+            self.assertEqual(list(tts.stream_elevenlabs("hello stark")), [])
+        finally:
+            eleven.close()
 
 
 class FakeSynth:
@@ -216,6 +389,96 @@ class SidecarCase(unittest.TestCase):
     def test_empty_synthesis_is_500(self):
         status, _, _ = self.body_of({"input": "hi"}, FakeSynth(wav=b""))
         self.assertEqual(status, 500)
+
+
+class NormalizerCase(unittest.TestCase):
+    """Symbol and numeral handling, pinned to misaki's real failures.
+
+    Everything here came from misaki's own output on 2026-10-23: `₦30,000`
+    phonemized as "three zero zero zero zero", `—` and `(` passed through as
+    raw phonemes (the voice says "dash", "bracket").
+    """
+
+    def n(self, text: str) -> str:
+        return tts_server.normalize_for_speech(text)
+
+    def test_naira_prefix_no_longer_breaks_the_number(self):
+        # misaki read `₦30,000` as three-zero-zero-zero-zero because the ₦
+        # glued to the digits; splitting it out is the whole fix.
+        self.assertEqual(self.n("Your cap is ₦30,000."), "Your cap is naira 30,000.")
+
+    def test_dashes_brackets_slashes_never_reach_the_voice(self):
+        s = self.n("11.4 units — left (roughly) at 4 days; data/airtime low")
+        for symbol in "—()[]/":
+            self.assertNotIn(symbol, s)
+        self.assertIn(",", s)
+        self.assertIn("data airtime", s)
+
+    def test_percent_and_ampersand_become_words(self):
+        self.assertEqual(self.n("100% & counting"), "100 percent and counting")
+
+    def test_spelled_out_amount_becomes_a_numeral(self):
+        self.assertEqual(self.n("that's five nine two zero zero naira"), "that's 59200 naira")
+
+    def test_single_digit_words_stay_prose(self):
+        self.assertEqual(self.n("Four days left, about four units."),
+                         "Four days left, about four units.")
+
+    def test_spelled_out_token_stays_digit_by_digit(self):
+        token = " ".join(["four eight two one"] * 5)   # 20 digit-words
+        self.assertEqual(self.n(f"the token is {token},"), f"the token is {token},")
+
+    def test_numeral_text_is_left_alone(self):
+        self.assertEqual(self.n("Your token is 4821 0937 5512 8846 3019."),
+                         "Your token is 4821 0937 5512 8846 3019.")
+
+
+class SpeakableCase(unittest.TestCase):
+    """What the voice is asked to say, pinned to a real mispronunciation.
+
+    2026-10-24, reported from the Talk screen: "You have ₦64,200" was read as
+    "N sixty-four thousand…". Synthesising the reply and transcribing it back
+    showed the same on both providers — the naira sign is simply not in their
+    dictionaries, and no amount of voice settings changes that.
+    """
+
+    def test_an_amount_is_spoken_after_the_number(self):
+        self.assertEqual(tts.speakable("Your current balance is ₦64,200."),
+                         "Your current balance is 64,200 naira.")
+
+    def test_every_amount_in_a_sentence_is_spelled(self):
+        self.assertEqual(
+            tts.speakable("You have ₦7,000 of your ₦30,000 spending cap remaining."),
+            "You have 7,000 naira of your 30,000 naira spending cap remaining.",
+        )
+
+    def test_a_space_after_the_sign_is_fine(self):
+        self.assertEqual(tts.speakable("That is ₦ 5,000."), "That is 5,000 naira.")
+
+    def test_a_negative_amount_keeps_its_sign(self):
+        self.assertEqual(tts.speakable("A refund of -₦2,500."),
+                         "A refund of -2,500 naira.")
+
+    def test_kobo_survive_as_decimals(self):
+        self.assertEqual(tts.speakable("₦2,500.50"), "2,500.50 naira")
+
+    def test_a_stray_sign_still_becomes_a_word(self):
+        self.assertEqual(tts.speakable("The ₦ is the naira."), "The naira is the naira.")
+
+    def test_text_without_money_is_untouched(self):
+        # Commas, decimals and thousand-ish digits must not be rewritten: the
+        # rule is about the sign, not about numbers in general.
+        for text in ("About 11.4 units left — roughly 4 days.",
+                     "Your token is 4821 0937 5512 8846 3019.",
+                     "You've used 76% of your limit."):
+            self.assertEqual(tts.speakable(text), text)
+
+    def test_the_prompt_is_never_rewritten_for_display(self):
+        # The reply the user reads keeps the sign; only `speakable` output is
+        # sent to a voice, and the two must not be confused.
+        reply = "Your current balance is ₦64,200."
+        self.assertIn("₦", reply)
+        self.assertNotIn("₦", tts.speakable(reply))
 
 
 class TestOpusEncode(unittest.TestCase):

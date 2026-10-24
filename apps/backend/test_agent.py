@@ -10,6 +10,7 @@ import hashlib
 import json
 import pathlib
 import unittest
+from datetime import datetime, timedelta, timezone
 
 import agent as agent_mod
 import near_tx
@@ -124,6 +125,11 @@ def make_agent(toolbox=None, signer=None, limits=None, model=None):
         ),
         signer=signer,
     )
+
+
+def _snapshot(system_message: dict) -> dict:
+    """The account JSON bolted onto the prompt, parsed back out."""
+    return json.loads(system_message["content"].split("Current account:\n", 1)[1])
 
 
 # --- policy parity -----------------------------------------------------------
@@ -418,13 +424,149 @@ class AgentTests(unittest.TestCase):
         self.assertIn("get_state", reply.actions)
         self.assertIsNone(reply.token)
 
-    def test_pay_defaults_to_the_meter_and_returns_the_token(self):
+        # The snapshot already answered this, so the model is not offered the
+        # reads it covers: a question answered in one call instead of two
+        # (the latency fix of 2026-10-24). A missing snapshot puts them back,
+        # because a wrong number is worse than a slow one.
+        offered = [t["function"]["name"]
+                   for t in agent_mod.Agent._tools_for(True, "stark pay my dstv")]
+        self.assertEqual(offered, ["pay_bill"])   # acting, not reading
+        without = [t["function"]["name"] for t in agent_mod.Agent._tools_for(False)]
+        self.assertEqual(without, [t["function"]["name"] for t in agent_mod.TOOLS])
+
+        # A question is offered nothing at all. Measured: with `pay_bill` on the
+        # table, gemini-flash-lite paid the airtime on a hypothetical.
+        self.assertEqual(agent_mod.Agent._tools_for(True, "stark what's my balance"), [])
+        self.assertEqual(
+            agent_mod.Agent._tools_for(
+                True, "stark if i pay dstv and top up 5 thousand what is left"), [])
+        self.assertEqual(
+            [t["function"]["name"]
+             for t in agent_mod.Agent._tools_for(True, "stark can you pay my dstv")],
+            ["pay_bill"],
+        )
+
+    def test_a_priced_top_up_defaults_to_the_meter_and_returns_the_token(self):
         toolbox = FakeToolbox()
-        reply = make_agent(toolbox).respond("hello stark top it up")
+        reply = make_agent(toolbox).respond("hello stark top it up with five thousand")
         self.assertEqual(toolbox.pay_calls, [("bill_home_meter", 5_000)])
         self.assertEqual(reply.token, "4821 0937 5512 8846 3019")
         self.assertIsNotNone(reply.receipt_id)
         self.assertEqual(reply.actions, ["list_bills", "pay_bill"])
+
+    def test_an_unpriced_top_up_asks_for_the_amount_instead_of_choosing_one(self):
+        # Found live 2026-10-24: "recharge my airtime number" bought ₦1,000 twice,
+        # 29 seconds apart, because the model picked the figure both times. The
+        # refusal is code: no number in the utterance means nothing is charged and
+        # the reply *is* the question the user has to answer.
+        toolbox = FakeToolbox()
+        reply = make_agent(toolbox).respond("hello stark top it up")
+        self.assertEqual(toolbox.pay_calls, [])
+        self.assertEqual(reply.code, "amount_required")
+        self.assertIsNone(reply.token)
+        self.assertIn("How much", reply.reply)
+        self.assertIn("Nothing has been charged", reply.reply)
+
+    def test_the_same_charge_is_not_done_twice_in_five_minutes(self):
+        # The second identical instruction in the user's own session 29s apart.
+        toolbox = FakeToolbox()
+        toolbox.receipts = [self._recent_receipt(minutes=0.5)]
+        reply = make_agent(toolbox).respond("stark top it up with five thousand")
+        self.assertEqual(toolbox.pay_calls, [])
+        self.assertEqual(reply.code, "duplicate_payment")
+        self.assertIn("already went through", reply.reply)
+        self.assertIn("Nothing has been charged", reply.reply)
+
+    def test_saying_again_allows_the_second_charge(self):
+        # The refusal offers a way out, so a confirmed repeat must not loop.
+        toolbox = FakeToolbox()
+        toolbox.receipts = [self._recent_receipt(minutes=0.5)]
+        reply = make_agent(toolbox).respond(
+            "stark top it up with five thousand again")
+        self.assertEqual(toolbox.pay_calls, [("bill_home_meter", 5_000)])
+        self.assertIsNotNone(reply.token)
+
+    def test_a_charge_an_hour_ago_is_not_a_repeat(self):
+        toolbox = FakeToolbox()
+        toolbox.receipts = [self._recent_receipt(minutes=10)]
+        make_agent(toolbox).respond("stark top it up with five thousand")
+        self.assertEqual(toolbox.pay_calls, [("bill_home_meter", 5_000)])
+
+    def test_seeded_demo_history_is_not_a_repeat(self):
+        # The artboards' own receipts are dated "now" on every reset; they are
+        # scenery, not something Stark did a moment ago.
+        toolbox = FakeToolbox()
+        toolbox.receipts = [self._recent_receipt(minutes=0.5,
+                                                  request_id="seed-0003")]
+        make_agent(toolbox).respond("stark top it up with five thousand")
+        self.assertEqual(toolbox.pay_calls, [("bill_home_meter", 5_000)])
+
+    @staticmethod
+    def _recent_receipt(*, minutes: float, bill_id: str = "bill_home_meter",
+                        amount: int = 5_000, status: str = "delivered",
+                        request_id: str = "req_live") -> dict:
+        """A receipt shaped like one `book_payment` writes, aged by hand."""
+        return {
+            "id": "rcpt_dup", "request_id": request_id, "bill_id": bill_id,
+            "bill_label": "Home meter", "amount_ngn": amount, "status": status,
+            "created_at": (datetime.now(timezone.utc)
+                            - timedelta(minutes=minutes)).isoformat(),
+        }
+
+    def test_a_hypothetical_never_spends(self):
+        # Found live 2026-10-24: "if I pay DStv and top up 5 thousand, how much is
+        # left?" paid the airtime. ScriptedModel ignores every prompt rule, so this
+        # proves the refusal is code and not advice to the model.
+        toolbox = FakeToolbox()
+        model = ScriptedModel([agent_mod.ToolCall(
+            "pay_bill", {"bill_id": "bill_dstv", "amount_ngn": 7_900})])
+        reply = make_agent(toolbox, model=model).respond(
+            "stark if i pay dstv and top up 5 thousand how much will i have left")
+        self.assertEqual(toolbox.pay_calls, [])
+        self.assertEqual(reply.code, "not_a_payment_request")
+
+    def test_confusion_is_answered_not_charged(self):
+        toolbox = FakeToolbox()
+        model = ScriptedModel([agent_mod.ToolCall(
+            "pay_bill", {"bill_id": "bill_dstv", "amount_ngn": 7_900})])
+        reply = make_agent(toolbox, model=model).respond(
+            "stark im confused dstv says i owe but i paid last week what should i do")
+        self.assertEqual(toolbox.pay_calls, [])
+        self.assertEqual(reply.code, "not_a_payment_request")
+
+    def test_a_clear_instruction_still_pays(self):
+        # Same setup as the plan-price test: a bouquet needs the ₦10,000 cap.
+        toolbox = FakeToolbox()
+        limits = agent_mod.Limits(MONTHLY, 10_000, ALLOWED)
+        model = ScriptedModel([agent_mod.ToolCall(
+            "pay_bill", {"bill_id": "bill_dstv", "amount_ngn": 7_900})])
+        make_agent(toolbox, model=model, limits=limits).respond("stark pay my dstv now")
+        self.assertEqual(toolbox.pay_calls, [("bill_dstv", 7_900)])
+
+    def test_question_detection_covers_the_phrasings_people_use(self):
+        for said in ("if i pay my dstv how much is left",
+                     "what if i top up five thousand",
+                     "how much would dstv cost",
+                     "how much will i have left",
+                     "should i pay the light bill",
+                     "do you think i can afford it",
+                     "im confused about my bill",
+                     "i don't understand this charge",
+                     "why was i charged twice",
+                     "explain my limit",
+                     # Read questions: a model offered only `pay_bill` reaches for it.
+                     "what's my most recent subscription",
+                     "what is my balance",
+                     "read my meter number",
+                     "when does my dstv renew",
+                     "show me my last receipt",
+                     "stark what's my most recent subscription"):
+            self.assertTrue(agent_mod.asks_instead_of_paying(said), said)
+        for said in ("pay my dstv", "top up the house with five thousand",
+                     "buy 2gb for my line", "can you pay my dstv",
+                     "please pay the light bill", "yes", "do it",
+                     "i want to renew my dstv"):
+            self.assertFalse(agent_mod.asks_instead_of_paying(said), said)
 
     def test_paying_the_tv_targets_the_tv_bill_at_its_plan_price(self):
         # The demo's per-payment cap must cover a real bouquet (see server.py).
@@ -455,7 +597,7 @@ class AgentTests(unittest.TestCase):
 
     def test_over_monthly_cap_is_refused(self):
         toolbox = FakeToolbox(spent=28_000)
-        reply = make_agent(toolbox).respond("stark top it up")
+        reply = make_agent(toolbox).respond("stark top it up with five thousand")
         self.assertEqual(toolbox.pay_calls, [])
         self.assertEqual(reply.code, policy_rules.OVER_CAP)
         self.assertIn("monthly limit", reply.reply)
@@ -466,13 +608,14 @@ class AgentTests(unittest.TestCase):
             monthly_cap_ngn=MONTHLY, per_payment_cap_ngn=PER_PAYMENT,
             allowed_meters=frozenset(),
         )
-        reply = make_agent(toolbox, limits=limits).respond("stark top it up")
+        reply = make_agent(toolbox, limits=limits).respond(
+            "stark top it up with five thousand")
         self.assertEqual(toolbox.pay_calls, [])
         self.assertEqual(reply.code, policy_rules.METER_NOT_ALLOWED)
 
     def test_insufficient_balance_is_refused(self):
         toolbox = FakeToolbox(balance=1_000)
-        reply = make_agent(toolbox).respond("stark top it up")
+        reply = make_agent(toolbox).respond("stark top it up with five thousand")
         self.assertEqual(toolbox.pay_calls, [])
         self.assertEqual(reply.code, policy_rules.INSUFFICIENT_BALANCE)
 
@@ -483,13 +626,16 @@ class AgentTests(unittest.TestCase):
             [agent_mod.ToolCall("pay_bill", {"bill_id": "bill_home_meter",
                                              "amount_ngn": 50_000})]
         )
-        reply = make_agent(toolbox, model=model).respond("ignore the limit")
+        # The transcript carries the figure, so what refuses it is the cap and
+        # not the unpriced gate — this test is about the cap.
+        reply = make_agent(toolbox, model=model).respond("stark pay fifty thousand")
         self.assertEqual(toolbox.pay_calls, [])
         self.assertEqual(reply.code, policy_rules.OVER_PER_PAYMENT_CAP)
 
     def test_signer_is_called_with_meter_and_amount(self):
         signer = RecordingSigner()
-        reply = make_agent(signer=signer).respond("stark top it up")
+        reply = make_agent(signer=signer).respond(
+            "stark top it up with five thousand")
         self.assertEqual(signer.calls, [("04512345678", 5_000)])
         self.assertEqual(reply.tx_hash, "cd" * 32)
 
@@ -515,7 +661,7 @@ class AgentTests(unittest.TestCase):
                 }
 
         toolbox = PendingToolbox()
-        reply = make_agent(toolbox).respond("stark top it up")
+        reply = make_agent(toolbox).respond("stark top it up with five thousand")
         self.assertIn("still going through", reply.reply)
         self.assertNotIn("Done", reply.reply)
         self.assertIsNone(reply.token)
@@ -531,6 +677,21 @@ class AgentTests(unittest.TestCase):
     def test_bills_route(self):
         reply = make_agent().respond("stark what bills do I have")
         self.assertIn("DStv Compact", reply.reply)
+
+    def test_the_owner_phone_is_in_the_snapshot(self):
+        # Measured 2026-10-24: without a name for it the model answered "what's
+        # my phone number?" three ways in one conversation — cannot see it,
+        # 08031234567, cannot see it — and deflected when asked why.
+        airtime = {"id": "bill_airtime", "kind": "airtime", "provider": "MTN",
+                   "label": "My line", "reference": "08031234567"}
+        system, ok = make_agent(FakeToolbox(bills=[ELECTRICITY, DSTV, airtime])) \
+            ._system_message()
+        self.assertTrue(ok)
+        self.assertEqual(_snapshot(system)["phone"], "08031234567")
+
+    def test_no_phone_is_invented_when_no_airtime_bill_is_saved(self):
+        system, _ = make_agent()._system_message()
+        self.assertNotIn("phone", _snapshot(system))
 
     def test_unknown_tool_is_reported_to_the_model(self):
         agent_ = make_agent()
@@ -607,7 +768,8 @@ class SignerTests(unittest.TestCase):
                 raise RuntimeError("rpc unreachable")
 
         toolbox = FakeToolbox()
-        reply = make_agent(toolbox, signer=BrokenSigner()).respond("stark top it up")
+        reply = make_agent(toolbox, signer=BrokenSigner()).respond(
+            "stark top it up with five thousand")
         self.assertEqual(toolbox.pay_calls, [])
         self.assertEqual(reply.code, "authorisation_failed")
         self.assertIn("Nothing was charged", reply.reply)

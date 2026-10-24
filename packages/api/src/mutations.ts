@@ -87,7 +87,22 @@ export function useWithdraw() {
 export function useVoice() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (transcript: string) => api.voice(transcript),
+    // speak: false — text first, always. The Talk screen fetches the voice
+    // from api.speak once the words are on screen, so synthesis never delays
+    // the reply you are waiting to read.
+    mutationFn: (transcript: string) => api.voice(transcript, { speak: false }),
+    onSuccess: (reply) => {
+      if (reply.receipt_id) return invalidateMoney(qc);
+    },
+  });
+}
+
+/** Same contract as useVoice, but the clip goes up and the server does the
+ *  hearing — for browsers without the Web Speech API. */
+export function useVoiceAudio() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (audio: Blob) => api.voiceAudio(audio, { speak: false }),
     onSuccess: (reply) => {
       if (reply.receipt_id) return invalidateMoney(qc);
     },

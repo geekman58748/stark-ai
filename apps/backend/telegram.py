@@ -16,8 +16,9 @@ Order of checks, and why:
 3. **Identity.** An unlinked chat gets link instructions and nothing else —
    never state, never the agent, never a payment. The only claim that counts is
    a 6-digit code minted by the app (`identities.py`).
-4. **Wake gate, for voice only.** A voice note must contain "stark", the same
-   rule `/v1/voice` enforces, because a voice note can be recorded by accident.
+4. **Wake gate, for voice only.** A voice note must open with an attempt at the
+   wake word — the same `wake.py` rule `/v1/voice` enforces, mishearings and all —
+   because a voice note can be recorded by accident.
    A typed message in a DM with the bot is deliberate — no wake word needed.
    That split is deliberate; it is not a second brain, it is a UI courtesy.
 
@@ -46,6 +47,7 @@ from typing import Any, Callable, Protocol
 import audio
 import stt
 import tts
+import wake
 
 CHANNEL = "telegram"
 
@@ -279,6 +281,7 @@ class TelegramAdapter:
             return NOT_LINKED_REPLY
 
         transcript = None
+        said = None            # what the agent reads: the transcript, addressed
         from_voice = False
         if message.get("voice") or message.get("audio"):
             from_voice = True
@@ -287,13 +290,15 @@ class TelegramAdapter:
             if transcript is None:
                 self._last_outcome = "voice_unheard"
                 return VOICE_NO_STT
-            if "stark" not in transcript.lower():
-                # Same wake rule as /v1/voice: stay silent, not chatty.
+            # Same wake rule as /v1/voice (wake.py): a misheard wake word is
+            # still an address, anything else stays silent, not chatty.
+            said = wake.wake_attempt(transcript)
+            if said is None:
                 self.stats["ignored"] += 1
                 self._last_outcome = "asleep"
                 return VOICE_ASLEEP
         elif text:
-            transcript = text
+            transcript = said = text
         else:
             self.stats["ignored"] += 1
             self._last_outcome = "ignored"
@@ -302,7 +307,7 @@ class TelegramAdapter:
         self.stats["agent"] += 1
         self._last_outcome = "agent"
         self.log(f"telegram user={user_id} transcript={transcript!r}")
-        reply = self.agent.respond(transcript).reply
+        reply = self.agent.respond(said).reply
         # Spoken only when the question was a voice note: you spoke to Stark,
         # Stark speaks back. A typed message gets a typed reply.
         self._speak_reply = bool(from_voice)

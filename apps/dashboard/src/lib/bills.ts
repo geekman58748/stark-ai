@@ -1,6 +1,7 @@
 import type { Bill, BillKind, State } from "@stark/api";
 import type { IconName } from "@stark/ui/components/icons";
 import { formatNaira, formatShortDate, maskReference } from "@stark/utils/format";
+import { renewalDay } from "@/lib/renewals";
 
 export const billKinds: { kind: BillKind; label: string; icon: IconName }[] = [
   { kind: "electricity", label: "Electricity", icon: "Electricity" },
@@ -46,6 +47,17 @@ export function billStatus(bill: Bill, state: State): BillStatus {
   if (bill.kind === "internet" || bill.kind === "water") {
     return { text: "Saved, paying soon", attention: false };
   }
+  // A renewal date is the thing to say about a subscription — more useful than
+  // when it was last paid — and it is flagged while the reminder window holds it.
+  if (bill.renews_on) {
+    const day = renewalDay(bill.renews_on);
+    if (day) {
+      return {
+        text: `Renews ${day}`,
+        attention: (state.due_soon ?? []).some((item) => item.id === bill.id),
+      };
+    }
+  }
   if (bill.plan_price_ngn) {
     return {
       text: bill.last_paid_at
@@ -60,8 +72,9 @@ export function billStatus(bill: Bill, state: State): BillStatus {
   return { text: "Not paid yet", attention: false };
 }
 
-/** Internet and water can be saved but not paid yet (the backend refuses and charges nothing). */
-export function isPayable(bill: Bill) {
+/** Internet and water can be saved but not paid yet (the backend refuses and charges nothing).
+ *  Takes any object with a `kind`, so a `DueBill` from `state.due_soon` asks the same question. */
+export function isPayable(bill: Pick<Bill, "kind">) {
   return bill.kind !== "internet" && bill.kind !== "water";
 }
 

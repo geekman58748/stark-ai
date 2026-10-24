@@ -18,14 +18,17 @@ Hermetic: every server binds 127.0.0.1 on port 0 and is stopped in tearDown.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import threading
 import unittest
+import wave
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
+import audio
 import near_tx
 import stt
 from agent import NEAR_AI_MODEL, NearAiModel
@@ -559,6 +562,17 @@ class TestNearAiModelLive(ServerTest):
 class TestSttLive(ServerTest):
     WAV = b"RIFF$\x00\x00\x00WAVEfmt " + b"\x00" * 16
 
+    @staticmethod
+    def real_wav(seconds: float = 0.2) -> bytes:
+        """A decodable clip for the paths that must actually go through ffmpeg."""
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as out:
+            out.setnchannels(1)
+            out.setsampwidth(2)
+            out.setframerate(16000)
+            out.writeframes(b"\x00\x00" * int(16000 * seconds))
+        return buf.getvalue()
+
     def setUp(self):
         super().setUp()
         patcher = mock.patch.object(stt, "NEAR_AI_BASE", self.server.base)
@@ -586,6 +600,63 @@ class TestSttLive(ServerTest):
         self.assertIn(b'filename="audio.wav"', req.body)
         self.assertIn(b"Content-Type: audio/wav", req.body)
         self.assertIn(self.WAV, req.body)
+
+    def test_transcribe_names_what_the_clip_really_is(self):
+        self.restart(lambda req: json_response({"text": "top up the house"}))
+
+        text, reason = stt.transcribe(self.WAV, api_key="k", mime="audio/webm")
+
+        self.assertEqual((text, reason), ("top up the house", stt.OK))
+        req = self.server.requests[0]
+        self.assertIn(b'filename="audio.webm"', req.body)
+        self.assertIn(b"Content-Type: audio/webm", req.body)
+
+    def test_a_messy_mime_header_still_names_the_clip(self):
+        self.restart(lambda req: json_response({"text": "hello"}))
+
+        stt.transcribe(self.WAV, api_key="k", mime="audio/ogg; codecs=opus")
+
+        req = self.server.requests[0]
+        self.assertIn(b'filename="audio.ogg"', req.body)
+        self.assertIn(b"Content-Type: audio/ogg\r\n", req.body)
+
+    @unittest.skipUnless(audio.ffmpeg_available(), "ffmpeg not installed")
+    def test_a_browser_webm_is_decoded_before_it_is_sent(self):
+        # Measured 2026-10-24: the provider refuses WebM as a container (400
+        # "Audio could not be processed"), whatever the filename says. The
+        # dashboard records WebM, so `hear` must decode it to WAV — and what
+        # goes on the wire must be named WAV, or Whisper refuses it again.
+        self.restart(lambda req: json_response({"text": "top up the house"}))
+
+        text, reason = stt.hear(self.real_wav(), api_key="k", mime="audio/webm")
+
+        self.assertEqual((text, reason), ("top up the house", stt.OK))
+        req = self.server.requests[0]
+        self.assertIn(b'filename="audio.wav"', req.body)
+        self.assertIn(b"Content-Type: audio/wav", req.body)
+        self.assertTrue(req.body.split(b"\r\n\r\n")[-1].startswith(b"RIFF"))
+
+    @unittest.skipUnless(audio.ffmpeg_available(), "ffmpeg not installed")
+    def test_a_clip_ffmpeg_cannot_read_still_goes_to_whisper_unchanged(self):
+        # Decoding failure must not fabricate words *or* silently drop the clip:
+        # the provider sees exactly what the client sent and says it cannot hear
+        # it, which is the honest answer.
+        self.restart(lambda req: raw_response(b"not audio", 400))
+
+        text, reason = stt.hear(b"this is not audio at all", api_key="k",
+                                mime="audio/webm")
+
+        self.assertEqual((text, reason), (None, stt.FAILED))
+        req = self.server.requests[0]
+        self.assertIn(b'filename="audio.webm"', req.body)
+
+    def test_wav_is_sent_as_it_arrived(self):
+        # The common path pays no ffmpeg cost at all.
+        self.restart(lambda req: json_response({"text": "hello"}))
+
+        stt.hear(self.WAV, api_key="k", mime="audio/wav")
+
+        self.assertIn(b'filename="audio.wav"', self.server.requests[0].body)
 
     def test_empty_transcript_is_a_failure_not_a_guess(self):
         self.restart(lambda req: json_response({"text": "   "}))

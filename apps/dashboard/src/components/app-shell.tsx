@@ -44,11 +44,7 @@ function AccountAvatar() {
   const { data } = useQuery(stateQuery());
   const initials = data?.first_name?.slice(0, 2).toUpperCase() ?? "";
   return (
-    <Link
-      to="/settings"
-      aria-label="Account and settings"
-      className="rounded-full no-underline"
-    >
+    <Link to="/settings" aria-label="Account and settings" className="rounded-full no-underline">
       <Avatar className="size-8.5">
         <AvatarFallback className="bg-surface-3 text-xs font-semibold text-fg">
           {initials}
@@ -71,18 +67,12 @@ function Header() {
               className="flex items-center gap-2 text-fg no-underline"
             >
               <LogoMark />
-              <span className="text-base font-semibold sm:text-[15px]">
-                Stark
-              </span>
+              <span className="text-base font-semibold sm:text-[15px]">Stark</span>
             </BreadcrumbLink>
           </BreadcrumbItem>
-          <BreadcrumbSeparator className="hidden text-faint sm:inline">
-            /
-          </BreadcrumbSeparator>
+          <BreadcrumbSeparator className="hidden text-faint sm:inline">/</BreadcrumbSeparator>
           <BreadcrumbItem className="hidden sm:inline-flex">
-            <BreadcrumbPage className="text-[13px] font-medium">
-              {page}
-            </BreadcrumbPage>
+            <BreadcrumbPage className="text-[13px] font-medium">{page}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
@@ -146,9 +136,7 @@ function TabBar() {
       aria-current={isActive(path, to, exact) ? "page" : undefined}
       className={cn(
         "flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium no-underline",
-        isActive(path, to, exact)
-          ? "text-brand-soft"
-          : "text-idle hover:text-fg",
+        isActive(path, to, exact) ? "text-brand-soft" : "text-idle hover:text-fg",
       )}
     >
       <Icon size={22} />
@@ -162,11 +150,7 @@ function TabBar() {
     >
       {item(home)}
       {item(bills)}
-      <Link
-        to="/talk"
-        aria-label="Talk to Stark"
-        className="flex flex-1 justify-center"
-      >
+      <Link to="/talk" aria-label="Talk to Stark" className="flex flex-1 justify-center">
         <span className="-mt-5.5 flex size-14 items-center justify-center rounded-full border-4 border-canvas bg-brand text-white shadow-[0_8px_24px_rgba(194,65,12,0.45)]">
           <Icons.Mic size={24} />
         </span>
@@ -190,13 +174,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function PageTitle({
-  children,
-  aside,
-}: {
-  children: ReactNode;
-  aside?: ReactNode;
-}) {
+export function PageTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <h1 className="m-0 font-serif text-[34px] leading-[1.1] font-medium tracking-[-0.01em]">
@@ -207,13 +185,7 @@ export function PageTitle({
   );
 }
 
-export function BackLink({
-  to,
-  children,
-}: {
-  to: string;
-  children: ReactNode;
-}) {
+export function BackLink({ to, children }: { to: string; children: ReactNode }) {
   return (
     <Button
       variant="ghost"
