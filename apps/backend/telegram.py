@@ -85,7 +85,7 @@ class TelegramError(Exception):
 
 
 class AgentLike(Protocol):
-    def respond(self, transcript: str) -> Any: ...
+    def respond(self, transcript: str, thread: str | None = None) -> Any: ...
 
 
 class IdentityLike(Protocol):
@@ -206,6 +206,9 @@ class TelegramAdapter:
     # Both injected in tests; live they default to tts.voice_note / the API.
     speak: Callable[[str], bytes | None] | None = None
     send_voice: Callable[[int, bytes], bool] | None = None
+    # One callback per update that reached the agent, so the server can write the
+    # turn to `turnlog`. Injected in tests; wired live in server.py.
+    on_turn: Callable[[dict], None] | None = None
     log: Callable[[str], None] = lambda line: None
     stats: dict[str, int] = field(default_factory=lambda: {
         "updates": 0, "duplicates": 0, "unlinked": 0, "agent": 0,
@@ -278,10 +281,35 @@ class TelegramAdapter:
 
         if reply:
             self._deliver(chat_id, reply, spoken=self._speak_reply)
+        self._emit_turn(reply)
         return {"ok": True, "handled": self._last_outcome, "update_id": update.get("update_id")}
 
     _last_outcome = "ignored"
     _speak_reply = False       # per-update scratch, reset on every _route
+    _last_heard: str | None = None
+    _last_said: str | None = None
+    _last_result: Any = None
+
+    def _emit_turn(self, reply: str | None) -> None:
+        """Hand the exchange to the log, if anything is listening.
+
+        `turnlog` used to be written only by `/v1/voice`, so the channel people
+        actually demo had no record at all — the first Telegram conversation
+        could not be read back (`count: 0`), and "why did it say that" had to be
+        answered by replaying it locally.
+        """
+        if self.on_turn is None:
+            return
+        try:
+            self.on_turn({
+                "outcome": self._last_outcome,
+                "heard": self._last_heard or "",
+                "said": self._last_said,
+                "reply": reply,
+                "result": self._last_result,
+            })
+        except Exception as err:  # a broken log must not break the reply
+            self.log(f"telegram turn log failed: {err}")
 
     def _send(self, chat_id: int, text: str) -> None:
         if self.send is not None:
@@ -318,15 +346,20 @@ class TelegramAdapter:
     def _route(self, message: dict, text: str, channel_user_id: str,
                display_name: str | None, chat_id: int) -> str | None:
         self._speak_reply = False
+        self._last_heard = None
+        self._last_said = None
+        self._last_result = None
         if text.startswith("/"):
             self.stats["commands"] += 1
             self._last_outcome = "command"
+            self._last_heard = text
             return self._command(text, channel_user_id, display_name)
 
         user_id = self.identities.resolve(CHANNEL, channel_user_id)
         if user_id is None:
             self.stats["unlinked"] += 1
             self._last_outcome = "unlinked"
+            self._last_heard = text or None
             return NOT_LINKED_REPLY
 
         transcript = None
@@ -336,6 +369,7 @@ class TelegramAdapter:
             from_voice = True
             self.stats["voice"] += 1
             transcript = self._transcribe(message)
+            self._last_heard = transcript
             if transcript is None:
                 self._last_outcome = "voice_unheard"
                 return VOICE_NO_STT
@@ -355,12 +389,18 @@ class TelegramAdapter:
 
         self.stats["agent"] += 1
         self._last_outcome = "agent"
+        self._last_heard = transcript
+        self._last_said = said
         self.log(f"telegram user={user_id} transcript={transcript!r}")
-        reply = self.agent.respond(said).reply
+        # The chat is the thread: a bare "500" is only an amount because the
+        # previous line asked how much. Memory is per chat, so two people
+        # messaging the bot cannot answer each other's questions.
+        result = self.agent.respond(said, thread=f"{CHANNEL}:{chat_id}")
+        self._last_result = result
         # Spoken only when the question was a voice note: you spoke to Stark,
         # Stark speaks back. A typed message gets a typed reply.
         self._speak_reply = bool(from_voice)
-        return reply
+        return result.reply
 
     def _transcribe(self, message: dict) -> str | None:
         voice = message.get("voice") or message.get("audio") or {}

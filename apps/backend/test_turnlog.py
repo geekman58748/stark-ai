@@ -45,6 +45,12 @@ class EntryShapeTests(unittest.TestCase):
         self.assertEqual(entry["actions"], [])
         self.assertEqual(entry["ms"], {})
 
+    def test_turn_records_where_it_came_from(self) -> None:
+        entry = turnlog.turn(outcome="answered", channel="telegram")
+        self.assertEqual(entry["channel"], "telegram")
+        # Absent, not empty, on anything written before the channel existed.
+        self.assertNotIn("channel", turnlog.turn(outcome="answered"))
+
     def test_speak_records_what_the_voice_was_given(self) -> None:
         entry = turnlog.speak(text="You have ₦64,200.", ms=420, reason="ok",
                               stream=True, provider="elevenlabs")
@@ -210,6 +216,32 @@ class ServerTurnLogTests(unittest.TestCase):
                 {"transcript_hint": "hello stark what's my balance", "speak": "false"})
         self.assertEqual(status, 200)
         self.assertEqual(payload["reply"], "Your balance is 64,200 naira.")
+
+    def test_a_telegram_turn_is_written_like_a_voice_turn(self) -> None:
+        # Until 2026-10-25 only /v1/voice wrote to the log, so the channel being
+        # demoed read back as `count: 0` — the conversation could not be reviewed
+        # after the fact at all.
+        result = SimpleNamespace(
+            reply="I topped up your airtime for ₦1,000.",
+            actions=["pay_bill"], code=None, receipt_id="rcpt_9", token=None,
+            conversation=[{"role": "user", "content": "top up my airtime"}],
+        )
+        self.server._log_telegram_turn({
+            "outcome": "agent", "heard": "top up my airtime",
+            "said": "top up my airtime",
+            "reply": result.reply, "result": result,
+        })
+
+        entry = [e for e in turnlog.lines(self.folder) if e["kind"] == "turn"][0]
+        self.assertEqual(entry["channel"], "telegram")
+        self.assertEqual(entry["outcome"], "agent")
+        self.assertEqual(entry["heard"], "top up my airtime")
+        self.assertEqual(entry["actions"], ["pay_bill"])
+        self.assertEqual(entry["reply"], "I topped up your airtime for ₦1,000.")
+        self.assertEqual(entry["receipt_id"], "rcpt_9")
+        # The whole exchange travels with it: "why did it say that" needs the
+        # messages, not the sentence.
+        self.assertEqual(entry["conversation"][0]["content"], "top up my airtime")
 
     def test_speak_handler_logs_provider_and_spoken_text(self) -> None:
         status, payload = self.server.h_speak({"text": "You have ₦64,200."})

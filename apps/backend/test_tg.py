@@ -36,12 +36,19 @@ def _tiny_wav(seconds: float = 0.05, rate: int = 16000) -> bytes:
 class FakeAgent:
     def __init__(self):
         self.transcripts: list[str] = []
+        self.threads: list[str | None] = []
 
-    def respond(self, transcript: str):
+    def respond(self, transcript: str, thread: str | None = None):
         self.transcripts.append(transcript)
+        self.threads.append(thread)
 
         class Reply:
             reply = "You've got about 11.4 units left."
+            actions = ["pay_bill"]
+            code = None
+            receipt_id = "rcpt_1"
+            token = None
+            conversation = [{"role": "user", "content": transcript}]
         return Reply()
 
 
@@ -69,12 +76,14 @@ class AdapterCase(unittest.TestCase):
         self.agent = FakeAgent()
         self.ids = FakeIdentities()
         self.sent: list[tuple[int, str]] = []
+        self.turns: list[dict] = []
         self.adapter = TelegramAdapter(
             agent=self.agent,
             identities=self.ids,
             bot_token="123:TEST",
             secret="s3cret",
             send=lambda chat_id, text: self.sent.append((chat_id, text)) or True,
+            on_turn=self.turns.append,
             # Voice stays off unless a test turns it on: unit tests never
             # reach for a sidecar, whatever is in the environment.
             speak=lambda text: None,
@@ -311,6 +320,72 @@ class TestAudioGuards(unittest.TestCase):
     def test_garbage_is_refused_not_guessed(self):
         self.assertEqual(audio.transcode(b"this is not audio at all" * 20)[1],
                          audio.DECODE_FAILED)
+
+
+class TestChatContext(AdapterCase):
+    """The chat is the thread, and every answered update reaches the log.
+
+    Measured 2026-10-25: with no memory, "top up my airtime" → "how much?" →
+    "500" → "which bill would you like to pay 500 for?" looped forever, because
+    each reply forgot the other half of the answer.
+    """
+
+    def test_a_chat_is_named_as_the_thread(self):
+        self.linked()
+        self.adapter.handle_update(_update(chat_id=42, text="500"))
+        self.assertEqual(self.agent.threads, ["telegram:42"])
+
+    def test_two_chats_are_two_conversations(self):
+        self.linked(chat_id=42)
+        self.linked(chat_id=77)
+        self.adapter.handle_update(_update(chat_id=42, text="top up my airtime"))
+        self.adapter.handle_update(_update(chat_id=77, text="500", message_id=2,
+                                           update_id=101))
+        self.assertEqual(self.agent.threads, ["telegram:42", "telegram:77"])
+
+    def test_an_answered_turn_carries_what_was_heard_and_said(self):
+        self.linked()
+        self.adapter.handle_update(_update(text="what's left"))
+
+        self.assertEqual(len(self.turns), 1)
+        turn = self.turns[0]
+        self.assertEqual(turn["outcome"], "agent")
+        self.assertEqual(turn["heard"], "what's left")
+        self.assertEqual(turn["said"], "what's left")
+        self.assertEqual(turn["reply"], "You've got about 11.4 units left.")
+        # The agent's own result travels with it, so the log can keep the
+        # actions and the whole exchange, not just the sentence.
+        self.assertEqual(turn["result"].actions, ["pay_bill"])
+
+    def test_a_refused_voice_note_is_logged_as_asleep(self):
+        self.linked()
+        adapter = TelegramAdapter(
+            agent=self.agent, identities=self.ids, bot_token="1:T", secret="s",
+            download=lambda file_id: _tiny_wav(),
+            transcribe=lambda clip: ("what's the weather", "ok"),
+            send=lambda chat_id, text: True,
+            on_turn=self.turns.append,
+        )
+        adapter.handle_update(_update(voice={"file_id": "f1"}, text=None))
+        self.assertEqual([t["outcome"] for t in self.turns], ["asleep"])
+        self.assertEqual(self.turns[0]["heard"], "what's the weather")
+        self.assertIsNone(self.turns[0]["said"])
+        self.assertEqual(self.agent.transcripts, [])
+
+    def test_a_broken_log_never_breaks_the_reply(self):
+        self.linked()
+
+        def boom(turn):
+            raise RuntimeError("disk full")
+
+        adapter = TelegramAdapter(
+            agent=self.agent, identities=self.ids, bot_token="1:T", secret="s",
+            send=lambda chat_id, text: self.sent.append((chat_id, text)) or True,
+            on_turn=boom,
+        )
+        result = adapter.handle_update(_update(text="what's left"))
+        self.assertEqual(result["handled"], "agent")
+        self.assertEqual(self.sent[-1][1], "You've got about 11.4 units left.")
 
 
 if __name__ == "__main__":

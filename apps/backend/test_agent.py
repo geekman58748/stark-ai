@@ -13,6 +13,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 import agent as agent_mod
+import memory as memory_mod
 import near_tx
 import policy as policy_rules
 
@@ -95,6 +96,23 @@ class RecordingSigner:
         return {"tx_hash": "cd" * 32}
 
 
+class RecordingModel:
+    """Answers every turn and keeps the messages it was shown."""
+
+    name = "recording"
+
+    def __init__(self, content="Noted.", fail=False):
+        self.content = content
+        self.fail = fail
+        self.seen: list[list[dict]] = []
+
+    def turn(self, messages, tools):
+        self.seen.append([dict(m) for m in messages])
+        if self.fail:
+            raise RuntimeError("Could not reach NEAR AI")
+        return agent_mod.ModelTurn(content=self.content)
+
+
 class ScriptedModel:
     """A model that does whatever the test tells it to — used to prove the gate
     holds even when the model ignores every rule in the prompt."""
@@ -113,7 +131,7 @@ class ScriptedModel:
         return agent_mod.ModelTurn(content="Understood.")
 
 
-def make_agent(toolbox=None, signer=None, limits=None, model=None):
+def make_agent(toolbox=None, signer=None, limits=None, model=None, threads=None):
     return agent_mod.Agent(
         model=model or agent_mod.FakeModel(),
         toolbox=toolbox or FakeToolbox(),
@@ -124,6 +142,7 @@ def make_agent(toolbox=None, signer=None, limits=None, model=None):
             allowed_meters=ALLOWED,
         ),
         signer=signer,
+        threads=threads,
     )
 
 
@@ -1050,6 +1069,63 @@ class NearAiRetryTests(unittest.TestCase):
                 self.model().turn([{"role": "user", "content": "hi"}], [])
 
         self.assertEqual(len(attempts), agent_mod.NearAiModel.ATTEMPTS)
+
+
+class ConversationMemory(unittest.TestCase):
+    """A bare answer is only an answer because the question is still there.
+
+    Measured 2026-10-25 on Telegram: "top up my airtime" → "how much?", then
+    "500" → "which bill would you like to pay 500 for?", forever. Every turn was
+    answered cold, so the number and the question never met.
+    """
+
+    def setUp(self):
+        self.model = RecordingModel()
+        self.agent = make_agent(model=self.model, threads=memory_mod.Threads())
+
+    def test_a_bare_amount_arrives_with_the_question_it_answers(self):
+        self.agent.respond("top up my airtime", thread="tg:1")
+        self.agent.respond("500", thread="tg:1")
+
+        second = self.model.seen[-1]
+        self.assertEqual([m["role"] for m in second],
+                         ["system", "user", "assistant", "user"])
+        self.assertEqual(second[1]["content"], "top up my airtime")
+        self.assertEqual(second[2]["content"], "Noted.")
+        self.assertEqual(second[3]["content"], "500")
+
+    def test_the_system_prompt_is_always_first_and_the_snapshot_stays_on_it(self):
+        self.agent.respond("hello", thread="tg:1")
+        self.agent.respond("hello again", thread="tg:1")
+        second = self.model.seen[-1]
+        self.assertEqual(second[0]["role"], "system")
+        self.assertIn("Current account:", second[0]["content"])
+
+    def test_no_thread_is_still_one_cold_turn(self):
+        self.agent.respond("top up my airtime")
+        self.agent.respond("500")
+        self.assertEqual([m["role"] for m in self.model.seen[-1]],
+                         ["system", "user"])
+
+    def test_two_chats_cannot_answer_each_others_questions(self):
+        self.agent.respond("top up my airtime", thread="tg:1")
+        self.agent.respond("500", thread="tg:2")
+        self.assertEqual([m["content"] for m in self.model.seen[-1]][1:], ["500"])
+
+    def test_a_failed_turn_is_not_remembered_as_context(self):
+        broken = RecordingModel(fail=True)
+        agent = make_agent(model=broken, threads=memory_mod.Threads())
+        agent.respond("top up my airtime", thread="tg:1")
+        self.assertEqual(agent.threads.history("tg:1"), [])
+
+    def test_what_the_model_saw_is_the_conversation_in_the_log(self):
+        # turnlog's `conversation` must include the history, or "why did it say
+        # that" is unanswerable for the exact turn that looked confused.
+        self.agent.respond("top up my airtime", thread="tg:1")
+        reply = self.agent.respond("500", thread="tg:1")
+        # History, then this turn, then the answer it produced.
+        self.assertEqual([m["content"] for m in reply.conversation][1:],
+                         ["top up my airtime", "Noted.", "500", "Noted."])
 
 
 if __name__ == "__main__":

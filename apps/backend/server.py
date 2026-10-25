@@ -671,6 +671,33 @@ AGENT = agent_layer.build_agent(
 
 OWNER_USER_ID = os.environ.get("STARK_TG_OWNER_ID", "user_tunde")
 
+
+def _log_telegram_turn(turn: dict) -> None:
+    """Write one Telegram exchange to the same log `/v1/voice` writes to.
+
+    Until 2026-10-25 only the voice door logged, so the channel people actually
+    demo had no record: the first real conversation read back as `count: 0`, and
+    "why did it say that" had to be answered by replaying it locally. The entry
+    shape is the voice one, plus `channel`, so both read the same way.
+    """
+    result = turn.get("result")
+    _log_turn(
+        outcome=turn.get("outcome") or "answered",
+        clip=None, mime=None,
+        heard=turn.get("heard") or "",
+        said=turn.get("said"),
+        payload={
+            "reply": getattr(result, "reply", None) or turn.get("reply"),
+            "actions": getattr(result, "actions", None),
+            "code": getattr(result, "code", None),
+            "receipt_id": getattr(result, "receipt_id", None),
+            "token": getattr(result, "token", None),
+        },
+        speak=None,
+        conversation=getattr(result, "conversation", None),
+        channel=telegram.CHANNEL,
+    )
+
 # M4: the Telegram door. Same database as the receipts. Refuses every update
 # until TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET are set (fail closed).
 # Voice notes transcribe through the same Whisper the web door uses; the OGG
@@ -682,6 +709,7 @@ TG_ADAPTER = telegram.TelegramAdapter(
     secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
     owner_user_id=OWNER_USER_ID,
     transcribe=lambda clip: stt.transcribe(clip, mime="audio/ogg"),
+    on_turn=_log_telegram_turn,
     log=lambda line: print(f"  [tg] {line}"),
 )
 
@@ -1000,8 +1028,9 @@ def _turn_ms(started: float, *, has_clip: bool, stt_ms: int = 0) -> dict[str, in
 def _log_turn(*, outcome: str, clip: bytes | None, mime: str | None,
               heard: str = "", said: str | None = None,
               stt: str | None = None, payload: dict | None = None,
-              speak: bool = True, ms: dict[str, int] | None = None,
-              conversation: list[dict] | None = None) -> None:
+              speak: bool | None = True, ms: dict[str, int] | None = None,
+              conversation: list[dict] | None = None,
+              channel: str = "voice") -> None:
     """Append one conversation turn — see `turnlog` for what each field means.
 
     Every exit from `h_voice` calls this: a turn Stark refused to hear and a
@@ -1015,7 +1044,7 @@ def _log_turn(*, outcome: str, clip: bytes | None, mime: str | None,
         reply=result.get("reply"), actions=result.get("actions"),
         code=result.get("code"), receipt_id=result.get("receipt_id"),
         token=result.get("token"), speak=speak, model=_model_name(), ms=ms,
-        conversation=conversation,
+        conversation=conversation, channel=channel,
     ), clip=clip, mime=mime)
 
 

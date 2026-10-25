@@ -77,7 +77,8 @@ def turn(*, outcome: str, heard: str = "", said: str | None = None,
          receipt_id: str | None = None, token: str | None = None,
          speak: bool | None = None, model: str | None = None,
          ms: dict[str, int] | None = None,
-         conversation: list[dict] | None = None) -> dict[str, Any]:
+         conversation: list[dict] | None = None,
+         channel: str | None = None) -> dict[str, Any]:
     """The entry shape for one spoken exchange. Pure — nothing is written.
 
     - `heard`: the transcript as the recognizer produced it, verbatim.
@@ -94,6 +95,8 @@ def turn(*, outcome: str, heard: str = "", said: str | None = None,
       order. Present only on a turn that reached the agent. It is what makes
       "why did it say that" answerable instead of arguable: the reply alone
       never shows what the model was looking at.
+    - `channel`: where it came from — `voice`, `telegram`. Absent on entries
+      written before 2026-10-25, when only `/v1/voice` logged at all.
     """
     entry = {
         "kind": "turn",
@@ -112,6 +115,8 @@ def turn(*, outcome: str, heard: str = "", said: str | None = None,
     }
     if conversation:
         entry["conversation"] = [dict(m) for m in conversation]
+    if channel:
+        entry["channel"] = channel
     return entry
 
 

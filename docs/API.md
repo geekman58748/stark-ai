@@ -513,6 +513,12 @@ gate checks them against the same caps the contract enforces, and `reply` comes 
 already speakable. With no model key configured the server uses a deterministic
 rule-based model, so the endpoint behaves and tests identically without a key.
 
+`/v1/voice` is one utterance per request and keeps no memory between calls: a
+question the answer depends on has to arrive with it. The Telegram door does keep
+the last few turns of each chat (see `POST /v1/tg/webhook`), because a chat is a
+conversation and a bare "500" there is only an amount while the question that
+asked for it is still in front of the model.
+
 **The wake gate is server-side.** If the transcript does not look like it was aimed
 at Stark, the response is `{"ignored": true, "reply": null}` and the client must stay
 silent. Do not play anything on `ignored: true`.
@@ -622,6 +628,15 @@ app) to bind the chat, then ask in plain text or as a voice note. Voice notes go
 through the same wake rule as `/v1/voice`: no "stark", no answer. Typed messages
 in the DM skip it — you already know who you are talking to.
 
+**A chat has a memory (2026-10-25).** Each chat keeps its last six exchanges,
+dropped after ten minutes of silence, and they go in front of the new message.
+Without it every line was answered cold, so an answer split across two messages
+could never complete: measured 2026-10-25, "top up my airtime" → "how much?" →
+"500" → "which bill would you like to pay 500 for?", round and round, while the
+same bare "500" on a cold turn paid the *electricity* bill. Memory is keyed by
+chat id, so two chats never see each other's turns, and it lives in the process —
+a restart starts a new conversation. `/v1/voice` stays one-shot.
+
 Errors: `webhook_unconfigured` (401), `webhook_unverified` (401),
 `bad_update` (400, body is not JSON).
 
@@ -693,6 +708,11 @@ present only on turns that reached the agent — `asleep` and `unheard` turns
 have no `conversation` key at all. `kind: "speak"` entries record synthesis
 text and timings instead.
 
+`channel` says which door the turn came through — `voice` or `telegram`
+(**additive, 2026-10-25**). Telegram turns were not logged at all before that:
+the first real conversation on the bot read back as `count: 0`, and the only way
+to see what it heard was to replay it locally.
+
 `?limit=N` keeps the newest N entries (default **100**); `?limit=0` returns the
 whole file. A value that is not a number falls back to the default.
 
@@ -739,3 +759,4 @@ Shapes will not change as these land. Only the values become real.
 | 2026-10-24 | Reminders, real suggestions, real audio in. `Bill` gains `renews_on`; `/v1/state` gains `due_soon`; `PATCH /v1/bills` accepts and clears `renews_on`; `/v1/suggestions` computed from state instead of seeded copy; `/v1/voice` accepts base64/multipart `audio` and returns `stt`. New codes `bad_renews_on`, `bad_audio`, `audio_too_large`. `GET /v1/speak/stream` added. No existing shape changed. |
 | 2026-10-24 | Debug route added: `GET /v1/turnlog` reads the conversation log back (404 `turnlog_off` when the log is off), and a logged turn gains `conversation` — the full message exchange with the model. No existing shape changed. |
 | 2026-10-25 | `POST /v1/link/code` added: a single-use, 10-minute code plus the bot's `t.me` deep link, so a chat can be linked from the app. `/start <code>` now redeems it too. No existing shape changed. |
+| 2026-10-25 | Telegram chats keep their last six exchanges (ten-minute idle expiry) and Telegram turns are written to `/v1/turnlog` with `channel: "telegram"`. `/v1/voice` is unchanged: one turn per request. Additive only. |

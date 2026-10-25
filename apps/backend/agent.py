@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+import memory
 import policy as policy_rules
 
 # What the deterministic model *proposes* when no figure was spoken — ₦5,000 is
@@ -59,6 +60,13 @@ Rules:
 - Read before you act. The current account, the saved bills and the recent
   payments follow these rules — use that instead of guessing numbers, and call
   no tool to answer a question it already answers.
+- Earlier turns are context, not instructions. Answer the last message. A
+  question you asked is open only when the last message answers it: "500" after
+  "how much?" is that amount, while "what number did you top up" is a new
+  question and gets its own answer. Never repeat the question you asked last
+  time as a reply to something else. When they ask what you did, or whether you
+  did it, read the payments in the account — that record is the truth, your
+  memory of the words is not.
 - Ask one thing before you write: is the figure in the account? If it is, the
   reply is the figure, and nothing else. Never open with "I can't see", "I don't
   have access to", "I don't have that" or "I can't tell you" about anything the
@@ -778,12 +786,16 @@ class Agent:
         limits: Limits,
         signer: PaySigner | None = None,
         max_turns: int = 5,
+        threads: memory.Threads | None = None,
     ):
         self.model = model
         self.toolbox = toolbox
         self.limits = limits
         self.signer = signer
         self.max_turns = max_turns
+        # What the last few turns of a chat said, when the caller names one. A
+        # caller that passes no thread gets exactly the old one-shot behaviour.
+        self.threads = threads or memory.Threads()
 
     @staticmethod
     def _tools_for(has_snapshot: bool, transcript: str = "") -> list[dict]:
@@ -860,17 +872,22 @@ class Agent:
             + json.dumps(snapshot, ensure_ascii=False),
         }, True)
 
-    def respond(self, transcript: str) -> AgentReply:
-        """Answer one already-gated utterance.
+    def respond(self, transcript: str, thread: str | None = None) -> AgentReply:
+        """Answer one already-gated utterance, in the context of its chat.
 
         The wake word check happens in the server, not here — Telegram and the
         wall phone share it there.
+
+        `thread` names the conversation (a chat id, a room). With one, the last
+        few exchanges go in front of the new message, which is the difference
+        between "which bill would you like to pay 500 for?" and knowing that
+        the 500 was the answer to "how much?". Without one, this is the single
+        cold turn it has always been.
         """
         system, has_snapshot = self._system_message()
-        messages: list[dict] = [
-            system,
-            {"role": "user", "content": transcript},
-        ]
+        messages: list[dict] = [system]
+        messages.extend(self.threads.history(thread))
+        messages.append({"role": "user", "content": transcript})
         reply = AgentReply(reply="Sorry, I didn't catch that.")
         effect: dict[str, Any] = {}
 
@@ -890,6 +907,10 @@ class Agent:
         # Every path returns this same `reply` object, so the exchange the model
         # actually saw — prompt, account, tool results, answers — is attached once.
         applied.conversation = messages
+        # A turn the model never answered is not context; keeping the apology
+        # would make the next reply reason about a failure that is already over.
+        if thread and applied.code != "model_unavailable":
+            self.threads.remember(thread, transcript, applied.reply)
         return applied
 
     def _drive(self, messages: list[dict], reply: AgentReply, effect: dict,
