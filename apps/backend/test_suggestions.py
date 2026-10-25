@@ -19,6 +19,16 @@ def ts(**days_ago) -> str:
     return (NOW - timedelta(**days_ago)).isoformat().replace("+00:00", "Z")
 
 
+def renewing_in(days: int) -> str:
+    """A calendar date `days` from the real today.
+
+    `build` reads the real clock — unlike `burn_rate`, it takes no `now` — so a
+    renewal date pinned to `NOW` disagrees with it the day after this file was
+    written, and the suite goes red at midnight for no code reason.
+    """
+    return (datetime.now(timezone.utc).date() + timedelta(days=days)).isoformat()
+
+
 def receipt(units=23.9, status="delivered", when=None):
     return {"status": status, "units": units, "created_at": when or ts(days=3)}
 
@@ -129,7 +139,7 @@ class CapSignal(unittest.TestCase):
 
 class DueSignal(unittest.TestCase):
     def test_a_renewal_inside_the_window_becomes_a_suggestion(self):
-        found = build_suggestions(bills=[bill(renews_on=ts(days=-3).split("T")[0],
+        found = build_suggestions(bills=[bill(renews_on=renewing_in(3),
                                               plan_price_ngn=7900)])
         due = [f for f in found if f["reason"] == "bill_due"]
         self.assertEqual(len(due), 1)
@@ -137,8 +147,7 @@ class DueSignal(unittest.TestCase):
         self.assertEqual(due[0]["severity"], "warn")
 
     def test_at_most_two_renewals_surface(self):
-        bills = [bill(id=f"b{i}", renews_on=ts(days=-(i + 1)).split("T")[0])
-                 for i in range(4)]
+        bills = [bill(id=f"b{i}", renews_on=renewing_in(i + 1)) for i in range(4)]
         found = build_suggestions(bills=bills)
         self.assertEqual(len([f for f in found if f["reason"] == "bill_due"]), 2)
 
@@ -178,7 +187,7 @@ class Shape(unittest.TestCase):
     def test_worst_news_first(self):
         found = build_suggestions(
             units_left=1.0, days_left=1, spent_ngn=29_000, cap_ngn=30_000,
-            bills=[bill(renews_on=ts(days=-1).split("T")[0])],
+            bills=[bill(renews_on=renewing_in(1))],
         )
         order = {"alert": 0, "warn": 1, "info": 2}
         self.assertEqual([f["severity"] for f in found],
@@ -188,7 +197,7 @@ class Shape(unittest.TestCase):
     def test_at_most_four_items(self):
         found = build_suggestions(
             units_left=1.0, days_left=1, spent_ngn=29_500, cap_ngn=30_000,
-            bills=[bill(id=f"b{i}", renews_on=ts(days=-(i + 1)).split("T")[0])
+            bills=[bill(id=f"b{i}", renews_on=renewing_in(i + 1))
                    for i in range(4)],
             telemetry=self_ac(),
         )

@@ -520,13 +520,22 @@ silent. Do not play anything on `ignored: true`.
 The rule tolerates what recognizers do to the wake word — see `wake.py` in
 `apps/backend`, one implementation shared with the Telegram voice path:
 
-- `stark` (or `hey stark`) **anywhere** in the transcript passes untouched.
-- A **wake attempt at the opening** — `start`, `stock`, `starn`, `stop`, or anything
-  within two edits of "stark" — sitting in the first few tokens **behind filler**
-  (`hey`, `um`, `so`, …) is rewritten as `Stark, …` with the misheard token dropped,
-  so "um start what's my light bill" reaches the agent as
-  "Stark, what's my light bill". It has to open with the address: "I start the car"
-  is not a wake word.
+- `stark` (or `hey stark`) **anywhere** in the transcript passes untouched, minus a
+  noun said with it: "stark ai what is left" reaches the agent as "stark what is
+  left", because "ai" is part of the name rather than the first word of the
+  question.
+- A **wake attempt at the opening** — `start`, `stock`, `starn`, `stop`, `starky`,
+  `starquad`, or anything within two edits of "stark" — sitting in the first few
+  tokens **behind filler** (`hey`, `um`, `so`, …) is rewritten as `Stark, …` with the
+  misheard token dropped, so "um start what's my light bill" reaches the agent as
+  "Stark, what's my light bill".
+- A name the recognizer **split across two or three tokens** — `star quad`, `star k`,
+  `st ar k`, `sto p` — is joined and treated the same way, so neither half leaks
+  into the question.
+- It has to open with the address: "I start the car" is not a wake word. The cost of
+  the tolerance is that a handful of ordinary openings (`start the car`, `state of
+  the grid`) also count as addressed; the agent still will not pay without an
+  instruction.
 - Everything else is `ignored`, because a gate that fires on every sentence is not
   a gate. `transcript` in the response always echoes what was actually said, not
   the rewritten form.
