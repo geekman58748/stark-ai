@@ -1128,5 +1128,37 @@ class ConversationMemory(unittest.TestCase):
                          ["top up my airtime", "Noted.", "500", "Noted."])
 
 
+class PaymentCarriesItsDestination(unittest.TestCase):
+    """A receipt names its bill; the digits live on the bill.
+
+    Measured 2026-10-25: asked "what number" straight after a ₦500 airtime
+    top-up, the model answered "I can't see the number that was topped up" — the
+    digits were two joins away, and once it has denied something it keeps
+    denying it.
+    """
+
+    def setUp(self):
+        self.toolbox = FakeToolbox()
+        self.toolbox.receipts.append({
+            "id": "rcpt_1", "bill_id": "bill_home_meter", "bill_label": "Home meter",
+            "amount_ngn": 500, "status": "delivered",
+        })
+        self.agent = make_agent(toolbox=self.toolbox)
+
+    def test_a_receipt_names_where_the_payment_went(self):
+        payments = _snapshot(self.agent._system_message()[0])["recent_payments"]
+        self.assertEqual(payments[0]["reference"], ELECTRICITY["reference"])
+
+    def test_the_toolbox_dicts_are_left_alone(self):
+        self.agent._system_message()
+        self.assertNotIn("reference", self.toolbox.receipts[0])
+
+    def test_a_payment_for_a_bill_that_is_gone_is_left_alone(self):
+        self.toolbox.receipts.append({"id": "rcpt_2", "bill_id": "bill_removed"})
+        payments = _snapshot(self.agent._system_message()[0])["recent_payments"]
+        self.assertEqual(payments[0]["reference"], ELECTRICITY["reference"])
+        self.assertNotIn("reference", payments[1])
+
+
 if __name__ == "__main__":
     unittest.main()

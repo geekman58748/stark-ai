@@ -67,6 +67,16 @@ Rules:
   time as a reply to something else. When they ask what you did, or whether you
   did it, read the payments in the account — that record is the truth, your
   memory of the words is not.
+- The account below is the record, including of your own payments: each one
+  names its bill, and every bill carries its reference — the meter, the
+  smartcard, the phone line (`phone` is the airtime number). Each payment in the
+  account carries that reference as well, so where a payment went is readable,
+  not inferred. "What number", "which number", "where did it go" gets those
+  digits: "I topped up 08031234567."
+- Never repeat a sentence you have already said. If a reply was pushed back on —
+  "huh", "wdym", "no it didn't" — the account is the evidence, not your earlier
+  words: read it again and answer what they asked. Denying the same thing twice
+  means you have not looked at the right line.
 - Ask one thing before you write: is the figure in the account? If it is, the
   reply is the figure, and nothing else. Never open with "I can't see", "I don't
   have access to", "I don't have that" or "I can't tell you" about anything the
@@ -830,10 +840,28 @@ class Agent:
         try:
             recent = self.toolbox.recent_activity()
             bills = self.toolbox.list_bills()
+            # A receipt names its bill, not its destination. On 2026-10-25 the
+            # model was asked "what number" straight after a ₦500 airtime
+            # top-up and answered "I can't see the number that was topped up" —
+            # the digits were in the bill's reference, two joins away, and a
+            # model that has already denied something keeps denying it. Copies,
+            # so the toolbox's own dicts are never annotated.
+            reference_by_id = {b.get("id"): b.get("reference") for b in bills
+                               if isinstance(b, dict)}
+            payments = []
+            for payment in (recent if isinstance(recent, list) else [])[:5]:
+                if not isinstance(payment, dict):
+                    payments.append(payment)
+                    continue
+                line = dict(payment)
+                reference = reference_by_id.get(line.get("bill_id"))
+                if reference:
+                    line["reference"] = reference
+                payments.append(line)
             snapshot = {
                 "state": self.toolbox.get_state(),
                 "bills": bills,
-                "recent_payments": (recent if isinstance(recent, list) else [])[:5],
+                "recent_payments": payments,
             }
             # The owner's number lives only as the airtime bill's reference, which
             # is why the model used to answer "what's my phone number?" three
