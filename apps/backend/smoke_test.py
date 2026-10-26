@@ -11,25 +11,69 @@ checks mutate in-memory state, so run it against a freshly started server.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 
+import neon
+
 BASE = "http://127.0.0.1:8000"
 failures: list[str] = []
 checks = 0
 
+# Accounts are real now, so the smoke run needs one. It signs itself in against
+# Neon Auth and carries the bearer token on every call below; the account is a
+# fixed demo one so repeated runs reuse it instead of littering the project.
+AUTH_BASE = (os.environ.get("NEON_AUTH_BASE_URL")
+             or neon.read_env_value("NEON_AUTH_BASE_URL") or "").rstrip("/")
+SMOKE_EMAIL = os.environ.get("STARK_SMOKE_EMAIL", "smoke.run@example.com")
+SMOKE_PASSWORD = os.environ.get("STARK_SMOKE_PASSWORD", "SmokeDemo2026!")
+
+
+def _auth_post(path: str, body: dict) -> dict:
+    req = urllib.request.Request(
+        AUTH_BASE + path,
+        data=json.dumps(body).encode(),
+        method="POST",
+        # Neon Auth refuses a request with no Origin: the browser always sends one,
+        # and without it the provider cannot tell which site asked.
+        headers={"Content-Type": "application/json", "Origin": "http://localhost:5174"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read() or b"{}")
+
+
+def _sign_in() -> str:
+    """Create the smoke account on first run, then sign in. Returns the token."""
+    if not AUTH_BASE:
+        raise SystemExit("NEON_AUTH_BASE_URL is not set (apps/backend/.env).")
+    try:
+        session = _auth_post("/sign-up/email", {
+            "email": SMOKE_EMAIL, "password": SMOKE_PASSWORD, "name": "Smoke Test",
+        })
+    except urllib.error.HTTPError:
+        # Already registered from a previous run — or the password changed.
+        session = _auth_post("/sign-in/email", {
+            "email": SMOKE_EMAIL, "password": SMOKE_PASSWORD,
+        })
+    token = session.get("token")
+    if not token:
+        raise SystemExit(f"Could not sign in as {SMOKE_EMAIL}: {session}")
+    return token
+
+
+TOKEN = _sign_in()
+
 
 def call(method: str, path: str, body: dict | None = None) -> tuple[int, dict | list, dict]:
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(
-        BASE + path,
-        data=data,
-        method=method,
-        headers={"Content-Type": "application/json"} if data else {},
-    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    if data:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(BASE + path, data=data, method=method, headers=headers)
     try:
         # 30s: a /v1/voice reply can be a live LLM turn (or two) plus a
         # spoken reply on top. Genuine failures refuse instantly anyway —
@@ -58,7 +102,7 @@ call("POST", "/v1/_stub/reset")
 
 # --- read endpoints ---------------------------------------------------------
 status, index, _ = call("GET", "/")
-check("GET / lists routes", status == 200 and len(index.get("routes", [])) == 23,
+check("GET / lists routes", status == 200 and len(index.get("routes", [])) == 26,
       f"status={status}")
 
 status, health, _ = call("GET", "/health")
@@ -299,8 +343,10 @@ check("POST /v1/speak without text -> 400 bad_text",
 
 # --- streamed voice ---------------------------------------------------------
 # Raw, not JSON: the whole point is that the body arrives before it is finished.
+# `<audio>` sends no headers, so this one route takes the session in the query.
 req = urllib.request.Request(BASE + "/v1/speak/stream?text="
-                             + urllib.parse.quote("Your light bill is 5,000 naira."))
+                             + urllib.parse.quote("Your light bill is 5,000 naira.")
+                             + "&token=" + urllib.parse.quote(TOKEN))
 try:
     with urllib.request.urlopen(req, timeout=60) as resp:
         s_status, s_type, s_len, s_body = resp.status, resp.headers.get("Content-Type", ""), resp.headers.get("Content-Length"), resp.read()

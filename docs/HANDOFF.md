@@ -119,7 +119,7 @@ Telegram update → webhook secret → dedupe → identity gate → wake gate (v
 | API smoke | `python3 smoke_test.py` (server running) | **50/50, all good** |
 
 New files: `telegram.py` (the adapter), `identities.py` (link codes, identities,
-dedupe — same `stark.db` as the receipts), `audio.py` (ffmpeg → 16 kHz mono WAV),
+dedupe — same Postgres database as the receipts), `audio.py` (ffmpeg → 16 kHz mono WAV),
 `stt.py` (Whisper client), `test_tg.py`.
 
 **It fails closed, on purpose.** With no secrets the webhook refuses every update:
@@ -370,6 +370,9 @@ These cost real time. Each one was hit and diagnosed once already.
 | **near-sdk 5 refuses a plain `cargo build`** | It `compile_error!`s unless it can prove this is not an on-chain build. The fix used here is target-specific deps: the wasm branch uses plain `near-sdk`, the non-wasm branch adds `features = ["unit-testing"]`. |
 | **`#[near]` on a plain struct derives borsh only** | JSON returns compile fine in host tests (the wasm wrapper is `cfg`'d out there) and then fail `--target wasm32-unknown-unknown` with `no Serialize`. Derive `near_sdk::serde::{Serialize, Deserialize}` explicitly, with `#[serde(crate = "near_sdk::serde")]`. |
 | **`wasm32-unknown-unknown` had to be added** | Installed now. The deployable `.wasm` comes from plain `cargo build --target wasm32-unknown-unknown --release` (203 KB, verified) — `cargo-near` is **not** required to build it and is **not installed**; it only adds the ABI JSON and the `near deploy` convenience. |
+| **`DATABASE_URL` is not optional** | Since the auth/storage switch the backend refuses to start without a Neon Postgres pooler URL (`sslmode=require`); the schema creates itself on first boot. Copy `.env.example` → `.env` first. |
+| **Neon Auth refuses a request with no `Origin`** | Sign-up/sign-in must send `Origin: http://localhost:5174` — a browser always sends one, and without it the provider answers 400. The session token comes back as `token`; the backend verifies it against `<auth-url>/.well-known/jwks.json`. |
+| **`bun` was missing for `turbo build`** | `npm run build` fails with `Unable to find package manager binary` until bun exists: `npm i -g bun`. |
 
 ---
 
@@ -434,13 +437,15 @@ Python is stdlib-only — no venv, no install step. The contract is Rust, which 
 
 ```
 apps/backend/
-  server.py                    API server; wallet + receipts in SQLite, bills/telemetry in memory
-  smoke_test.py                50 checks: every endpoint + every error code
+  server.py                    API server; sessions + per-account data in Postgres, bills/telemetry in memory
+  neon.py                      Neon Postgres over HTTPS: connection pool, schema, queries
+  auth.py                      Neon Auth sessions: bearer parsing, JWKS verify, account lookup
+  smoke_test.py                68 checks (70 with the sidecar up): sign-up, auth, every route
   agent.py                     tool schema + routing + policy gate + model loop
   policy.py                    the vault's rules in Python (mirror of policy.rs)
   near_tx.py                   borsh, ed25519, base58, RPC, sign pay()
   vault_signer.py              function-call key wiring, dry-run by default
-  receipts.py                  SQLite store: receipts + wallet, request_id keyed
+  receipts.py                  Postgres store: receipts + wallet, per account, request_id keyed
   vending.py                   bill kind -> VTpass product; amount- vs plan-priced
   payments.py                  record -> buy -> charge on delivery
   catalog.py                   VTpass service ids, plans, prices (from fixtures)
@@ -448,7 +453,6 @@ apps/backend/
   test_vending.py              44 tests: store, retry, charge-on-delivery, plans
   vtpass.py                    VTpass client + CLI, dry-run by default
   test_vtpass.py               30 tests incl. CLI wiring
-  stark.db                     runtime data, gitignored
   fixtures/                    VTpass responses (see §10 on provenance)
 apps/contracts/
   vault/                       NEAR contract: caps, allowlist, owner withdraw
@@ -670,14 +674,16 @@ Rules:
 
 ### Identity linking (the part that protects the wallet)
 
-Same SQLite store as receipts for the demo; split it later if needed.
+Same Postgres database as receipts (`identities.py`), one set of rows per account.
 
 ```
-users(id, display_name, created_at)
+accounts(id, auth_user_id, email, name, created_at, seeded_at)
+        -- one row per Neon Auth user, created on first sign-in
 channel_identities(channel, channel_user_id, user_id, display_name,
                    linked_at, last_seen_at,
                    PRIMARY KEY (channel, channel_user_id))
-link_codes(code_hash, user_id, expires_at, used_at, attempts)
+link_codes(code_hash, user_id, created_at, expires_at, used_at)
+link_attempts(channel, channel_user_id, attempts, window_start)
 processed_messages(channel, message_id, processed_at,
                    PRIMARY KEY (channel, message_id))
 ```
@@ -703,9 +709,11 @@ Rules that are not optional:
   or a webhook body is never trusted.
 - Rate-limit link attempts; invalidate the code on success or after N failures.
 
-### Auth — currently missing
+### Auth — app sessions built, other channels not
 
-Do not expose `/v1` or any webhook publicly until both checks exist.
+The app's side is done: every `/v1` route needs a Neon Auth bearer token (401
+without), and the Telegram webhook checks its own secret. Do not expose other
+webhooks publicly until their checks exist.
 
 **1. Channel authenticity — verify before parsing:**
 
@@ -722,8 +730,11 @@ A failed check returns 401, logs the channel and source IP, and processes nothin
 `(channel, channel_user_id)` in `channel_identities`; scope every read and payment to
 that `user_id`. A missing link is a refusal, not a default user.
 
-**3. App auth:** `Authorization: Bearer <device token>` is the contract the frontend was
-promised. Short-lived, rotated, stored hashed, one token per device, revocable.
+**3. App auth:** `Authorization: Bearer <session token>` — built, not designed. The
+frontend signs up/in at Neon Auth, stores the token, and every `/v1` route verifies it
+against the provider's JWKS (401 otherwise). `GET /v1/speak/stream` also takes the
+token as `?token=` for the `<audio>` element. One token resolves to one `accounts`
+row, which owns the wallet and receipts.
 
 Also:
 
@@ -783,8 +794,9 @@ refactor delay the one working demo.
   provider afterwards.
 - **WhatsApp business entity and number** — the human must own these.
 - **Apple Developer account** — needed before any App Intents work.
-- **Where auth lives** — same `stark.db` for the demo, separate `auth.db` before more
-  than one user.
+- **Where auth lives** — decided: sessions are issued and verified by Neon Auth
+  (JWKS, no server-side session store), and `accounts` maps the provider's user id to
+  this app's wallet and receipts.
 - **Link-code UX** — show the code in the app, not in a URL that can leak.
 
 ---
@@ -804,10 +816,11 @@ Do not assume any of this exists:
 - **Token custody** — the vault's `balance_ngn` is an internal ledger. No NEP-141
   USDC, no `ft_on_transfer`, no settlement to the treasury. Say so plainly; do not
   imply money moves onchain today.
-- **Auth** — none. Do not expose `/v1` publicly until the channel-signature and
-  identity-linking design in §8A is built.
-- **Persistence, partly** — receipts and the wallet are in SQLite and survive restarts
-  (M3). Still in memory: telemetry readings, **bills added through `POST /v1/bills`,
+- **Auth** — Neon Auth sessions on every `/v1` route (401 `unauthorized` without one);
+  the Telegram webhook authenticates with its own secret. Still missing: the
+  channel-signature scheme for WhatsApp/SMS in §8A.
+- **Persistence, partly** — accounts, receipts, wallets and channel identities are in
+  Neon Postgres and survive restarts, scoped per account (M3 + auth). Still in memory: telemetry readings, **bills added through `POST /v1/bills`,
   the limits set through `PATCH /v1/limits`, and `units_left`**. A delivered payment
   updates the bill's `last_amount_ngn` / `last_units` / `last_paid_at` and adds its
   units to `units_left`, but all four reset on restart (and on `_stub/reset`). So a
@@ -1037,8 +1050,8 @@ Do not assume any of this exists:
   paid twice. There are tests for pending, failed, no-token and settlement races.
 - **`receipts.api_shape()` is the contract surface.** `store.get()` returns the raw row
   (with `vendor_code`, `vendor_message`); only `api_shape` decides what the API shows.
-- **`POST /v1/_stub/reset` deletes rows from `backend/stark.db`.** It is for tests and
-  demos only. Never call it against a database whose history matters.
+- **`POST /v1/_stub/reset` replaces the signed-in account's rows in Neon Postgres.** It
+  is for tests and demos only. Never call it against a database whose history matters.
 - **Fail closed on signing.** If a signer is configured and cannot produce a signature,
   `_pay_bill` refuses the payment (`authorisation_failed`). Do not "retry without
   signing" to make a demo work.
@@ -1156,6 +1169,14 @@ Item 7 is the next code.**
    Brimble dashboard, because secrets live there and not in `brimble.toml`.
    Until then the live webhook answers `401 webhook_unconfigured` and Telegram
    reports a delivery error — the code path itself is verified locally.
+8. ~~**Auth + storage on Neon.**~~ **Done 2026-10-26:** the backend verifies Neon Auth
+   sessions against the provider's JWKS (`auth.py`) and stores accounts, wallets,
+   receipts and channel identities in Neon Postgres (`neon.py`, `receipts.py`,
+   `identities.py`), scoped per account; the dashboard signs up and in at `/login`
+   (`apps/dashboard/src/lib/auth.ts`) and `/v1` answers `401 unauthorized` without a
+   bearer token. `stark.db` is dead — anything that read SQLite must use Postgres.
+   Still human-gated: the deployed `stark-api` needs `DATABASE_URL` and
+   `NEON_AUTH_BASE_URL` in its environment, same as the Telegram secrets above.
 
 **Never without explicit human confirmation:** submit the application, publish on X, make
 the repo public, sign transactions, spend tokens, deploy to mainnet, or commit secrets.

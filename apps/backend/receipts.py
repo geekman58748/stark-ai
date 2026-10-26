@@ -1,4 +1,4 @@
-"""The receipt store — SQLite, stdlib only.
+"""The receipt store — Postgres over Neon's HTTP endpoint.
 
 Two things live here that matter more than the storage itself:
 
@@ -10,258 +10,256 @@ Two things live here that matter more than the storage itself:
    the history but forget the balance, and the two would disagree — which is exactly
    the kind of bug that makes a demo lie.
 
+Everything is scoped to an account (`user_id`), because accounts are real now: two
+people can sign up and neither sees the other's balance, history or bills.
+
+**There are no transactions to open here.** Neon's HTTP endpoint runs one statement
+per request and refuses multi-statement strings, so the money paths are written as
+single statements that do both halves at once — `WITH w AS (UPDATE wallets ...)
+INSERT INTO receipts ... SELECT ... FROM w`. If the balance cannot cover a charge the
+`UPDATE` matches no row, the `INSERT` has nothing to select from, and nothing is
+written. Never split one of those into two queries.
+
 Money is integer naira. Units are a float because the tariff is fractional, and
 units are not money.
 """
 
 from __future__ import annotations
 
-import sqlite3
-import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Iterable
 
-DEFAULT_DB = Path(__file__).parent / "stark.db"
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS receipts (
-    id            TEXT PRIMARY KEY,
-    request_id    TEXT NOT NULL UNIQUE,
-    bill_id       TEXT NOT NULL,
-    bill_label    TEXT NOT NULL,
-    meter         TEXT,
-    amount_ngn    INTEGER NOT NULL,
-    units         REAL,
-    token         TEXT,
-    tx_hash       TEXT,
-    status        TEXT NOT NULL,
-    entry_type    TEXT,
-    source        TEXT,
-    vendor        TEXT,
-    vendor_code   TEXT,
-    vendor_message TEXT,
-    created_at    TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS receipts_created ON receipts (created_at DESC);
-CREATE INDEX IF NOT EXISTS receipts_pending ON receipts (bill_id, amount_ngn, status);
-
-CREATE TABLE IF NOT EXISTS wallet (
-    id          INTEGER PRIMARY KEY CHECK (id = 1),
-    balance_ngn INTEGER NOT NULL,
-    spent_ngn   INTEGER NOT NULL
-);
-"""
-
+import neon
 
 RECEIPT_COLUMNS = (
-    "id", "request_id", "bill_id", "bill_label", "meter", "amount_ngn",
+    "id", "user_id", "request_id", "bill_id", "bill_label", "meter", "amount_ngn",
     "units", "token", "tx_hash", "status", "entry_type", "source",
     "vendor", "vendor_code", "vendor_message", "created_at",
 )
 
+UPDATABLE = frozenset({
+    "units", "token", "tx_hash", "status", "vendor", "vendor_code", "vendor_message",
+})
+
+
+def _insert_sql(*, from_wallet: bool = False) -> tuple[str, int, int]:
+    """The `INSERT INTO receipts` head, plus where `user_id` and the amount sit.
+
+    `from_wallet=True` is the all-or-nothing form: the row is selected out of the
+    `w` CTE that just moved the balance, so a short wallet writes nothing at all.
+    """
+    columns = ", ".join(RECEIPT_COLUMNS)
+    placeholders = ", ".join(f"${i}" for i in range(1, len(RECEIPT_COLUMNS) + 1))
+    tail = f"SELECT {placeholders} FROM w" if from_wallet else f"VALUES ({placeholders})"
+    return (
+        f"INSERT INTO receipts ({columns}) {tail}",
+        RECEIPT_COLUMNS.index("user_id") + 1,
+        len(RECEIPT_COLUMNS) + 1,
+    )
+
+
+def _typed(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A receipt row with `amount_ngn` as an int.
+
+    Neon's HTTP endpoint returns `BIGINT` as a JSON **string** (JSON numbers can't
+    hold 64 bits safely), so without this the amount comes back as `"5000"` and
+    ends up in `/v1/bills` as a string the UI has to guess about. Money is integer
+    naira everywhere in this codebase, so it is an int the moment it leaves a query.
+    """
+    if row is not None and row.get("amount_ngn") is not None:
+        row["amount_ngn"] = int(row["amount_ngn"])
+    return row
+
+
+def _values(receipt: dict[str, Any], user_id: str) -> list[Any]:
+    return [user_id if column == "user_id" else receipt.get(column) for column in RECEIPT_COLUMNS]
+
 
 class ReceiptStore:
-    def __init__(self, path: str | Path = DEFAULT_DB):
-        self.path = str(path)
-        self._lock = threading.Lock()
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        with self._lock, self._conn:
-            self._conn.executescript(SCHEMA)
-            # Additive columns for databases created before 2026-10-22.
-            existing = {row["name"] for row in self._conn.execute("PRAGMA table_info(receipts)")}
-            for column in ("entry_type", "source"):
-                if column not in existing:
-                    self._conn.execute(f"ALTER TABLE receipts ADD COLUMN {column} TEXT")
+    def __init__(self, db: neon.Database | None = None) -> None:
+        self.db = db or neon.open_database()
 
     # --- receipts ------------------------------------------------------------
 
-    def _insert_locked(self, receipt: dict[str, Any]) -> None:
-        values = [receipt.get(column) for column in RECEIPT_COLUMNS]
-        self._conn.execute(
-            f"INSERT INTO receipts ({', '.join(RECEIPT_COLUMNS)}) "
-            f"VALUES ({', '.join('?' for _ in RECEIPT_COLUMNS)})",
-            values,
-        )
+    def create(self, user_id: str, receipt: dict[str, Any]) -> dict[str, Any]:
+        head, _, _ = _insert_sql()
+        row = self.db.one(f"{head} RETURNING *", _values(receipt, user_id))
+        return _typed(row) or {}
 
-    def _set_wallet_locked(self, balance_ngn: int, spent_ngn: int) -> None:
-        self._conn.execute(
-            "INSERT INTO wallet (id, balance_ngn, spent_ngn) VALUES (1, ?, ?) "
-            "ON CONFLICT(id) DO UPDATE SET balance_ngn = excluded.balance_ngn, "
-            "spent_ngn = excluded.spent_ngn",
-            (balance_ngn, spent_ngn),
-        )
-
-    def create(self, receipt: dict[str, Any]) -> dict[str, Any]:
-        with self._lock, self._conn:
-            self._insert_locked(receipt)
-        return self.get(receipt["id"])
-
-    def update(self, receipt_id: str, **fields: Any) -> dict[str, Any] | None:
-        allowed = {
-            "units", "token", "tx_hash", "status", "vendor", "vendor_code",
-            "vendor_message",
-        }
-        unknown = set(fields) - allowed
+    def update(self, user_id: str, receipt_id: str, **fields: Any) -> dict[str, Any] | None:
+        unknown = set(fields) - UPDATABLE
         if unknown:
             raise ValueError(f"cannot update {sorted(unknown)}")
         if not fields:
-            return self.get(receipt_id)
-        assignments = ", ".join(f"{name} = ?" for name in fields)
-        with self._lock, self._conn:
-            self._conn.execute(
-                f"UPDATE receipts SET {assignments} WHERE id = ?",
-                [*fields.values(), receipt_id],
-            )
-        return self.get(receipt_id)
+            return self.get(user_id, receipt_id)
+        assignments = ", ".join(
+            f"{name} = ${index + 3}" for index, name in enumerate(fields)
+        )
+        self.db.query(
+            f"UPDATE receipts SET {assignments} WHERE id = $1 AND user_id = $2",
+            [receipt_id, user_id, *fields.values()],
+        )
+        return self.get(user_id, receipt_id)
 
-    def get(self, receipt_id: str) -> dict[str, Any] | None:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM receipts WHERE id = ?", (receipt_id,)
-            ).fetchone()
-        return _row(row)
+    def get(self, user_id: str, receipt_id: str) -> dict[str, Any] | None:
+        return _typed(self.db.one(
+            "SELECT * FROM receipts WHERE id = $1 AND user_id = $2", [receipt_id, user_id]
+        ))
 
-    def by_request_id(self, request_id: str) -> dict[str, Any] | None:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM receipts WHERE request_id = ?", (request_id,)
-            ).fetchone()
-        return _row(row)
+    def by_request_id(self, user_id: str, request_id: str) -> dict[str, Any] | None:
+        return _typed(self.db.one(
+            "SELECT * FROM receipts WHERE request_id = $1 AND user_id = $2",
+            [request_id, user_id],
+        ))
 
-    def has_pending(self, bill_id: str) -> bool:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT 1 FROM receipts WHERE bill_id = ? AND status = 'pending' LIMIT 1",
-                (bill_id,),
-            ).fetchone()
+    def has_pending(self, user_id: str, bill_id: str) -> bool:
+        row = self.db.one(
+            "SELECT 1 AS found FROM receipts"
+            " WHERE user_id = $1 AND bill_id = $2 AND status = 'pending' LIMIT 1",
+            [user_id, bill_id],
+        )
         return row is not None
 
-    def find_pending(self, bill_id: str, amount_ngn: int) -> dict[str, Any] | None:
+    def find_pending(
+        self, user_id: str, bill_id: str, amount_ngn: int
+    ) -> dict[str, Any] | None:
         """The newest unfinished purchase for this exact intent.
 
         A retry must reuse its `request_id`, or VTpass books a duplicate sale.
         """
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM receipts WHERE bill_id = ? AND amount_ngn = ? "
-                "AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
-                (bill_id, amount_ngn),
-            ).fetchone()
-        return _row(row)
+        return _typed(self.db.one(
+            "SELECT * FROM receipts WHERE user_id = $1 AND bill_id = $2"
+            " AND amount_ngn = $3 AND status = 'pending'"
+            " ORDER BY created_at DESC, seq DESC LIMIT 1",
+            [user_id, bill_id, amount_ngn],
+        ))
 
-    def recent(self, limit: int = 20) -> list[dict[str, Any]]:
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM receipts ORDER BY created_at DESC, rowid DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        return [_row(row) for row in rows]
+    def recent(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        return [
+            _typed(row) or {}
+            for row in self.db.query(
+                "SELECT * FROM receipts WHERE user_id = $1"
+                " ORDER BY created_at DESC, seq DESC LIMIT $2",
+                [user_id, int(limit)],
+            )
+        ]
 
-    def count(self) -> int:
-        with self._lock:
-            return int(self._conn.execute("SELECT COUNT(*) FROM receipts").fetchone()[0])
+    def count(self, user_id: str) -> int:
+        return int(self.db.value(
+            "SELECT COUNT(*) FROM receipts WHERE user_id = $1", [user_id]
+        ) or 0)
 
     # --- wallet --------------------------------------------------------------
 
-    def wallet(self) -> dict[str, int] | None:
-        with self._lock:
-            row = self._conn.execute("SELECT * FROM wallet WHERE id = 1").fetchone()
+    def wallet(self, user_id: str) -> dict[str, int] | None:
+        row = self.db.one(
+            "SELECT balance_ngn, spent_ngn FROM wallets WHERE user_id = $1", [user_id]
+        )
         if row is None:
             return None
         return {"balance_ngn": int(row["balance_ngn"]), "spent_ngn": int(row["spent_ngn"])}
 
-    def set_wallet(self, balance_ngn: int, spent_ngn: int) -> None:
-        with self._lock, self._conn:
-            self._set_wallet_locked(balance_ngn, spent_ngn)
+    def set_wallet(self, user_id: str, balance_ngn: int, spent_ngn: int) -> None:
+        self.db.query(
+            "INSERT INTO wallets (user_id, balance_ngn, spent_ngn) VALUES ($1, $2, $3)"
+            " ON CONFLICT (user_id) DO UPDATE SET balance_ngn = EXCLUDED.balance_ngn,"
+            " spent_ngn = EXCLUDED.spent_ngn",
+            [user_id, int(balance_ngn), int(spent_ngn)],
+        )
 
     def record_deposit(
-        self, receipt: dict[str, Any], amount_ngn: int
+        self, user_id: str, receipt: dict[str, Any], amount_ngn: int
     ) -> tuple[dict[str, Any], dict[str, int]]:
-        """Insert the activity entry and credit the wallet in one transaction."""
-        with self._lock, self._conn:
-            self._insert_locked(receipt)
-            row = self._conn.execute(
-                "SELECT balance_ngn, spent_ngn FROM wallet WHERE id = 1"
-            ).fetchone()
-            balance = (int(row["balance_ngn"]) if row else 0) + amount_ngn
-            spent = int(row["spent_ngn"]) if row else 0
-            self._set_wallet_locked(balance, spent)
-        return self.get(receipt["id"]), self.wallet()  # type: ignore[return-value]
+        """Insert the activity entry and credit the wallet in one statement."""
+        head, user_index, amount_index = _insert_sql()
+        values = _values(receipt, user_id)
+        row = self.db.one(
+            f"WITH r AS ({head} RETURNING *)"
+            f", w AS (UPDATE wallets SET balance_ngn = balance_ngn + ${amount_index}"
+            f" WHERE user_id = ${user_index} RETURNING balance_ngn, spent_ngn)"
+            " SELECT (SELECT row_to_json(r) FROM r) AS receipt,"
+            " (SELECT row_to_json(w) FROM w) AS wallet",
+            [*values, int(amount_ngn)],
+        )
+        # The wallet CTE matched nothing, so nothing was written: no account row.
+        if row is None or row.get("wallet") is None:
+            raise ValueError("account_missing")
+        return _typed(row["receipt"]) or {}, {
+            "balance_ngn": int(row["wallet"]["balance_ngn"]),
+            "spent_ngn": int(row["wallet"]["spent_ngn"]),
+        }
 
     def record_withdrawal(
-        self, receipt: dict[str, Any], amount_ngn: int
+        self, user_id: str, receipt: dict[str, Any], amount_ngn: int
     ) -> tuple[dict[str, Any], dict[str, int]]:
         """Insert the activity entry and debit the wallet, or raise if short."""
-        with self._lock, self._conn:
-            row = self._conn.execute(
-                "SELECT balance_ngn, spent_ngn FROM wallet WHERE id = 1"
-            ).fetchone()
-            balance = int(row["balance_ngn"]) if row else 0
-            spent = int(row["spent_ngn"]) if row else 0
-            if amount_ngn > balance:
-                raise ValueError("insufficient_balance")
-            self._insert_locked(receipt)
-            self._set_wallet_locked(balance - amount_ngn, spent)
-        return self.get(receipt["id"]), self.wallet()  # type: ignore[return-value]
+        head, user_index, amount_index = _insert_sql(from_wallet=True)
+        values = _values(receipt, user_id)
+        amount = int(amount_ngn)
+        row = self.db.one(
+            f"WITH w AS (UPDATE wallets SET balance_ngn = balance_ngn - ${amount_index}"
+            f" WHERE user_id = ${user_index} AND balance_ngn >= ${amount_index}"
+            " RETURNING balance_ngn, spent_ngn)"
+            f", r AS ({head} RETURNING *)"
+            " SELECT (SELECT row_to_json(r) FROM r) AS receipt,"
+            " (SELECT row_to_json(w) FROM w) AS wallet",
+            [*values, amount],
+        )
+        # A short wallet matches no row in `w`, so `r` inserted nothing and both
+        # sub-selects come back NULL. That is the refusal, not an empty result.
+        if row is None or row.get("wallet") is None:
+            raise ValueError("insufficient_balance")
+        return _typed(row["receipt"]) or {}, {
+            "balance_ngn": int(row["wallet"]["balance_ngn"]),
+            "spent_ngn": int(row["wallet"]["spent_ngn"]),
+        }
 
-    def added_this_month(self) -> int:
+    def added_this_month(self, user_id: str) -> int:
         """Deposits that landed since the first of the current UTC month."""
         month_start = datetime.now(timezone.utc).replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT COALESCE(SUM(amount_ngn), 0) FROM receipts "
-                "WHERE entry_type = 'deposit' AND status = 'received' "
-                "AND created_at >= ?",
-                (month_start,),
-            ).fetchone()
-        return int(row[0]) if row else 0
+        return int(self.db.value(
+            "SELECT COALESCE(SUM(amount_ngn), 0) FROM receipts"
+            " WHERE user_id = $1 AND entry_type = 'deposit' AND status = 'received'"
+            " AND created_at >= $2",
+            [user_id, month_start],
+        ) or 0)
 
-    def charge(self, amount_ngn: int) -> dict[str, int]:
+    def charge(self, user_id: str, amount_ngn: int) -> dict[str, int]:
         """Move money from balance to spend, atomically.
 
-        Raises `ValueError` if the balance moved and can no longer cover it — the
-        caller must not book a delivery it cannot pay for.
+        Raises `ValueError` if the balance can no longer cover it — the caller must
+        not book a delivery it cannot pay for.
         """
-        with self._lock, self._conn:
-            row = self._conn.execute(
-                "SELECT balance_ngn, spent_ngn FROM wallet WHERE id = 1"
-            ).fetchone()
-            balance = int(row["balance_ngn"]) if row else 0
-            spent = int(row["spent_ngn"]) if row else 0
-            if amount_ngn > balance:
-                raise ValueError("insufficient_balance")
-            balance -= amount_ngn
-            spent += amount_ngn
-            self._conn.execute(
-                "INSERT INTO wallet (id, balance_ngn, spent_ngn) VALUES (1, ?, ?) "
-                "ON CONFLICT(id) DO UPDATE SET balance_ngn = excluded.balance_ngn, "
-                "spent_ngn = excluded.spent_ngn",
-                (balance, spent),
-            )
-        return {"balance_ngn": balance, "spent_ngn": spent}
+        amount = int(amount_ngn)
+        row = self.db.one(
+            "UPDATE wallets SET balance_ngn = balance_ngn - $2, spent_ngn = spent_ngn + $2"
+            " WHERE user_id = $1 AND balance_ngn >= $2"
+            " RETURNING balance_ngn, spent_ngn",
+            [user_id, amount],
+        )
+        if row is None:
+            raise ValueError("insufficient_balance")
+        return {"balance_ngn": int(row["balance_ngn"]), "spent_ngn": int(row["spent_ngn"])}
 
     # --- test / demo seam ----------------------------------------------------
 
-    def replace_all(self, receipts: Iterable[dict[str, Any]], *,
+    def replace_all(self, user_id: str, receipts: Iterable[dict[str, Any]], *,
                     balance_ngn: int, spent_ngn: int) -> None:
-        """Used by the stub-only reset route. Not part of the product."""
-        with self._lock, self._conn:
-            self._conn.execute("DELETE FROM receipts")
+        """Used by the stub-only reset route. Not part of the product.
+
+        Not atomic: the HTTP endpoint cannot wrap a delete and N inserts in a
+        transaction. It is a demo reset, so a half-applied reset is a rerun, not a
+        lost payment.
+        """
+        self.db.query("DELETE FROM receipts WHERE user_id = $1", [user_id])
         for receipt in receipts:
-            self.create(receipt)
-        self.set_wallet(balance_ngn, spent_ngn)
+            self.create(user_id, receipt)
+        self.set_wallet(user_id, balance_ngn, spent_ngn)
 
     def close(self) -> None:
-        with self._lock:
-            self._conn.close()
-
-
-def _row(row: sqlite3.Row | None) -> dict[str, Any] | None:
-    return dict(row) if row is not None else None
+        self.db.close()
 
 
 def api_shape(receipt: dict[str, Any]) -> dict[str, Any]:

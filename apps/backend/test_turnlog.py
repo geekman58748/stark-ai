@@ -158,11 +158,16 @@ class ServerTurnLogTests(unittest.TestCase):
         self.addCleanup(env.stop)
 
         import server
+        import test_support
+
         self.server = server
+        # Handlers read the account from a context variable the HTTP layer sets; a
+        # unit test sets it here, and then swaps the account's agent for a fake.
+        self.account = test_support.TempAccount(balance_ngn=64_200, spent_ngn=23_000)
+        self.addCleanup(self.account.close)
+        test_support.enter_server_account(server, self.account)
         self.agent = _FakeAgent()
-        agent_patch = mock.patch.object(server, "AGENT", self.agent)
-        agent_patch.start()
-        self.addCleanup(agent_patch.stop)
+        server._state()["agent"] = self.agent
         # `speak: true` is exercised too, so synthesis must not reach a provider.
         tts_patch = mock.patch.object(server.tts, "synthesize",
                                       return_value=(b"RIFF" + b"\x00" * 8, "ok"))
@@ -361,10 +366,7 @@ class TurnLogEndpointTests(unittest.TestCase):
         env = mock.patch.dict(os.environ, {"STARK_TURN_LOG": self.tmp.name})
         env.start()
         self.addCleanup(env.stop)
-        agent_patch = mock.patch.object(
-            self.server, "AGENT", _FakeAgent())
-        agent_patch.start()
-        self.addCleanup(agent_patch.stop)
+        self.server._state()["agent"] = _FakeAgent()
 
         self.server.h_voice({"transcript_hint": "hello stark whats my balance",
                              "speak": "false"})

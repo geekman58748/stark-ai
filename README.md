@@ -24,15 +24,19 @@ bun dev                       # website, dashboard and backend together
 | Dashboard | http://localhost:5174 |
 | API | http://127.0.0.1:8000 |
 
-Everything runs offline with no configuration: payments are dry-run, nothing touches a
-chain, and a deterministic model stands in for the LLM. To switch real services on, copy
-[`apps/backend/.env.example`](apps/backend/.env.example) to `apps/backend/.env`.
+The backend needs one thing before it starts: `DATABASE_URL`, the pooler URL of a Neon
+Postgres branch (the schema creates itself on first boot). Sign-in needs
+`NEON_AUTH_BASE_URL`, the same branch's Auth URL — without it every `/v1` call answers
+401. Both are documented in [`apps/backend/.env.example`](apps/backend/.env.example);
+copy it to `apps/backend/.env` and fill them in. Everything else runs offline:
+payments are dry-run, nothing touches a chain, and a deterministic model stands in for
+the LLM.
 
 Check that it all works:
 
 ```sh
 bun check                     # typecheck + lint + backend unit tests
-bun smoke                     # 50 end-to-end checks; needs the backend running
+bun smoke                     # 68 end-to-end checks (70 with the TTS sidecar up); needs the backend running
 ```
 
 ### Troubleshooting
@@ -42,6 +46,11 @@ bun smoke                     # 50 end-to-end checks; needs the backend running
   one app failing stops the others, so check the first error in the output.
 - **Dashboard shows no data.** The backend is not running, or is on a different port;
   the dashboard only proxies `/v1` to `127.0.0.1:8000`.
+- **Every request says 401.** You are not signed in (the dashboard routes you to
+  `/login`), or `NEON_AUTH_BASE_URL` is missing/wrong in `apps/backend/.env` — it must
+  be the Auth URL of the same Neon branch as `DATABASE_URL`.
+- **`DATABASE_URL is not set`.** The backend will not start without a Neon Postgres
+  URL; copy `apps/backend/.env.example` to `.env` and paste the pooler URL.
 - **`bun: command not found`.** Install it with `curl -fsSL https://bun.sh/install | bash`.
 - **Demo numbers drifted.** `curl -X POST http://127.0.0.1:8000/v1/_stub/reset`.
 
@@ -98,11 +107,13 @@ broadcast and no contract deployed. The NEAR AI model and Whisper were called li
 | Piece | Status |
 |---|---|
 | API contract | **frozen** — see [`docs/API.md`](docs/API.md) |
-| Stub server | working, 70/70 smoke checks, 281 unit tests |
+| Stub server | working, 68/68 smoke checks (70 with the sidecar up), 367 unit tests |
 | App routes | **built** — plans, bill add/edit/delete, limits and wallet, additive to `/v1` |
 | VTpass client | **live auth + meter verify confirmed 2026-10-22** (33 tests) — purchases blocked by VTpass `028` product not whitelisted, **live token still unproven** |
 | Vending (M3) | **wired** — electricity, airtime, data and TV. Dry-run by default, 44 tests |
-| Receipts | **persisted** in SQLite: token ↔ tx hash ↔ request_id, survives restart |
+| Storage | **Neon Postgres** — accounts, wallets, receipts, channel identities; created on first boot, survives restart. Bills, limits and `units_left` stay in memory |
+| Auth | **live** — sign-up/sign-in against Neon Auth, the backend verifies sessions from its JWKS and gives every account its own wallet and receipts; `/v1` answers **401** without a bearer token |
+| Receipts | **persisted** in Neon Postgres: token ↔ tx hash ↔ request_id, per account, survives restart |
 | Vault contract | **built** — 38/38 tests, wasm target checks clean, clippy clean. Ledger-only: it does not move tokens yet |
 | Agent + LLM | **built (M2)** — tool routing, policy gate, `pay()` signing. 59 tests. Real NEAR AI turn verified 2026-10-22. Signs but does not broadcast. **Fast model for the demo (2026-10-24):** `google/gemini-2.5-flash-lite`, 1.35s a turn vs 7.1s for `Qwen/Qwen3.8-27B`, with the account snapshot in the prompt — one env var back if the TEE claim matters |
 | Telegram bot (M4) | **built, fail-closed** — webhook auth, identity linking, dedupe, voice wake gate, renewal pushes. 22 tests. Needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` to go live; no real update has ever arrived |

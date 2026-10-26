@@ -47,6 +47,13 @@ STARK_TURN_LOG = "1"
 # Optional integrations (NEAR_AI_API_KEY, VTPASS_*, TELEGRAM_*, STARK_SIGNER_*) are secrets:
 # set them in the dashboard, never here. See apps/backend/.env.example.
 
+# The two the API will not start without: the Neon Postgres pooler URL and the same
+# branch's Auth API. Values live in the project's Environment (dashboard or
+# `brimble env set`), never in this file — this only says they must exist, so a
+# deploy stops here rather than shipping a service that 500s on every query.
+[services.stark-api.secrets]
+required = ["DATABASE_URL", "NEON_AUTH_BASE_URL"]
+
 # --- Dashboard: TanStack Start in SPA mode, served as static files ----------------------------
 
 [services.stark-dashboard]
@@ -72,6 +79,10 @@ PUBLIC_URL = "https://dash.hellostark.xyz"
 # value, and a static build bakes the empty string into the bundle, so the app
 # called `/v1` on its own domain and got the SPA shell back.
 VITE_STARK_API_URL = "https://geddon.hellostark.xyz"
+# Neon Auth is the sign-in the app is gated on, and a static build bakes it in at
+# build time. Not a secret — the browser has to know this URL anyway. Must be the
+# same branch's Auth API as DATABASE_URL above, ending in `/auth`.
+VITE_NEON_AUTH_URL = "https://ep-snowy-thunder-b4ll65vb.neonauth.c-6.us-east-2.aws.neon.tech/neondb/auth"
 
 # --- Website: React Router, pre-rendered to static HTML ---------------------------------------
 

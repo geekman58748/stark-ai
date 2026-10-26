@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as TalkRouteImport } from './routes/talk'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppActivityRouteImport } from './routes/_app/activity'
@@ -27,6 +28,11 @@ import { Route as AppWalletAddRouteImport } from './routes/_app/wallet/add'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TalkRoute = TalkRouteImport.update({
@@ -102,6 +108,7 @@ const AppWalletAddRoute = AppWalletAddRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/login': typeof LoginRoute
   '/talk': typeof TalkRoute
   '/activity': typeof AppActivityRoute
   '/connect': typeof AppConnectRoute
@@ -117,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/wallet/': typeof AppWalletIndexRoute
 }
 export interface FileRoutesByTo {
+  '/login': typeof LoginRoute
   '/talk': typeof TalkRoute
   '/activity': typeof AppActivityRoute
   '/connect': typeof AppConnectRoute
@@ -135,6 +143,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
+  '/login': typeof LoginRoute
   '/talk': typeof TalkRoute
   '/_app/activity': typeof AppActivityRoute
   '/_app/connect': typeof AppConnectRoute
@@ -154,6 +163,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/login'
     | '/talk'
     | '/activity'
     | '/connect'
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
     | '/wallet/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/login'
     | '/talk'
     | '/activity'
     | '/connect'
@@ -186,6 +197,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_app'
+    | '/login'
     | '/talk'
     | '/_app/activity'
     | '/_app/connect'
@@ -204,6 +216,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
+  LoginRoute: typeof LoginRoute
   TalkRoute: typeof TalkRoute
   StartBillRoute: typeof StartBillRoute
   StartMoneyRoute: typeof StartMoneyRoute
@@ -217,6 +230,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/talk': {
@@ -350,6 +370,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
+  LoginRoute: LoginRoute,
   TalkRoute: TalkRoute,
   StartBillRoute: StartBillRoute,
   StartMoneyRoute: StartMoneyRoute,

@@ -195,7 +195,9 @@ class TelegramAdapter:
     identities: IdentityLike
     bot_token: str | None = None
     secret: str | None = None
-    owner_user_id: str = "user_tunde"   # the single user this demo binds to
+    # The account this bot serves. A callable is resolved per use, so the account
+    # can be created by a sign-up after the server has already booted.
+    owner_user_id: str | Callable[[], str] = ""
     download: Callable[[str], bytes | None] | None = None
     transcribe: Callable[[bytes], tuple[str | None, str]] | None = None
     send: Callable[[int, str], bool] | None = None
@@ -228,7 +230,11 @@ class TelegramAdapter:
         `deep_link` is None when the bot has no token or Telegram could not be
         reached — the code still works, typed by hand as `link 482913`.
         """
-        code = self.identities.issue_code(self.owner_user_id)
+        owner = self.owner_user_id() if callable(self.owner_user_id) else self.owner_user_id
+        if not owner:
+            raise TelegramError(409, "not_configured",
+                                "Set STARK_TG_OWNER_EMAIL to the account this bot speaks for.")
+        code = self.identities.issue_code(owner)
         lookup = self.username_lookup or bot_username
         username = lookup(self.bot_token)
         return {

@@ -19,6 +19,16 @@ def ts(**days_ago) -> str:
     return (NOW - timedelta(**days_ago)).isoformat().replace("+00:00", "Z")
 
 
+def recent(**ago) -> str:
+    """A timestamp measured from the real clock, for rules that read it.
+
+    `_load_item` ignores telemetry older than a day, so a sample pinned to `NOW`
+    becomes a sample from two days ago — the same trap `renewing_in` documents,
+    and the reason this test used to pass on 2026-10-24 and fail on 2026-10-26.
+    """
+    return (datetime.now(timezone.utc) - timedelta(**ago)).isoformat().replace("+00:00", "Z")
+
+
 def renewing_in(days: int) -> str:
     """A calendar date `days` from the real today.
 
@@ -153,9 +163,9 @@ class DueSignal(unittest.TestCase):
 
 
 class LoadSignal(unittest.TestCase):
-    AC = [{"device_id": "living_ac", "watts": 1200, "ts": ts(hours=1)},
-          {"device_id": "living_ac", "watts": 1200, "ts": ts(hours=2)},
-          {"device_id": "fridge", "watts": 150, "ts": ts(hours=1)}]
+    AC = [{"device_id": "living_ac", "watts": 1200, "ts": recent(hours=1)},
+          {"device_id": "living_ac", "watts": 1200, "ts": recent(hours=2)},
+          {"device_id": "fridge", "watts": 150, "ts": recent(hours=1)}]
 
     def test_one_device_cannot_be_an_imbalance(self):
         single = [s for s in self.AC if s["device_id"] == "living_ac"]
@@ -170,8 +180,8 @@ class LoadSignal(unittest.TestCase):
         self.assertIn("₦6,019 a day", load[0]["text"])
 
     def test_a_balanced_load_is_not_a_suggestion(self):
-        balanced = [{"device_id": "ac", "watts": 600, "ts": ts(hours=1)},
-                    {"device_id": "fridge", "watts": 550, "ts": ts(hours=1)}]
+        balanced = [{"device_id": "ac", "watts": 600, "ts": recent(hours=1)},
+                    {"device_id": "fridge", "watts": 550, "ts": recent(hours=1)}]
         self.assertEqual(build_suggestions(telemetry=balanced), [])
 
     def test_stale_and_broken_samples_are_ignored(self):

@@ -1,10 +1,14 @@
-import { setApiBaseUrl } from "@stark/api";
+import { setApiBaseUrl, setAuthToken } from "@stark/api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 
+import { storedToken } from "./lib/auth";
+
 // Empty in development (Vite proxies /v1). Set VITE_STARK_API_URL for a deployed build.
 setApiBaseUrl(import.meta.env.VITE_STARK_API_URL ?? "");
+// A token from a previous visit becomes the bearer header on every /v1 call.
+setAuthToken(storedToken());
 
 export function getRouter() {
   const queryClient = new QueryClient({

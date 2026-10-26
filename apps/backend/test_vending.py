@@ -6,12 +6,11 @@ Zero dependencies:  python3 -m unittest test_vending -v
 
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 
 import payments
 import receipts
+import test_support
 import vending
 from vtpass import VtpassClient
 
@@ -52,15 +51,16 @@ SEED_SPENT = 12_400
 
 
 class StoreCase(unittest.TestCase):
+    """One throwaway account per test, on the database the app actually uses."""
+
     def setUp(self):
-        self._dir = tempfile.TemporaryDirectory()
-        self.path = Path(self._dir.name) / "test.db"
-        self.store = receipts.ReceiptStore(self.path)
-        self.store.set_wallet(SEED_BALANCE, SEED_SPENT)
+        self.account = test_support.TempAccount(
+            balance_ngn=SEED_BALANCE, spent_ngn=SEED_SPENT
+        )
+        self.store = self.account.store
 
     def tearDown(self):
-        self.store.close()
-        self._dir.cleanup()
+        self.account.close()
 
 
 class StoreTests(StoreCase):
@@ -102,19 +102,17 @@ class StoreTests(StoreCase):
         self.store.create(_receipt("new", request_id="r-new", created_at="2026-10-20T00:00:00Z"))
         self.assertEqual([r["id"] for r in self.store.recent(5)], ["new", "old"])
 
-    def test_state_survives_reopening_the_database(self):
+    def test_state_survives_a_new_connection(self):
+        """A second store on the same database sees the same wallet and receipts."""
         self.store.create(_receipt("r1", request_id="req-1", status="delivered"))
         self.store.charge(5_000)
-        self.store.close()
 
-        reopened = receipts.ReceiptStore(self.path)
-        try:
-            self.assertEqual(reopened.wallet()["balance_ngn"], 59_200)
-            self.assertEqual(reopened.count(), 1)
-            self.assertEqual(reopened.get("r1")["status"], "delivered")
-        finally:
-            reopened.close()
-        self.store = receipts.ReceiptStore(self.path)  # for tearDown
+        reopened = test_support.BoundStore(
+            receipts.ReceiptStore(self.account.db), self.account.id
+        )
+        self.assertEqual(reopened.wallet()["balance_ngn"], 59_200)
+        self.assertEqual(reopened.count(), 1)
+        self.assertEqual(reopened.get("r1")["status"], "delivered")
 
     def test_replace_all_clears_and_reseeds(self):
         self.store.create(_receipt("r1", request_id="req-1"))
@@ -225,7 +223,7 @@ class GatewayTests(unittest.TestCase):
 
 class PaymentFlowTests(StoreCase):
     def service(self, gateway):
-        return payments.PaymentService(self.store, gateway)
+        return self.account.payments(gateway)
 
     def test_delivered_payment_is_charged_once_with_a_token(self):
         receipt = self.service(self.gateway()).pay(ELECTRICITY, 5_000)

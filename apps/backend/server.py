@@ -30,8 +30,11 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import agent as agent_layer
+import auth
 import catalog
+import contextvars
 import identities
+import neon
 import payments
 import receipts
 import reminders
@@ -87,7 +90,7 @@ def in_days(days: int) -> str:
 
 
 # Meter / phone / smartcard numbers are fake but shaped like the real thing.
-BILLS: dict[str, dict[str, Any]] = {
+SEED_BILLS: dict[str, dict[str, Any]] = {
     b["id"]: b
     for b in [
         {
@@ -134,15 +137,15 @@ BILLS: dict[str, dict[str, Any]] = {
 
 # Bills bought by plan carry the vendor's price, so the UI and the agent do not have
 # to guess what a bouquet costs. Additive field on `Bill` (`docs/API.md`).
-for _bill in BILLS.values():
+for _bill in SEED_BILLS.values():
     _product = catalog.CATALOG.product(_bill["kind"], _bill["provider"])
     if _product is not None and _product.needs_plan and _bill.get("plan"):
         _plan = catalog.CATALOG.plan(_product, _bill["plan"])
         if _plan is not None:
             _bill["plan_price_ngn"] = _plan.price_ngn
 
-# Add/remove bill mutates `BILLS`; reset puts the artboards' three back.
-SEED_BILLS = copy.deepcopy(BILLS)
+# Frozen: every account gets its own deep copy, so one person's edits (or a
+# `_stub/reset`) never touch the artboard's three.
 
 
 def seed_receipts() -> list[dict[str, Any]]:
@@ -159,7 +162,7 @@ def seed_receipts() -> list[dict[str, Any]]:
             "request_id": "seed-0003",
             "bill_id": "bill_home_meter",
             "bill_label": "Home electricity",
-            "meter": BILLS["bill_home_meter"]["reference"],
+            "meter": bills()["bill_home_meter"]["reference"],
             "amount_ngn": 5_000,
             "units": 23.9,
             "token": SAMPLE_TOKEN,
@@ -177,7 +180,7 @@ def seed_receipts() -> list[dict[str, Any]]:
             "request_id": "seed-0004",
             "bill_id": "bill_home_meter",
             "bill_label": "Home electricity",
-            "meter": BILLS["bill_home_meter"]["reference"],
+            "meter": bills()["bill_home_meter"]["reference"],
             "amount_ngn": 15_000,
             "units": None,
             "token": None,
@@ -195,7 +198,7 @@ def seed_receipts() -> list[dict[str, Any]]:
             "request_id": "seed-0002",
             "bill_id": "bill_airtime",
             "bill_label": "My line airtime",
-            "meter": BILLS["bill_airtime"]["reference"],
+            "meter": bills()["bill_airtime"]["reference"],
             "amount_ngn": 1_000,
             "units": None,
             "token": None,
@@ -231,7 +234,7 @@ def seed_receipts() -> list[dict[str, Any]]:
             "request_id": "seed-0006",
             "bill_id": "bill_home_meter",
             "bill_label": "Home electricity",
-            "meter": BILLS["bill_home_meter"]["reference"],
+            "meter": bills()["bill_home_meter"]["reference"],
             "amount_ngn": 10_000,
             "units": 47.8,
             "token": "1290 4478 0031 6652 9917",
@@ -249,7 +252,7 @@ def seed_receipts() -> list[dict[str, Any]]:
             "request_id": "seed-0001",
             "bill_id": "bill_home_meter",
             "bill_label": "Home electricity",
-            "meter": BILLS["bill_home_meter"]["reference"],
+            "meter": bills()["bill_home_meter"]["reference"],
             "amount_ngn": 8_000,
             "units": 38.3,
             "token": "6634 2210 9845 1176 0042",
@@ -271,9 +274,9 @@ def sync_bill_history(history: list[dict[str, Any]]) -> None:
     for entry in history:
         if (entry.get("entry_type") in ("bill", "autotopup")
                 and entry.get("status") == "delivered"
-                and entry.get("bill_id") in BILLS):
+                and entry.get("bill_id") in bills()):
             newest.setdefault(entry["bill_id"], entry)
-    for bill_id, bill in BILLS.items():
+    for bill_id, bill in bills().items():
         entry = newest.get(bill_id)
         if entry is not None:
             bill["last_amount_ngn"] = entry["amount_ngn"]
@@ -287,25 +290,114 @@ def sync_bill_history(history: list[dict[str, Any]]) -> None:
 # VTpass's catalogue, so a ₦5,000 per-payment cap would make the TV bill impossible
 # to pay. The monthly cap is what does the real work.
 PER_PAYMENT_CAP_NGN = 10_000
-LIMITS = agent_layer.Limits(
-    monthly_cap_ngn=CAP_NGN,
-    per_payment_cap_ngn=PER_PAYMENT_CAP_NGN,
-    allowed_meters=frozenset(b["reference"] for b in BILLS.values()),
-)
+
+
+def default_limits(for_bills: dict[str, dict[str, Any]]) -> agent_layer.Limits:
+    """The caps every new account starts with — the same numbers, per account."""
+    return agent_layer.Limits(
+        monthly_cap_ngn=CAP_NGN,
+        per_payment_cap_ngn=PER_PAYMENT_CAP_NGN,
+        allowed_meters=frozenset(b["reference"] for b in for_bills.values()),
+    )
+
 
 TELEMETRY: list[dict[str, Any]] = []
 
-# Persistence: receipts and the wallet live in SQLite, so a restart keeps history
-# and balance in agreement. `stark.db` is gitignored.
-STORE = receipts.ReceiptStore()
+# Persistence: receipts, wallets and channel identities live in Neon Postgres, so a
+# restart keeps history and balance in agreement — and two people can sign up without
+# sharing a wallet. `DATABASE_URL` is required; see `.env.example`.
+DB = neon.open_database()
+STORE = receipts.ReceiptStore(DB)
+IDENTITIES = identities.IdentityStore(DB)
 PAYMENTS = payments.PaymentService(STORE, vending.gateway_from_env(
-    default_phone=BILLS["bill_airtime"]["reference"]
+    default_phone=SEED_BILLS["bill_airtime"]["reference"]
 ))
 
-if STORE.wallet() is None:
-    _seed = seed_receipts()
-    STORE.replace_all(_seed, balance_ngn=SEED_BALANCE_NGN, spent_ngn=SEED_SPENT_NGN)
-    sync_bill_history(_seed)
+
+# --- the signed-in account ---------------------------------------------------
+#
+# Bills, limits and the agent are per account and held in memory, as they always
+# were: a restart brings the artboard's three back. The wallet, the receipts and any
+# linked chat are per account and live in Postgres.
+#
+# The account travels from `_dispatch` to the handler in a context variable instead
+# of a parameter, because every handler has a `(body, params)` signature and the
+# alternative was forty edits that all look alike. `account_id()` raises rather than
+# guessing: an unauthenticated request must never fall through to someone's wallet.
+
+ACCOUNTS: dict[str, dict[str, Any]] = {}
+_CURRENT = contextvars.ContextVar("account_id", default=None)
+# The bearer token this request arrived with, so sign-out can delete exactly the
+# session that was used.
+_TOKEN = contextvars.ContextVar("session_token", default=None)
+# Who the account belongs to, for the greeting and the `user_id` in `/v1/state`.
+_PROFILE = contextvars.ContextVar("profile", default=None)
+
+
+def account_id() -> str:
+    current = _CURRENT.get()
+    if current is None:
+        raise RuntimeError("no account in this request — /v1 requires a login")
+    return current
+
+
+def _state() -> dict[str, Any]:
+    current = account_id()
+    existing = ACCOUNTS.get(current)
+    return existing if existing is not None else _prepare_account(current)
+
+
+def bills() -> dict[str, dict[str, Any]]:
+    return _state()["bills"]
+
+
+def limits() -> agent_layer.Limits:
+    return _state()["limits"]
+
+
+def agent():
+    return _state()["agent"]
+
+
+def _prepare_account(current: str, *, seeded: bool = False) -> dict[str, Any]:
+    """First sight of an account: its own bills, its own caps, its own seeding.
+
+    The entry is registered before the agent is built and before seeding, because
+    both read `bills()` and would otherwise recurse into this function.
+
+    It is a no-op when the account is already loaded. That matters more than it
+    looks: rebuilding on every request handed each request its own copy of the
+    bills, so a duplicate check passed and a bill added a second ago was missing.
+    """
+    loaded = ACCOUNTS.get(current)
+    if loaded is not None:
+        return loaded
+    owned = copy.deepcopy(SEED_BILLS)
+    state_ = {"bills": owned, "limits": default_limits(owned), "agent": None}
+    ACCOUNTS[current] = state_
+    state_["agent"] = build_agent(state_["limits"])
+    if not seeded:
+        _seed_account(current)
+    return state_
+
+
+def build_agent(for_limits: agent_layer.Limits):
+    """An agent bound to one account's toolbox and caps."""
+    return agent_layer.build_agent(
+        ServerToolbox(), for_limits, signer=vault_signer.signer_from_env()
+    )
+
+
+def _seed_account(current: str) -> None:
+    """Give a brand-new account the artboard's history and balance, exactly once."""
+    row = DB.one("SELECT seeded_at FROM accounts WHERE id = $1", [current])
+    if row is None or row["seeded_at"] is not None:
+        return
+    history = seed_receipts()
+    STORE.replace_all(current, history,
+                      balance_ngn=SEED_BALANCE_NGN, spent_ngn=SEED_SPENT_NGN)
+    sync_bill_history(history)
+    auth.mark_seeded(DB, current, now_iso())
 
 
 # --- helpers ----------------------------------------------------------------
@@ -318,30 +410,37 @@ class ApiError(Exception):
 
 
 def has_electricity() -> bool:
-    return any(b["kind"] == "electricity" for b in BILLS.values())
+    return any(b["kind"] == "electricity" for b in bills().values())
 
 
 def state() -> dict[str, Any]:
-    wallet = STORE.wallet() or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
+    wallet = STORE.wallet(account_id()) or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
     balance, spent = wallet["balance_ngn"], wallet["spent_ngn"]
     powered = has_electricity()
+    profile = _PROFILE.get() or {}
     return {
-        "user_id": "user_tunde",
-        "first_name": "Tunde",
+        "user_id": account_id(),
+        "first_name": _first_name(profile.get("name")),
         "currency": "NGN",
         "balance_ngn": balance,
-        "cap_ngn": LIMITS.monthly_cap_ngn,
+        "cap_ngn": limits().monthly_cap_ngn,
         "spent_ngn": spent,
-        "remaining_cap_ngn": max(LIMITS.monthly_cap_ngn - spent, 0),
+        "remaining_cap_ngn": max(limits().monthly_cap_ngn - spent, 0),
         "units_left": UNITS_LEFT if powered else None,
         "days_left": DAYS_LEFT if powered else None,
-        "bills": list(BILLS.values()),
+        "bills": list(bills().values()),
         # Additive (docs/API.md): bills with a renewal inside the reminder
         # window, soonest first. The agent's snapshot and the dashboard's
         # "Stark noticed" block both read it from here.
-        "due_soon": reminders.due_soon(BILLS.values()),
+        "due_soon": reminders.due_soon(bills().values()),
         "as_of": now_iso(),
     }
+
+
+def _first_name(name: str | None) -> str:
+    """What to greet someone by. The provider stores a display name, not a split one."""
+    parts = (name or "").strip().split()
+    return parts[0] if parts else "there"
 
 
 def parse_form(raw: bytes, content_type: str) -> dict[str, str]:
@@ -386,11 +485,11 @@ def h_state(_) -> tuple[int, dict]:
 
 
 def h_bills(_) -> tuple[int, dict]:
-    return 200, list(BILLS.values())
+    return 200, list(bills().values())
 
 
 def h_bill(params) -> tuple[int, dict]:
-    bill = BILLS.get(params["bill_id"])
+    bill = bills().get(params["bill_id"])
     if bill is None:
         raise ApiError(404, "unknown_bill", f"No bill {params['bill_id']}")
     return 200, bill
@@ -481,7 +580,7 @@ def h_bill_add(body) -> tuple[int, dict]:
         plan = None
 
     if any(b["kind"] == kind and b["reference"] == reference
-           for b in BILLS.values()):
+           for b in bills().values()):
         raise ApiError(409, "duplicate_bill", "That bill is already saved.")
 
     bill: dict[str, Any] = {
@@ -500,13 +599,13 @@ def h_bill_add(body) -> tuple[int, dict]:
         bill["plan_price_ngn"] = plan_price
     if renews_on:
         bill["renews_on"] = renews_on
-    BILLS[bill["id"]] = bill
+    bills()[bill["id"]] = bill
     _rebuild_limits()
     return 201, bill
 
 
 def h_bill_update(body, params) -> tuple[int, dict]:
-    bill = BILLS.get(params["bill_id"])
+    bill = bills().get(params["bill_id"])
     if bill is None:
         raise ApiError(404, "unknown_bill", f"No bill {params['bill_id']}")
     if "label" in body:
@@ -543,13 +642,13 @@ def h_bill_update(body, params) -> tuple[int, dict]:
 def h_bill_delete(params) -> tuple[int, dict]:
     global UNITS_LEFT
     bill_id = params["bill_id"]
-    if bill_id not in BILLS:
+    if bill_id not in bills():
         raise ApiError(404, "unknown_bill", f"No bill {bill_id}")
-    if STORE.has_pending(bill_id):
+    if STORE.has_pending(account_id(), bill_id):
         raise ApiError(409, "bill_in_flight",
                        "That bill has a payment still in flight. Try again after it settles.")
-    del BILLS[bill_id]
-    if not any(b["kind"] == "electricity" for b in BILLS.values()):
+    del bills()[bill_id]
+    if not any(b["kind"] == "electricity" for b in bills().values()):
         UNITS_LEFT = 0.0
     _rebuild_limits()
     return 200, {"deleted": True, "bill_id": bill_id}
@@ -562,7 +661,7 @@ def _apply_delivery_to_state(receipt: dict[str, Any]) -> None:
     dashboard — the bill's last top-up and the units it bought.
     """
     global UNITS_LEFT
-    bill = BILLS.get(receipt.get("bill_id"))
+    bill = bills().get(receipt.get("bill_id"))
     if bill is None:
         return
     bill["last_amount_ngn"] = receipt["amount_ngn"]
@@ -580,35 +679,35 @@ def book_payment(bill_id: str, amount: int, tx_hash: str | None = None) -> dict:
     in `payments.PaymentService`, which records the intent before it calls the
     vendor and only charges once the vendor has delivered.
     """
-    bill = BILLS.get(bill_id)
+    bill = bills().get(bill_id)
     if bill is None:
         raise ApiError(404, "unknown_bill", f"No bill {bill_id}")
     if amount <= 0:
         raise ApiError(400, "bad_amount", "amount_ngn must be positive")
 
-    wallet = STORE.wallet() or {
+    wallet = STORE.wallet(account_id()) or {
         "balance_ngn": SEED_BALANCE_NGN,
         "spent_ngn": SEED_SPENT_NGN,
     }
     spent, balance = wallet["spent_ngn"], wallet["balance_ngn"]
 
     # Mirrors the onchain policy check, so the UI can build these states today.
-    if amount > LIMITS.per_payment_cap_ngn:
+    if amount > limits().per_payment_cap_ngn:
         raise ApiError(
             409,
             "over_per_payment_cap",
             "That's over the most you allow in one go.",
-            {"amount_ngn": amount, "cap_ngn": LIMITS.per_payment_cap_ngn},
+            {"amount_ngn": amount, "cap_ngn": limits().per_payment_cap_ngn},
         )
-    if spent + amount > LIMITS.monthly_cap_ngn:
+    if spent + amount > limits().monthly_cap_ngn:
         raise ApiError(
             409,
             "over_cap",
             "That would go over your monthly limit.",
             {
-                "cap_ngn": LIMITS.monthly_cap_ngn,
+                "cap_ngn": limits().monthly_cap_ngn,
                 "spent_ngn": spent,
-                "remaining_ngn": max(LIMITS.monthly_cap_ngn - spent, 0),
+                "remaining_ngn": max(limits().monthly_cap_ngn - spent, 0),
             },
         )
     if amount > balance:
@@ -620,7 +719,7 @@ def book_payment(bill_id: str, amount: int, tx_hash: str | None = None) -> dict:
         )
 
     try:
-        receipt = PAYMENTS.pay(bill, amount, tx_hash=tx_hash)
+        receipt = PAYMENTS.pay(account_id(), bill, amount, tx_hash=tx_hash)
     except payments.SpendError as err:
         status = 409 if err.code == payments.INSUFFICIENT_BALANCE else 502
         raise ApiError(status, err.code, err.message, err.detail) from err
@@ -650,10 +749,10 @@ class ServerToolbox:
         return state()
 
     def list_bills(self) -> list[dict]:
-        return list(BILLS.values())
+        return list(bills().values())
 
     def recent_activity(self) -> list[dict]:
-        return PAYMENTS.recent(20)
+        return PAYMENTS.recent(account_id(), 20)
 
     def pay(self, bill_id: str, amount_ngn: int) -> dict:
         try:
@@ -664,12 +763,34 @@ class ServerToolbox:
             ) from err
 
 
-# No key configured → the agent answers without signing, like the rest of the stub.
-AGENT = agent_layer.build_agent(
-    ServerToolbox(), LIMITS, signer=vault_signer.signer_from_env()
-)
+# The Telegram door is the one single-tenant surface left: a bot speaks for exactly
+# one account, named by STARK_TG_OWNER_EMAIL. It resolves at use rather than at boot
+# (the account usually does not exist yet) and refuses everything until it can.
+OWNER_ACCOUNT: dict[str, str | None] = {"id": None}
 
-OWNER_USER_ID = os.environ.get("STARK_TG_OWNER_ID", "user_tunde")
+
+def owner_account_id() -> str:
+    """The bot's account, looked up by email once per process."""
+    if OWNER_ACCOUNT["id"] is None:
+        email = (os.environ.get("STARK_TG_OWNER_EMAIL") or "").strip().lower()
+        row = DB.one("SELECT id FROM accounts WHERE lower(email) = $1", [email]) \
+            if email else None
+        OWNER_ACCOUNT["id"] = (row["id"] if row else "") or ""
+    return OWNER_ACCOUNT["id"] or ""
+
+
+class OwnerAgent:
+    """Run the agent as the bot's account, without borrowing the web request's."""
+
+    def respond(self, transcript: str, thread: str | None = None):
+        owner = owner_account_id()
+        if not owner:
+            raise RuntimeError("STARK_TG_OWNER_EMAIL does not name an account")
+        token = _CURRENT.set(owner)
+        try:
+            return agent().respond(transcript, thread=thread)
+        finally:
+            _CURRENT.reset(token)
 
 
 def _log_telegram_turn(turn: dict) -> None:
@@ -703,11 +824,11 @@ def _log_telegram_turn(turn: dict) -> None:
 # Voice notes transcribe through the same Whisper the web door uses; the OGG
 # mime is Telegram's own format.
 TG_ADAPTER = telegram.TelegramAdapter(
-    agent=AGENT,
-    identities=identities.IdentityStore(STORE.path),
+    agent=OwnerAgent(),
+    identities=IDENTITIES,
     bot_token=os.environ.get("TELEGRAM_BOT_TOKEN"),
     secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
-    owner_user_id=OWNER_USER_ID,
+    owner_user_id=owner_account_id,
     transcribe=lambda clip: stt.transcribe(clip, mime="audio/ogg"),
     on_turn=_log_telegram_turn,
     log=lambda line: print(f"  [tg] {line}"),
@@ -727,7 +848,7 @@ REMINDER_TICK_SECONDS = int(os.environ.get("STARK_REMINDER_TICK", "300"))
 
 def due_reminder_lines() -> list[str]:
     """The reminders due right now, as spoken lines. Pure read: claims nothing."""
-    return [reminders.line(item) for item in reminders.due_soon(BILLS.values())]
+    return [reminders.line(item) for item in reminders.due_soon(bills().values())]
 
 
 def push_due_reminders() -> list[str]:
@@ -738,12 +859,13 @@ def push_due_reminders() -> list[str]:
     claimed before it is sent, so a chat is never nudged twice for one date.
     """
     if not TG_ADAPTER.bot_token:
-        return [reminders.push_text(item) for item in reminders.due_soon(BILLS.values())]
+        return [reminders.push_text(item) for item in reminders.due_soon(bills().values())]
 
     sent: list[str] = []
-    for item in reminders.due_for_push(BILLS.values(), log=REMINDERS):
+    for item in reminders.due_for_push(bills().values(), log=REMINDERS):
         text = reminders.push_text(item)
-        for ident in TG_ADAPTER.identities.identities_for(OWNER_USER_ID):
+        owner = owner_account_id()
+        for ident in TG_ADAPTER.identities.identities_for(owner) if owner else []:
             if ident["channel"] != "telegram":
                 continue
             try:
@@ -764,7 +886,14 @@ def start_reminder_loop(tick_seconds: int = REMINDER_TICK_SECONDS) -> threading.
     def run() -> None:
         while not stop.wait(tick_seconds):
             try:
-                push_due_reminders()
+                owner = owner_account_id()
+                if not owner:      # no account configured: nowhere to push
+                    continue
+                token = _CURRENT.set(owner)
+                try:
+                    push_due_reminders()
+                finally:
+                    _CURRENT.reset(token)
             except Exception as err:  # a broken tick must not kill the server
                 print(f"  reminder tick failed: {err}")
 
@@ -773,47 +902,50 @@ def start_reminder_loop(tick_seconds: int = REMINDER_TICK_SECONDS) -> threading.
 
 
 def _limits_payload() -> dict[str, Any]:
-    wallet = STORE.wallet() or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
+    wallet = STORE.wallet(account_id()) or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
     spent = wallet["spent_ngn"]
     return {
-        "monthly_cap_ngn": LIMITS.monthly_cap_ngn,
-        "per_payment_cap_ngn": LIMITS.per_payment_cap_ngn,
+        "monthly_cap_ngn": limits().monthly_cap_ngn,
+        "per_payment_cap_ngn": limits().per_payment_cap_ngn,
         "spent_ngn": spent,
-        "remaining_cap_ngn": max(LIMITS.monthly_cap_ngn - spent, 0),
+        "remaining_cap_ngn": max(limits().monthly_cap_ngn - spent, 0),
     }
 
 
 def _wallet_payload() -> dict[str, Any]:
-    wallet = STORE.wallet() or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
+    wallet = STORE.wallet(account_id()) or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
     return {
         "currency": "NGN",
         "balance_ngn": wallet["balance_ngn"],
         "spent_ngn": wallet["spent_ngn"],
-        "monthly_cap_ngn": LIMITS.monthly_cap_ngn,
-        "remaining_cap_ngn": max(LIMITS.monthly_cap_ngn - wallet["spent_ngn"], 0),
-        "added_this_month_ngn": STORE.added_this_month(),
+        "monthly_cap_ngn": limits().monthly_cap_ngn,
+        "remaining_cap_ngn": max(limits().monthly_cap_ngn - wallet["spent_ngn"], 0),
+        "added_this_month_ngn": STORE.added_this_month(account_id()),
     }
 
 
 def _rebuild_limits(*, monthly_cap_ngn: int | None = None,
                     per_payment_cap_ngn: int | None = None,
                     meters=None) -> None:
-    """Replace the frozen Limits object and the agent's copy of it."""
-    global LIMITS
-    LIMITS = agent_layer.Limits(
-        monthly_cap_ngn=LIMITS.monthly_cap_ngn if monthly_cap_ngn is None else monthly_cap_ngn,
+    """Replace this account's Limits object and the agent's copy of it."""
+    current = _state()
+    previous = current["limits"]
+    current["limits"] = agent_layer.Limits(
+        monthly_cap_ngn=(
+            previous.monthly_cap_ngn if monthly_cap_ngn is None else monthly_cap_ngn
+        ),
         per_payment_cap_ngn=(
-            LIMITS.per_payment_cap_ngn if per_payment_cap_ngn is None
+            previous.per_payment_cap_ngn if per_payment_cap_ngn is None
             else per_payment_cap_ngn
         ),
         allowed_meters=frozenset(
             str(m) for m in (
                 meters if meters is not None
-                else (b["reference"] for b in BILLS.values())
+                else (b["reference"] for b in bills().values())
             ) if m
         ),
     )
-    AGENT.limits = LIMITS
+    current["agent"].limits = current["limits"]
 
 
 def _int_field(body: dict[str, Any], name: str, code: str = "bad_amount") -> int:
@@ -828,7 +960,7 @@ def _slug(text: str) -> str:
 
 
 def h_activity(_) -> tuple[int, dict]:
-    return 200, PAYMENTS.recent(20)
+    return 200, PAYMENTS.recent(account_id(), 20)
 
 
 def h_limits(_params=None) -> tuple[int, dict]:
@@ -846,8 +978,8 @@ def h_limits_patch(body) -> tuple[int, dict]:
         raise ApiError(400, "bad_limits", "monthly_cap_ngn must be positive")
     if per is not None and per <= 0:
         raise ApiError(400, "bad_limits", "per_payment_cap_ngn must be positive")
-    effective_monthly = LIMITS.monthly_cap_ngn if monthly is None else monthly
-    effective_per = LIMITS.per_payment_cap_ngn if per is None else per
+    effective_monthly = limits().monthly_cap_ngn if monthly is None else monthly
+    effective_per = limits().per_payment_cap_ngn if per is None else per
     if effective_per > effective_monthly:
         raise ApiError(400, "bad_limits",
                        "The per-payment limit can't exceed the monthly limit.")
@@ -864,10 +996,10 @@ def h_wallet_topup(body) -> tuple[int, dict]:
     if amount <= 0:
         raise ApiError(400, "bad_amount", "amount_ngn must be positive")
     request_id = str(body.get("request_id") or f"dep_{uuid.uuid4().hex[:12]}")
-    existing = STORE.by_request_id(request_id)
+    existing = STORE.by_request_id(account_id(), request_id)
     if existing is not None:
         return 200, {"wallet": _wallet_payload(), "entry": receipts.api_shape(existing)}
-    entry, _ = STORE.record_deposit({
+    entry, _ = STORE.record_deposit(account_id(), {
         "id": f"rcpt_{uuid.uuid4().hex[:6]}",
         "request_id": request_id,
         "bill_id": "wallet",
@@ -893,11 +1025,11 @@ def h_wallet_withdraw(body) -> tuple[int, dict]:
     if amount <= 0:
         raise ApiError(400, "bad_amount", "amount_ngn must be positive")
     request_id = str(body.get("request_id") or f"wd_{uuid.uuid4().hex[:12]}")
-    existing = STORE.by_request_id(request_id)
+    existing = STORE.by_request_id(account_id(), request_id)
     if existing is not None:
         return 200, {"wallet": _wallet_payload(), "entry": receipts.api_shape(existing)}
     try:
-        entry, _ = STORE.record_withdrawal({
+        entry, _ = STORE.record_withdrawal(account_id(), {
             "id": f"rcpt_{uuid.uuid4().hex[:6]}",
             "request_id": request_id,
             "bill_id": "wallet",
@@ -916,7 +1048,7 @@ def h_wallet_withdraw(body) -> tuple[int, dict]:
             "created_at": now_iso(),
         }, amount)
     except ValueError:
-        wallet = STORE.wallet() or {"balance_ngn": 0, "spent_ngn": 0}
+        wallet = STORE.wallet(account_id()) or {"balance_ngn": 0, "spent_ngn": 0}
         raise ApiError(
             409, "insufficient_balance", "Not enough in your wallet.",
             {"balance_ngn": wallet["balance_ngn"], "amount_ngn": amount},
@@ -932,16 +1064,16 @@ def h_suggestions(_) -> tuple[int, dict]:
     it is not returned — the old hardcoded "AC is 78%" line is gone, and an
     empty list is the honest answer when nothing needs attention.
     """
-    wallet = STORE.wallet() or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
+    wallet = STORE.wallet(account_id()) or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
     powered = has_electricity()
     return 200, suggestions.build(
-        bills=list(BILLS.values()),
+        bills=list(bills().values()),
         units_left=UNITS_LEFT if powered else None,
         days_left=DAYS_LEFT if powered else None,
         spent_ngn=wallet["spent_ngn"],
-        cap_ngn=LIMITS.monthly_cap_ngn,
+        cap_ngn=limits().monthly_cap_ngn,
         telemetry=TELEMETRY,
-        receipts=PAYMENTS.recent(50),
+        receipts=PAYMENTS.recent(account_id(), 50),
         tariff_ngn_per_kwh=TARIFF_NGN_PER_KWH,
     )
 
@@ -1009,7 +1141,7 @@ def _ms(since: float) -> int:
 
 def _model_name() -> str | None:
     """Which model answered. Defensive: `model` sits behind a protocol."""
-    model = getattr(AGENT, "model", None)
+    model = getattr(agent(), "model", None)
     return getattr(model, "model", None) or getattr(model, "name", None)
 
 
@@ -1131,7 +1263,7 @@ def h_voice(body, raw: bytes = b"", content_type: str = "") -> tuple[int, dict]:
                      **({"stt": stt_reason} if stt_reason else {})}
 
     since = time.perf_counter()
-    reply = AGENT.respond(said)
+    reply = agent().respond(said)
     payload = reply.as_voice_payload(transcript)
     conversation = reply.conversation
     ms_agent = _ms(since)
@@ -1227,11 +1359,11 @@ def h_reset(_body=None, _params=None) -> tuple[int, dict]:
     artboards' numbers every time.
     """
     global TELEMETRY, UNITS_LEFT
-    BILLS.clear()
-    BILLS.update(copy.deepcopy(SEED_BILLS))
+    bills().clear()
+    bills().update(copy.deepcopy(SEED_BILLS))
     history = seed_receipts()
     STORE.replace_all(
-        history, balance_ngn=SEED_BALANCE_NGN, spent_ngn=SEED_SPENT_NGN
+        account_id(), history, balance_ngn=SEED_BALANCE_NGN, spent_ngn=SEED_SPENT_NGN
     )
     sync_bill_history(history)
     _rebuild_limits(monthly_cap_ngn=CAP_NGN, per_payment_cap_ngn=PER_PAYMENT_CAP_NGN)
@@ -1240,6 +1372,19 @@ def h_reset(_body=None, _params=None) -> tuple[int, dict]:
     REMINDERS.clear()
     TG_ADAPTER.identities.clear()
     return 200, {"reset": True}
+
+
+def h_logout(_body) -> tuple[int, dict]:
+    """`POST /v1/auth/logout` — end this session for real.
+
+    Deleting the provider's session row is the only thing that actually signs the
+    token out: the browser forgetting it would leave a working credential behind for
+    anything that had already seen it.
+    """
+    token = _TOKEN.get()
+    if token:
+        DB.query("DELETE FROM neon_auth.session WHERE token = $1", [token])
+    return 200, {"logged_out": True}
 
 
 def h_link_code(_body) -> tuple[int, dict]:
@@ -1252,7 +1397,7 @@ def h_link_code(_body) -> tuple[int, dict]:
     one tap instead of six digits typed by hand.
     """
     payload = TG_ADAPTER.link_code()
-    payload["user_id"] = OWNER_USER_ID
+    payload["user_id"] = account_id()
     return 200, payload
 
 
@@ -1326,6 +1471,7 @@ ROUTES = [
     ("POST", r"^/v1/speak$", h_speak),
     ("GET", r"^/v1/speak/stream$", h_speak_stream),
     ("POST", r"^/v1/link/code$", h_link_code),
+    ("POST", r"^/v1/auth/logout$", h_logout),
     ("POST", r"^/v1/tg/webhook$", h_tg),
     # Stub-only. Not part of the product contract; safe to ignore from the frontend.
     ("POST", r"^/v1/_stub/reset$", h_reset),
@@ -1333,6 +1479,25 @@ ROUTES = [
 
 
 # --- HTTP plumbing ----------------------------------------------------------
+
+
+def authenticate(header: str | None, query_token: str | None = None) -> str:
+    """Resolve the bearer session to an account, or refuse the request.
+
+    `/v1/speak/stream` also accepts `?token=` because it is played by an `<audio>`
+    element, and an element cannot set a header. Everything else uses the header;
+    a query string is a last resort that ends up in access logs.
+    """
+    token = auth.bearer(header) or (query_token or "").strip() or None
+    # One query, not three: session, account and wallet lookup travel together.
+    row = auth.session_account(DB, token, now=now_iso()) if token else None
+    if row is None:
+        raise ApiError(401, "unauthorized", "Sign in to use Stark.")
+    _CURRENT.set(row["id"])
+    _TOKEN.set(token)
+    _PROFILE.set({"email": row["email"], "name": row.get("name") or ""})
+    _prepare_account(row["id"], seeded=row["seeded_at"] is not None)
+    return row["id"]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1395,6 +1560,12 @@ class Handler(BaseHTTPRequestHandler):
 
             params = {**query, **match.groupdict()}
             try:
+                # Every `/v1` route is somebody's data, so it needs a session. The
+                # Telegram webhook is the exception: Telegram cannot carry a bearer
+                # token, and `h_tg` checks its own secret before trusting anything.
+                if handler is not h_tg and parsed.path.startswith("/v1/"):
+                    authenticate(self.headers.get("Authorization"), query.get("token"))
+
                 if method == "GET" and handler is h_speak_stream:
                     status, ctype, body = handler(params)
                     if ctype is None:

@@ -10,20 +10,24 @@ what to do next, read [`docs/HANDOFF.md`](../../docs/HANDOFF.md).
 ## Quick start
 
 ```sh
-cp .env.example .env          # optional, everything works with it empty
+cp .env.example .env          # then set DATABASE_URL — the server will not start without it
 bun dev:backend               # from the repo root → http://127.0.0.1:8000
-bun smoke                     # in another shell: 58 checks against the running server
+bun smoke                     # in another shell: 68 checks (70 with the sidecar up)
 ```
 
-With no configuration the server is fully offline: payments are dry-run against
-captured fixtures, nothing is signed or broadcast, and a deterministic model stands in
-for the LLM. Each variable in [`.env.example`](.env.example) switches one piece on.
+`DATABASE_URL` (Neon Postgres, pooler URL with `sslmode=require`) is the one hard
+requirement: accounts, wallets, receipts and linked identities live there and the
+schema creates itself on first boot. `NEON_AUTH_BASE_URL` (the same branch's Auth URL)
+makes sign-in work — without it every `/v1` request answers 401. Everything else is
+offline: payments are dry-run against captured fixtures, nothing is signed or
+broadcast, and a deterministic model stands in for the LLM. Each remaining variable
+in [`.env.example`](.env.example) switches one piece on.
 
 | Command (from `apps/backend`) | What it does |
 |---|---|
 | `python3 server.py` | API on port 8000 (no `.env` loading) |
-| `python3 smoke_test.py` | 70 end-to-end checks; the server must be running |
-| `python3 -m unittest test_agent test_vending test_vtpass test_tg test_tts test_live_paths test_wake test_reminders test_suggestions` | 281 unit tests, hermetic, no server needed (`bun run test` from the root) |
+| `python3 smoke_test.py` | 68 end-to-end checks (sign-up, auth, every endpoint; 70 with the TTS sidecar up); the server must be running |
+| `python3 -m unittest test_agent test_vending test_vtpass test_tg test_tts test_wake test_turnlog test_reminders test_suggestions test_live_paths` | 367 unit tests, hermetic, no server needed (`bun run test` from the root) |
 | `bun tts` | the local Kokoro voice sidecar on :8010 (needs `.venv-tts`, see Voice output) |
 | `curl -X POST http://127.0.0.1:8000/v1/_stub/reset` | back to the demo seed; deletes added bills |
 
@@ -35,12 +39,14 @@ asks for text instead of guessing.
 
 ```
 server.py        zero-dependency API stub, `/v1/voice` routed through the agent
-smoke_test.py    70 checks, covers every endpoint and error code
+smoke_test.py    68 checks (70 with the sidecar up), every endpoint and error code
+neon.py          Neon Postgres over HTTPS: connection pool, schema, the queries
+auth.py          Neon Auth sessions: bearer parsing, JWKS verification, account lookup
 agent.py         tool schema, tool routing, policy gate, model loop
 policy.py        the vault's rules in Python, same codes and sentences
 near_tx.py       borsh + ed25519 + base58 + RPC: builds and signs pay()
 vault_signer.py  function-call key wiring, dry-run by default
-receipts.py      SQLite receipt store; request_id is the idempotency key
+receipts.py      per-account receipt + wallet store on Postgres; request_id is the idempotency key
 vending.py       bill kind → VTpass product; amount-priced vs plan-priced
 catalog.py       service ids, plans and prices, read from captured fixtures
 payments.py      record → buy → charge-on-delivery → receipt
@@ -50,7 +56,7 @@ vtpass.py        VTpass client, dry-run by default
 test_vtpass.py   33 tests, including the CLI wiring and the live shapes
 telegram.py      the Telegram door: webhook auth, identity, wake gate, then the agent
 wake.py          the wake rule both doors share, tolerant of what recognizers do to "stark"
-identities.py    channel identity linking and webhook dedupe, in stark.db
+identities.py    channel identity linking and webhook dedupe, in Postgres
 audio.py         voice note → 16 kHz WAV via ffmpeg, and WAV → OGG/Opus for replies
 stt.py           speech to text on NEAR AI's Whisper, or an honest refusal
 reminders.py     renews_on → due_soon window, the spoken reminder line, a de-duped push queue
@@ -69,7 +75,6 @@ test_suggestions.py  24 tests: each line only when its data supports it, and nev
 test_live_paths.py  33 tests: the live HTTP paths (VTpass, NEAR AI, Whisper,
                  NEAR RPC) against real loopback servers, no credentials
 fixtures/        captured + modeled VTpass responses (see its README)
-stark.db         runtime data (receipts, wallet), gitignored
 .env.example     every environment variable the server reads
 ```
 
@@ -85,7 +90,7 @@ Both serve http://127.0.0.1:8000.
 In another shell, prove it works:
 
 ```sh
-python3 smoke_test.py        # 70 checks, exits 1 on failure
+python3 smoke_test.py        # 68 checks (70 with the sidecar up), exits 1 on failure
 ```
 
 Then try the two calls the app actually makes:
@@ -155,7 +160,7 @@ transcript → model picks a tool → policy gate → sign pay() → book the pa
 python3 -m unittest test_agent     # 70 tests
 python3 -m unittest test_vending   # 44 tests
 python3 -m unittest test_vtpass    # 30 tests
-python3 smoke_test.py              # 58 checks, server must be running
+python3 smoke_test.py              # 68 checks, server must be running
 python3 -m unittest test_tg        # 22 tests: the Telegram door and its gates
 python3 -m unittest test_tts       # 21 tests: the voice path, without torch
 ```
@@ -332,7 +337,7 @@ server to a whole Kokoro WAV; no voice anywhere is a 503 `no_voice`, not silence
 
 Fails closed, exactly like `stt.py`: no key and no URL, both providers down, no
 ffmpeg, or a Telegram refusal — the answer still arrives, just not spoken. `bun smoke`
-proves both worlds: 58 checks with voice off (`audio` null), 60 with a voice up.
+proves both worlds: 68 checks with voice off (`audio` null), 70 with a voice up.
 
 ## Conversation log (turnlog)
 
@@ -440,5 +445,6 @@ asking for them refuses and charges nothing.
 The demo's per-payment cap is ₦10,000 for this reason — a ₦5,000 cap makes the TV
 bill impossible to pay.
 
-Receipts and the wallet live in `stark.db` (gitignored). `POST /v1/_stub/reset`
-wipes it and re-seeds the artboards' six activity entries.
+Receipts, wallets and linked identities live in Neon Postgres, one set per account.
+`POST /v1/_stub/reset` wipes the signed-in account's rows and re-seeds the artboards'
+six activity entries.

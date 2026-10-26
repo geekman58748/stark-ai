@@ -1,4 +1,11 @@
-import { errorCopy, limitsQuery, useResetDemo, useUpdateLimits } from "@stark/api";
+import {
+  api,
+  errorCopy,
+  limitsQuery,
+  setAuthToken,
+  useResetDemo,
+  useUpdateLimits,
+} from "@stark/api";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -18,9 +25,10 @@ import { SectionHeading } from "@stark/ui/components/section-heading";
 import { Spinner } from "@stark/ui/components/spinner";
 import { formatNaira } from "@stark/utils/format";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageTitle } from "@/components/app-shell";
+import { forgetToken } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/settings")({
   loader: ({ context }) => context.queryClient.query({ ...limitsQuery(), staleTime: "static" }),
@@ -107,6 +115,16 @@ function Settings() {
         </form>
       </Card>
 
+      <SectionHeading>This account</SectionHeading>
+      <Card className="gap-2">
+        <span className="font-medium">Signed in</span>
+        <p className="m-0 text-[13px] text-fg-2">
+          Stark only ever pays from the wallet in this account. Logging out ends the session on the
+          server, not just in this tab.
+        </p>
+        <SignOut />
+      </Card>
+
       <SectionHeading>How Stark listens</SectionHeading>
       <Card className="gap-2">
         <span className="font-medium">Telegram and the wall phone</span>
@@ -127,6 +145,42 @@ function Settings() {
 
       {import.meta.env.DEV ? <ResetDemo /> : null}
     </>
+  );
+}
+
+function SignOut() {
+  const navigate = useNavigate();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function leave() {
+    setPending(true);
+    setError(null);
+    try {
+      // Server first: forgetting the token locally would leave a live session behind.
+      await api.logout();
+    } catch {
+      // A dead session is exactly what we are trying to end, so keep going.
+    }
+    try {
+      forgetToken();
+      setAuthToken(null);
+      await navigate({ to: "/login" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign out.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button variant="secondary" onClick={leave} disabled={pending} className="min-h-10 self-start">
+        {pending ? <Spinner /> : null}
+        Log out
+      </Button>
+      {error ? <FieldError className="text-[13px]">{error}</FieldError> : null}
+    </div>
   );
 }
 

@@ -20,11 +20,12 @@ In another shell:
 
 ```sh
 cd apps/backend
-python3 smoke_test.py      # 50 checks, exits 1 if anything is broken
+python3 smoke_test.py      # 68 checks (70 with the TTS sidecar up), exits 1 if anything is broken
 ```
 
 That is the whole setup. No npm install, no virtualenv, no docker. Any python3
-works. The server keeps its data in `apps/backend/stark.db`, which is gitignored.
+works. The server keeps its data in Neon Postgres (`DATABASE_URL` in
+`apps/backend/.env`), so restarts keep history, balances and linked chats.
 
 To return everything to the demo state (seeded bills, seed balance, seed
 activity):
@@ -374,13 +375,14 @@ code against.
 - **Payments are dry run.** Every purchase returns the same sample token:
   `4821 0937 5512 8846 3019`. Never present it as a live purchase and never put
   two of them side by side in the same screen or demo.
-- **No auth.** No token is checked yet. A device bearer token and channel
-  linking are designed and partially built but not enforced. Do not put a
-  login screen in front of the demo for now.
-- **Bills, limits and units reset on server restart.** The wallet and the
-  receipt history persist in SQLite, but a freshly added bill and a patched
-  limit live in memory. A restart returns them to the seed. Keep that in mind
-  during a long demo session, or call reset and rebuild.
+- **Auth is enforced.** Every `/v1` call needs a Neon Auth session: the dashboard
+  signs up and signs in on `/login` (`VITE_NEON_AUTH_URL`), keeps the token, and the
+  API answers **401 `unauthorized`** without it. A signed-out visit to an app route
+  sends you back to `/login`.
+- **Bills, limits and units reset on server restart.** The wallet, the receipt
+  history and any linked chat persist in Neon Postgres (per account), but a freshly
+  added bill and a patched limit live in memory. A restart returns them to the seed.
+  Keep that in mind during a long demo session, or call reset and rebuild.
 - **Voice takes text, not audio.** The mic button is a real button that posts a
   transcript for now.
 - **TTS is not chosen.** Replies are text you can read aloud. Do not promise

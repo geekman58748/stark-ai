@@ -1,10 +1,12 @@
+import { setAuthToken } from "@stark/api";
 import { Button } from "@stark/ui/components/button";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
 import { Icons } from "@stark/ui/components/icons";
 import { LogoMark } from "@stark/ui/components/logo";
 import { cn } from "@stark/ui/utils/cn";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { signUp } from "@/lib/auth";
 
 export const Route = createFileRoute("/start/")({
   head: () => ({ meta: [{ title: "Sign up · Stark" }] }),
@@ -33,8 +35,43 @@ const METHODS = [
 type Method = (typeof METHODS)[number]["id"];
 
 function SignUp() {
+  const navigate = useNavigate();
   const [method, setMethod] = useState<Method>("email");
+  const [details, setDetails] = useState({
+    first: "",
+    last: "",
+    email: "",
+    password: "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
   const current = METHODS.find((entry) => entry.id === method) ?? METHODS[0];
+
+  /**
+   * Create the account with Neon Auth, then go into the app.
+   *
+   * Only email is wired: the other three methods are drawn, not implemented, and a
+   * button that silently does nothing is worse than one that says so.
+   */
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (method !== "email") return;
+    setError(null);
+    setPending(true);
+    try {
+      const session = await signUp({
+        email: details.email,
+        password: details.password,
+        name: `${details.first} ${details.last}`.trim(),
+      });
+      setAuthToken(session.token);
+      await navigate({ to: "/" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create the account.");
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
     <div
@@ -67,13 +104,13 @@ function SignUp() {
             </h1>
             <p className="m-0 mt-2.5 text-[14px] text-fg-2">
               Already have an account?{" "}
-              <Link to="/" className="font-medium text-brand no-underline hover:text-brand-warm">
+              <Link to="/login" className="font-medium text-brand no-underline hover:text-brand-warm">
                 Log in
               </Link>
             </p>
           </div>
 
-          <form className="mt-7 flex flex-col" onSubmit={(event) => event.preventDefault()}>
+          <form className="mt-7 flex flex-col" onSubmit={submit}>
             {/* Pick a method instead of a control that silently rotates through them. */}
             <div
               role="group"
@@ -109,33 +146,63 @@ function SignUp() {
               {method === "email" ? (
                 <>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="First name" autoComplete="given-name" placeholder="Tunde" />
-                    <Field label="Last name" autoComplete="family-name" placeholder="Adebayo" />
+                    <Field
+                      label="First name"
+                      autoComplete="given-name"
+                      placeholder="Tunde"
+                      value={details.first}
+                      onChange={(value) => setDetails((d) => ({ ...d, first: value }))}
+                    />
+                    <Field
+                      label="Last name"
+                      autoComplete="family-name"
+                      placeholder="Adebayo"
+                      value={details.last}
+                      onChange={(value) => setDetails((d) => ({ ...d, last: value }))}
+                    />
                   </div>
                   <Field
                     label="Email"
                     type="email"
                     autoComplete="email"
                     placeholder="tunde@example.com"
+                    required
+                    value={details.email}
+                    onChange={(value) => setDetails((d) => ({ ...d, email: value }))}
                   />
-                  <PasswordField />
+                  <PasswordField
+                    value={details.password}
+                    onChange={(value) => setDetails((d) => ({ ...d, password: value }))}
+                  />
                 </>
               ) : (
                 <MethodNote method={method} />
               )}
             </div>
 
+            {error ? (
+              <p role="alert" className="m-0 mt-3 text-[13px] text-destructive">
+                {error}
+              </p>
+            ) : null}
+
             <Button
+              type="submit"
               variant="brand"
               size="lg"
               block
-              nativeButton={false}
-              render={<Link to="/start/bill" />}
+              disabled={pending || method !== "email"}
               className="mt-5 h-12 gap-2.5 text-[15px] font-semibold"
             >
               <MethodIcon method={method} />
-              {current.cta}
+              {pending ? "Creating your account…" : current.cta}
             </Button>
+
+            {method !== "email" ? (
+              <p className="m-0 mt-2.5 text-[12px] text-faint">
+                {current.label} sign-in is not wired yet. Use email for now.
+              </p>
+            ) : null}
 
             <div className="mt-7 flex items-start gap-2.5 border-t border-line pt-6 text-[12.5px] leading-relaxed text-faint">
               <Icons.Lock size={14} className="mt-0.5 shrink-0" />
@@ -195,12 +262,18 @@ function Field({
   autoComplete,
   placeholder,
   trailing,
+  value,
+  onChange,
+  required,
 }: {
   label: string;
   type?: string;
   autoComplete?: string;
   placeholder?: string;
   trailing?: ReactNode;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
 }) {
   return (
     <label className="group flex items-center gap-3 rounded-xl border border-line-2 bg-white/[0.028] px-3.5 py-2.5 transition-colors hover:border-white/15 focus-within:border-brand focus-within:ring-3 focus-within:ring-brand/25">
@@ -212,6 +285,9 @@ function Field({
           type={type}
           autoComplete={autoComplete}
           placeholder={placeholder}
+          required={required}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
           className="w-full min-w-0 bg-transparent text-[15px] leading-6 text-fg outline-none placeholder:text-faint/70"
         />
       </span>
@@ -221,7 +297,13 @@ function Field({
 }
 
 /** The password field with a reveal toggle that actually reveals. */
-function PasswordField() {
+function PasswordField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
   const [revealed, setRevealed] = useState(false);
 
   return (
@@ -230,6 +312,9 @@ function PasswordField() {
       type={revealed ? "text" : "password"}
       autoComplete="new-password"
       placeholder="At least 8 characters"
+      required
+      value={value}
+      onChange={onChange}
       trailing={
         <button
           type="button"

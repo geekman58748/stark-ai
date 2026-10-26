@@ -12,7 +12,7 @@ Inside "this", the transaction has two phases:
    the same intent re-queries the same `request_id` and settles it if the vendor
    delivered in the meantime.
 
-Charging reads and writes the wallet inside one SQLite transaction, so the balance
+Charging moves the balance and writes the receipt in one statement, so the balance
 and the history cannot disagree after a restart.
 """
 
@@ -57,13 +57,15 @@ class PaymentService:
         self.gateway = gateway
         self.clock = clock
 
-    def pay(self, bill: dict, amount_ngn: int, *, tx_hash: str | None = None) -> dict:
-        """Book a payment. Returns the stored receipt row."""
-        pending = self.store.find_pending(bill["id"], amount_ngn)
+    def pay(self, user_id: str, bill: dict, amount_ngn: int, *,
+            tx_hash: str | None = None) -> dict:
+        """Book a payment for one account. Returns the stored receipt row."""
+        pending = self.store.find_pending(user_id, bill["id"], amount_ngn)
         if pending is not None:
-            return self._settle_retry(pending, amount_ngn)
+            return self._settle_retry(user_id, pending, amount_ngn)
 
         receipt = self.store.create(
+            user_id,
             {
                 "id": f"rcpt_{uuid.uuid4().hex[:6]}",
                 "request_id": vtpass.new_request_id(),
@@ -83,22 +85,23 @@ class PaymentService:
         )
 
         outcome = self.gateway.buy(bill, amount_ngn, receipt["request_id"])
-        return self._apply(receipt, outcome, amount_ngn)
+        return self._apply(user_id, receipt, outcome, amount_ngn)
 
-    def _settle_retry(self, pending: dict, amount_ngn: int) -> dict:
+    def _settle_retry(self, user_id: str, pending: dict, amount_ngn: int) -> dict:
         outcome = self.gateway.requery(pending["request_id"], amount_ngn)
         if outcome.status == vending_mod.FAILED:
             self.store.update(
+                user_id,
                 pending["id"],
                 status=vending_mod.FAILED,
                 vendor_code=outcome.code,
                 vendor_message=outcome.message,
             )
             raise SpendError(VENDOR_FAILED, outcome.message, {"code": outcome.code})
-        return self._apply(pending, outcome, amount_ngn)
+        return self._apply(user_id, pending, outcome, amount_ngn)
 
     def _apply(
-        self, receipt: dict, outcome: VendingOutcome, amount_ngn: int
+        self, user_id: str, receipt: dict, outcome: VendingOutcome, amount_ngn: int
     ) -> dict:
         common = {
             "vendor": outcome.vendor,
@@ -107,7 +110,7 @@ class PaymentService:
         }
 
         if outcome.status == vending_mod.FAILED:
-            self.store.update(receipt["id"], status=vending_mod.FAILED, **common)
+            self.store.update(user_id, receipt["id"], status=vending_mod.FAILED, **common)
             raise SpendError(VENDOR_FAILED, outcome.message, {"code": outcome.code})
 
         if (
@@ -118,19 +121,19 @@ class PaymentService:
             # A metered product that reports delivered with no token is not something
             # to charge for. Treat it as still in flight and let the retry settle it.
             # Airtime and TV legitimately have no token, so they skip this.
-            self.store.update(receipt["id"], status=vending_mod.PENDING, **common)
-            return self.store.get(receipt["id"])  # type: ignore[return-value]
+            self.store.update(user_id, receipt["id"], status=vending_mod.PENDING, **common)
+            return self.store.get(user_id, receipt["id"])  # type: ignore[return-value]
 
         if not outcome.ok:
-            self.store.update(receipt["id"], status=vending_mod.PENDING, **common)
-            return self.store.get(receipt["id"])  # type: ignore[return-value]
+            self.store.update(user_id, receipt["id"], status=vending_mod.PENDING, **common)
+            return self.store.get(user_id, receipt["id"])  # type: ignore[return-value]
 
         try:
-            self.store.charge(amount_ngn)
+            self.store.charge(user_id, amount_ngn)
         except ValueError:
             failure = dict(common)
             failure["vendor_message"] = "insufficient balance at settlement"
-            self.store.update(receipt["id"], status=vending_mod.FAILED, **failure)
+            self.store.update(user_id, receipt["id"], status=vending_mod.FAILED, **failure)
             raise SpendError(
                 INSUFFICIENT_BALANCE,
                 "There isn't enough in your balance for that.",
@@ -138,6 +141,7 @@ class PaymentService:
             ) from None
 
         return self.store.update(
+            user_id,
             receipt["id"],
             status=outcome.status,
             token=outcome.token,
@@ -147,8 +151,8 @@ class PaymentService:
 
     # --- read side -----------------------------------------------------------
 
-    def recent(self, limit: int = 20) -> list[dict]:
-        return [receipts_mod.api_shape(row) for row in self.store.recent(limit)]
+    def recent(self, user_id: str, limit: int = 20) -> list[dict]:
+        return [receipts_mod.api_shape(row) for row in self.store.recent(user_id, limit)]
 
-    def wallet(self) -> dict[str, int]:
-        return self.store.wallet() or {"balance_ngn": 0, "spent_ngn": 0}
+    def wallet(self, user_id: str) -> dict[str, int]:
+        return self.store.wallet(user_id) or {"balance_ngn": 0, "spent_ngn": 0}

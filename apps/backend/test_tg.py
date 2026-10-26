@@ -1,21 +1,27 @@
 """M4 tests: the Telegram door, its gates, and the audio path.
 
-Hermetic by design — the agent, identity store, file download, transcription
+Hermetic by design — the agent, file download, transcription
 and sending are all injected fakes. The only real dependencies exercised are
-`identities.IdentityStore` (a temp SQLite file) and, when `ffmpeg` is present,
-`audio.transcode` on a WAV this test generates itself. No network, no keys.
+`identities.IdentityStore` (the real Neon Postgres database, read from
+`apps/backend/.env`) and, when `ffmpeg` is present,
+`audio.transcode` on a WAV this test generates itself. No keys and no model calls —
+the one network dependency is the Neon Postgres URL in `apps/backend/.env`.
 """
 
 from __future__ import annotations
 
 import io
+import itertools
 import tempfile
+import time
 import unittest
 import wave
 from pathlib import Path
 
 import audio
 import identities
+import neon
+import test_support
 import stt
 import telegram
 from telegram import TelegramAdapter, TelegramError
@@ -53,12 +59,29 @@ class FakeAgent:
 
 
 class FakeIdentities(identities.IdentityStore):
+    """The real store, on the real database — test accounts are thrown away after."""
+
     def __init__(self):
-        super().__init__(Path(tempfile.mkdtemp()) / "test.db")
+        super().__init__()
 
 
-def _update(chat_id=42, text="hello stark what's left", message_id=1,
-            update_id=100, first_name="Tunde", voice=None):
+# Telegram's dedupe is a primary key, and these tests share one database with every
+# other run. A per-process offset keeps the ids unique across runs while staying
+# stable within a test, which is what the duplicate tests need.
+_RUN_OFFSET = int(time.time() * 1000) % 1_000_000_000
+_BASE = _RUN_OFFSET * 10
+_SEQ = itertools.count(_BASE)
+# Tests that name an id get a range of their own, so `message_id=2` can never
+# collide with the second auto-numbered update in the same run.
+_EXPLICIT = _BASE + 5_000_000_000
+
+# Every update gets an id of its own unless the test names one, so one test's
+# message cannot make the next test's look like a re-delivery. Tests that *want*
+# a repeat (the duplicate test) pass the same id twice and still get one.
+def _update(chat_id=42, text="hello stark what's left", message_id=None,
+            update_id=None, first_name="Tunde", voice=None):
+    message_id = next(_SEQ) if message_id is None else _EXPLICIT + message_id
+    update_id = next(_SEQ) if update_id is None else _EXPLICIT + update_id
     message = {
         "message_id": message_id,
         "chat": {"id": chat_id},
@@ -72,7 +95,21 @@ def _update(chat_id=42, text="hello stark what's left", message_id=1,
 
 
 class AdapterCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Two of the tables behind the chat door are deliberately global (a message
+        # id is Telegram's, not an account's). Tests write to the same database the
+        # app runs on, so a run has to start those two clean or the next run's first
+        # message looks like a re-delivery and its first link attempt looks used up.
+        db = neon.open_database()
+        db.query("DELETE FROM processed_messages")
+        db.query("DELETE FROM link_attempts")
+
     def setUp(self):
+        # A real account, because a link code is a foreign key to one.
+        self.account = test_support.TempAccount()
+        self.addCleanup(self.account.close)
+
         self.agent = FakeAgent()
         self.ids = FakeIdentities()
         self.sent: list[tuple[int, str]] = []
@@ -82,6 +119,7 @@ class AdapterCase(unittest.TestCase):
             identities=self.ids,
             bot_token="123:TEST",
             secret="s3cret",
+            owner_user_id=self.account.id,
             send=lambda chat_id, text: self.sent.append((chat_id, text)) or True,
             on_turn=self.turns.append,
             # Voice stays off unless a test turns it on: unit tests never
@@ -90,7 +128,7 @@ class AdapterCase(unittest.TestCase):
         )
 
     def linked(self, chat_id=42):
-        code = self.ids.issue_code("user_tunde")
+        code = self.ids.issue_code(self.account.id)
         self.ids.consume_code(code, telegram.CHANNEL, str(chat_id), "Tunde")
 
 
@@ -133,18 +171,18 @@ class TestIdentityGate(AdapterCase):
         self.assertEqual(self.agent.transcripts, ["hello stark what's left"])
 
     def test_link_command_binds_and_rejects_bad_codes(self):
-        code = self.ids.issue_code("user_tunde")
+        code = self.ids.issue_code(self.account.id)
         bad = self.adapter._route(_update(text="/link 999999").get("message"),
                                   "/link 999999", "42", None, 42)
         self.assertIn("did not work", bad)
         good = self.adapter._route(_update(text=f"/link {code}").get("message"),
                                    f"/link {code}", "42", "Tunde", 42)
         self.assertIn("Linked", good)
-        self.assertEqual(self.ids.resolve(telegram.CHANNEL, "42"), "user_tunde")
+        self.assertEqual(self.ids.resolve(telegram.CHANNEL, "42"), self.account.id)
 
     def test_whoami_and_unlink(self):
         self.linked()
-        self.assertIn("user_tunde", self.adapter._route(_update(text="/whoami").get("message"),
+        self.assertIn(self.account.id, self.adapter._route(_update(text="/whoami").get("message"),
                                                         "/whoami", "42", None, 42))
         self.adapter._route(_update(text="/unlink").get("message"), "/unlink", "42", None, 42)
         self.assertIsNone(self.ids.resolve(telegram.CHANNEL, "42"))
@@ -176,7 +214,7 @@ class TestLinkCode(AdapterCase):
     def test_deep_link_redeems_the_code(self):
         code = self.adapter.link_code()["code"]
         self.assertIn("Linked", self._say(f"/start {code}"))
-        self.assertEqual(self.ids.resolve(telegram.CHANNEL, "42"), "user_tunde")
+        self.assertEqual(self.ids.resolve(telegram.CHANNEL, "42"), self.account.id)
 
     def test_no_username_means_no_deep_link_but_the_code_still_works(self):
         self.adapter.username_lookup = lambda token: None

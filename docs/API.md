@@ -19,7 +19,7 @@ bill API, no AI — mock data only, so the frontend can be built in parallel.
 | IDs | Opaque strings. Don't parse them, don't assume numeric. |
 | Casing | `snake_case` everywhere. |
 | CORS | Open on the stub, so any dev port works. |
-| Auth | **Not implemented yet.** Device token + channel identity linking are designed in `HANDOFF.md` §8A. Assume an `Authorization: Bearer <token>` header will appear; nothing else changes. |
+| Auth | **Neon Auth session, enforced.** Sign up / sign in at the branch's Auth URL, then send `Authorization: Bearer <token>` on every `/v1` request — otherwise **401** `unauthorized`. `GET /v1/speak/stream` also accepts `?token=` (an `<audio>` element cannot set a header). The Telegram webhook is the only `/v1` route without it: it authenticates with `X-Telegram-Bot-Api-Secret-Token`. Every token resolves to its own account, wallet and receipts. |
 
 ### Error shape
 
@@ -37,6 +37,7 @@ Every non-2xx response has this body:
 
 | `code` | HTTP | When |
 |---|---|---|
+| `unauthorized` | 401 | Missing, malformed or expired bearer token — sign in first |
 | `unknown_bill` | 404 | No bill with that id |
 | `bad_amount` | 400 | `amount_ngn` missing, zero, or not an integer |
 | `bad_watts` | 400 | Telemetry `watts` not a number |
@@ -348,7 +349,7 @@ Send either or both fields; returns the full object above.
 - The per-payment limit cannot exceed the monthly limit (`bad_limits`).
 - Takes effect **immediately for the agent as well as REST payments** — the next
   voice turn is refused at the new limit, with no restart.
-- Not persisted to SQLite: a restart, or `POST /v1/_stub/reset`, restores
+- Not persisted yet: a restart, or `POST /v1/_stub/reset`, restores
   `₦30,000` / `₦10,000`. Do not tell a user their limit survives a reinstall until
   it is stored.
 
@@ -741,7 +742,7 @@ outside a demo reset button.
 | Token | **vended through VTpass**, fixtures in dry-run, real when `STARK_VENDING=live` | M3 — **live credentials still missing, so no real token has ever been bought** |
 | Voice | **real** — Whisper hears the clip; `transcript_hint` remains a probe | M4a done. Voice notes in Telegram and the browser both work |
 | Suggestions | **computed** from meter, telemetry, delivered receipts and renewals; empty when the data is not there | M6 (the AC sensor makes `load_imbalance` routine rather than demo data) |
-| Persistence | **SQLite** (`apps/backend/stark.db`): receipts and wallet, consistent across restarts. Bills, limits and `units_left` are in memory and reset on restart | M3 |
+| Persistence | **Neon Postgres**: accounts, wallets, receipts and channel identities, scoped per account, consistent across restarts. Bills, limits and `units_left` are in memory and reset on restart | M3 + auth |
 
 Shapes will not change as these land. Only the values become real.
 
@@ -760,3 +761,4 @@ Shapes will not change as these land. Only the values become real.
 | 2026-10-24 | Debug route added: `GET /v1/turnlog` reads the conversation log back (404 `turnlog_off` when the log is off), and a logged turn gains `conversation` — the full message exchange with the model. No existing shape changed. |
 | 2026-10-25 | `POST /v1/link/code` added: a single-use, 10-minute code plus the bot's `t.me` deep link, so a chat can be linked from the app. `/start <code>` now redeems it too. No existing shape changed. |
 | 2026-10-25 | Telegram chats keep their last six exchanges (ten-minute idle expiry) and Telegram turns are written to `/v1/turnlog` with `channel: "telegram"`. `/v1/voice` is unchanged: one turn per request. Additive only. |
+| 2026-10-26 | **Auth enforced + storage moved.** Every `/v1` route except the Telegram webhook needs `Authorization: Bearer <token>` from Neon Auth, else **401 `unauthorized`** (`GET /v1/speak/stream` also takes `?token=`); `POST /v1/auth/logout` added. Receipts, wallets, accounts and channel identities now live in Neon Postgres instead of SQLite, scoped per account — two sign-ins no longer share a wallet. New code `unauthorized`. No response shape changed. |

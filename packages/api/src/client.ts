@@ -21,6 +21,7 @@ import type {
 } from "./types";
 
 let baseUrl = "";
+let authToken: string | null = null;
 
 /**
  * Where the backend lives. Leave it empty in the browser during development: Vite proxies
@@ -28,6 +29,17 @@ let baseUrl = "";
  */
 export function setApiBaseUrl(url: string) {
   baseUrl = url.replace(/\/$/, "");
+}
+
+/**
+ * The Neon Auth session token, sent as `Authorization: Bearer`.
+ *
+ * Set once at boot from storage, and again after sign-in or sign-out. Kept here
+ * rather than read from storage per request so a signed-out tab cannot keep
+ * working because localStorage still had a token in it.
+ */
+export function setAuthToken(token: string | null) {
+  authToken = token;
 }
 
 /** A recorded clip as base64, chunked so a long utterance cannot blow the stack. */
@@ -43,9 +55,12 @@ async function blobToBase64(blob: Blob): Promise<string> {
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
     res = await fetch(`${baseUrl}${path}`, {
       method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      headers: Object.keys(headers).length ? headers : undefined,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
@@ -87,6 +102,11 @@ export const api = {
   topUp: (input: TopUpInput) => request<WalletMovement>("POST", "/v1/wallet/topup", input),
   withdraw: (input: WithdrawInput) => request<WalletMovement>("POST", "/v1/wallet/withdraw", input),
   suggestions: () => request<Suggestion[]>("GET", "/v1/suggestions"),
+  /**
+   * Ends the session server-side as well as locally: the provider's session row
+   * is deleted, so the token this tab was holding cannot be replayed.
+   */
+  logout: () => request<{ logged_out: true }>("POST", "/v1/auth/logout", {}),
   /** A fresh single-use code for linking a chat. Every call mints a new one. */
   linkCode: () => request<LinkCode>("POST", "/v1/link/code", {}),
   voice: (transcript_hint: string, opts?: { speak?: boolean }) =>
