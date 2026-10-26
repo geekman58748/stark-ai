@@ -3,7 +3,7 @@ import { Button } from "@stark/ui/components/button";
 import { LogoMark } from "@stark/ui/components/logo";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
-import { signIn } from "@/lib/auth";
+import { signIn, signInWithGoogle } from "@/lib/auth";
 
 /**
  * Sign in.
@@ -29,6 +29,18 @@ function LogIn() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  /** Leaves the page for Google; `/auth/callback` picks the session up on the way back. */
+  async function withGoogle() {
+    setError(null);
+    setPending(true);
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reach Google.");
+      setPending(false);
+    }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
@@ -45,7 +57,10 @@ function LogIn() {
   }
 
   return (
-    <div className="grid min-h-dvh w-full place-items-center px-6" style={{ backgroundColor: CARD }}>
+    <div
+      className="grid min-h-dvh w-full place-items-center px-6"
+      style={{ backgroundColor: CARD }}
+    >
       <div className="w-full max-w-[400px]">
         <Link to="/" className="flex items-center gap-2 text-fg no-underline">
           <LogoMark size={26} cutout={CARD} />
@@ -63,6 +78,27 @@ function LogIn() {
         </p>
 
         <form className="mt-7 flex flex-col gap-3" onSubmit={submit}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            block
+            disabled={pending}
+            onClick={withGoogle}
+            className="h-12 gap-2.5 text-[15px] font-semibold"
+          >
+            <span aria-hidden="true" className="text-[13px] font-semibold">
+              G
+            </span>
+            {pending ? "Taking you to Google…" : "Continue with Google"}
+          </Button>
+
+          <div className="flex items-center gap-3 text-[10px] tracking-[0.07em] text-faint uppercase">
+            <span className="h-px flex-1 bg-line" />
+            or email
+            <span className="h-px flex-1 bg-line" />
+          </div>
+
           <label className="flex flex-col gap-1 rounded-xl border border-line-2 bg-white/[0.028] px-3.5 py-2.5 transition-colors focus-within:border-brand focus-within:ring-3 focus-within:ring-brand/25">
             <span className="text-[10px] font-medium tracking-[0.07em] text-faint uppercase">
               Email

@@ -38,6 +38,10 @@ function authBase(): string {
 async function call<T>(path: string, body: unknown, token?: string): Promise<T> {
   const res = await fetch(`${authBase()}${path}`, {
     method: "POST",
+    // Neon keeps the OAuth round-trip's state in a cookie on its own origin, so the
+    // request has to be allowed to carry it. It is `SameSite=None; Partitioned`,
+    // which is exactly what makes that possible from this origin.
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -104,4 +108,57 @@ export async function signIn(input: { email: string; password: string }): Promis
     password: input.password,
   });
   return store(session);
+}
+
+/** The query parameter Neon appends on the way back from an OAuth provider. */
+const VERIFIER_PARAM = "neon_auth_session_verifier";
+
+/** Where the browser returns to after Google has had its say. */
+const CALLBACK_PATH = "/auth/callback";
+
+/**
+ * Hand the browser to Google.
+ *
+ * This one does not return a session — it navigates away and only comes back at
+ * `/auth/callback`. It settles if the request itself failed, which is why callers
+ * keep their pending state until it does.
+ */
+export async function signInWithGoogle(): Promise<void> {
+  const callbackURL = `${window.location.origin}${CALLBACK_PATH}`;
+  const data = await call<{ url?: string }>("/sign-in/social", {
+    provider: "google",
+    callbackURL,
+    // A refusal from Google comes back to a URL this page recognises.
+    errorCallbackURL: `${callbackURL}?error=1`,
+  });
+  if (!data?.url) throw new Error("Google sign-in did not return an address to go to.");
+  window.location.assign(data.url);
+}
+
+/**
+ * Trade the verifier Neon put on the callback URL for a real session.
+ *
+ * The cookie Neon sets is partitioned to its own origin, so it is deliberately not
+ * the thing relied on here: the verifier is single-use and arrives on the URL. The
+ * `/get-session` answer carries the same token the email flow stores, which is the
+ * token `apps/backend/auth.py` looks up in `neon_auth.session`.
+ */
+export async function sessionFromCallback(search: string): Promise<Session | null> {
+  const verifier = new URLSearchParams(search).get(VERIFIER_PARAM);
+  if (!verifier) return null;
+
+  const res = await fetch(
+    `${authBase()}/get-session?${VERIFIER_PARAM}=${encodeURIComponent(verifier)}`,
+    { credentials: "include" },
+  );
+  if (!res.ok) throw new Error(`Could not finish signing in (${res.status}).`);
+
+  const data = (await res.json().catch(() => null)) as {
+    session?: { token?: string } | null;
+    user?: AuthUser;
+  } | null;
+  const token = data?.session?.token;
+  if (!token || !data?.user) return null;
+
+  return store({ token, user: data.user });
 }

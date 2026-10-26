@@ -17,6 +17,7 @@ import { Route as AppActivityRouteImport } from './routes/_app/activity'
 import { Route as AppConnectRouteImport } from './routes/_app/connect'
 import { Route as AppPayRouteImport } from './routes/_app/pay'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 import { Route as StartIndexRouteImport } from './routes/start/index'
 import { Route as StartBillRouteImport } from './routes/start/bill'
 import { Route as StartMoneyRouteImport } from './routes/start/money'
@@ -64,6 +65,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => AppRoute,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const StartIndexRoute = StartIndexRouteImport.update({
   id: '/start/',
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/connect': typeof AppConnectRoute
   '/pay': typeof AppPayRoute
   '/settings': typeof AppSettingsRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/start/bill': typeof StartBillRoute
   '/start/money': typeof StartMoneyRoute
   '/start/': typeof StartIndexRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/connect': typeof AppConnectRoute
   '/pay': typeof AppPayRoute
   '/settings': typeof AppSettingsRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/start/bill': typeof StartBillRoute
   '/start/money': typeof StartMoneyRoute
   '/': typeof AppIndexRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/_app/connect': typeof AppConnectRoute
   '/_app/pay': typeof AppPayRoute
   '/_app/settings': typeof AppSettingsRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/start/bill': typeof StartBillRoute
   '/start/money': typeof StartMoneyRoute
   '/_app/': typeof AppIndexRoute
@@ -169,6 +178,7 @@ export interface FileRouteTypes {
     | '/connect'
     | '/pay'
     | '/settings'
+    | '/auth/callback'
     | '/start/bill'
     | '/start/money'
     | '/start/'
@@ -185,6 +195,7 @@ export interface FileRouteTypes {
     | '/connect'
     | '/pay'
     | '/settings'
+    | '/auth/callback'
     | '/start/bill'
     | '/start/money'
     | '/'
@@ -203,6 +214,7 @@ export interface FileRouteTypes {
     | '/_app/connect'
     | '/_app/pay'
     | '/_app/settings'
+    | '/auth/callback'
     | '/start/bill'
     | '/start/money'
     | '/_app/'
@@ -218,6 +230,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   TalkRoute: typeof TalkRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   StartBillRoute: typeof StartBillRoute
   StartMoneyRoute: typeof StartMoneyRoute
   StartIndexRoute: typeof StartIndexRoute
@@ -280,6 +293,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings'
       preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/start/': {
       id: '/start/'
@@ -372,6 +392,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   TalkRoute: TalkRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   StartBillRoute: StartBillRoute,
   StartMoneyRoute: StartMoneyRoute,
   StartIndexRoute: StartIndexRoute,

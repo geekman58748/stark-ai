@@ -6,7 +6,7 @@ import { LogoMark } from "@stark/ui/components/logo";
 import { cn } from "@stark/ui/utils/cn";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
-import { signUp } from "@/lib/auth";
+import { signInWithGoogle, signUp } from "@/lib/auth";
 
 export const Route = createFileRoute("/start/")({
   head: () => ({ meta: [{ title: "Sign up · Stark" }] }),
@@ -48,13 +48,29 @@ function SignUp() {
   const current = METHODS.find((entry) => entry.id === method) ?? METHODS[0];
 
   /**
-   * Create the account with Neon Auth, then go into the app.
+   * Create the account, then go into the app.
    *
-   * Only email is wired: the other three methods are drawn, not implemented, and a
-   * button that silently does nothing is worse than one that says so.
+   * Email posts to Neon Auth and gets a token back. Google leaves the page instead:
+   * the browser returns at `/auth/callback` with a verifier, and that route trades
+   * it for the session. Phone and Telegram are drawn, not implemented, and a button
+   * that silently does nothing is worse than one that says so — they stay disabled.
    */
   async function submit(event: FormEvent) {
     event.preventDefault();
+
+    if (method === "google") {
+      setError(null);
+      setPending(true);
+      try {
+        // Navigates away; it only settles here if the request itself failed.
+        await signInWithGoogle();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not reach Google.");
+        setPending(false);
+      }
+      return;
+    }
+
     if (method !== "email") return;
     setError(null);
     setPending(true);
@@ -104,7 +120,10 @@ function SignUp() {
             </h1>
             <p className="m-0 mt-2.5 text-[14px] text-fg-2">
               Already have an account?{" "}
-              <Link to="/login" className="font-medium text-brand no-underline hover:text-brand-warm">
+              <Link
+                to="/login"
+                className="font-medium text-brand no-underline hover:text-brand-warm"
+              >
                 Log in
               </Link>
             </p>
@@ -191,14 +210,18 @@ function SignUp() {
               variant="brand"
               size="lg"
               block
-              disabled={pending || method !== "email"}
+              disabled={pending || (method !== "email" && method !== "google")}
               className="mt-5 h-12 gap-2.5 text-[15px] font-semibold"
             >
               <MethodIcon method={method} />
-              {pending ? "Creating your account…" : current.cta}
+              {pending
+                ? method === "google"
+                  ? "Taking you to Google…"
+                  : "Creating your account…"
+                : current.cta}
             </Button>
 
-            {method !== "email" ? (
+            {method !== "email" && method !== "google" ? (
               <p className="m-0 mt-2.5 text-[12px] text-faint">
                 {current.label} sign-in is not wired yet. Use email for now.
               </p>
@@ -297,13 +320,7 @@ function Field({
 }
 
 /** The password field with a reveal toggle that actually reveals. */
-function PasswordField({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
+function PasswordField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [revealed, setRevealed] = useState(false);
 
   return (
