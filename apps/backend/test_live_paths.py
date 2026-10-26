@@ -794,15 +794,20 @@ class TestNearRpcLive(ServerTest):
         self.assertEqual(len(broadcast), 1)
         signed = base64.b64decode(broadcast[0].json["params"][0])
 
-        tx_bytes, signature = signed[:-64], signed[-64:]
+        # Signature is { key_type: KeyType, signature: [u8; 64] }, so the envelope is
+        # tx + one key-type byte + 64 signature bytes.
+        tx_bytes, signature = signed[:-65], signed[-64:]
+        self.assertEqual(signed[-65], 0, "Signature::ED25519 key type")
         self.assertEqual(len(signature), 64)
         self.assertTrue(
             near_tx.ed25519_verify(KEY.public, near_tx.transaction_hash(tx_bytes), signature)
         )
 
         # Decode the exact envelope `near-primitives` expects and pin every field.
+        # There is no version tag: V0 starts straight at the signer id length.
         r = Reader(tx_bytes)
-        self.assertEqual(r.u8(), 0, "TransactionV0 variant")
+        self.assertEqual(r.u32(), len(SIGNER), "signer id length is the first field")
+        r.i -= 4
         self.assertEqual(r.string(), SIGNER)
         self.assertEqual(r.u8(), 0, "PublicKey::ED25519 variant")
         self.assertEqual(r.take(32), KEY.public)

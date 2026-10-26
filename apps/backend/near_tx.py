@@ -272,11 +272,18 @@ def encode_pay_transaction(
     gas: int = 100_000_000_000_000,  # 100 Tgas
     deposit: int = 0,  # ledger-only vault: no attached NEAR
 ) -> bytes:
-    """Borsh-encode a signed transaction's inner `TransactionV0`.
+    """Borsh-encode the inner `TransactionV0`.
 
     Field order is `TransactionV0` in `near-primitives`:
     signer_id, public_key, nonce, receiver_id, block_hash, actions.
     `Action::FunctionCall` is variant 2.
+
+    There is **no version tag**. A node tells V0 from V1 by peeking the first two
+    bytes: V0 starts with the signer id's 4-byte length, whose second byte is 0 for
+    any account id (they are at most 64 bytes), while V1 starts with a `1` tag
+    followed by a nonzero length byte. Prefixing `0x00` here makes the node read it
+    as a version tag and refuse the transaction with `invalid transaction version
+    tag: 0` — which is what happened before the first live broadcast.
     """
     if len(block_hash) != 32:
         raise ValueError("block hash must be 32 bytes")
@@ -290,8 +297,7 @@ def encode_pay_transaction(
     )
 
     return (
-        b"\x00"  # TransactionV0
-        + _string(signer_id)
+        _string(signer_id)
         + _public_key(public_key)
         + _u64(nonce)
         + _string(receiver_id)
@@ -314,15 +320,21 @@ class SignedTransaction:
 
     @property
     def base64(self) -> str:
-        """What `broadcast_tx_commit` wants: borsh(signed tx) in base64."""
-        return base64.b64encode(self.tx_bytes + self.signature).decode()
+        """What `broadcast_tx_commit` wants: borsh(signed tx) in base64.
+
+        `Signature` is `{ key_type: KeyType, signature: [u8; 64] }`, so the key type
+        byte (0 for ED25519) goes in front of the 64 signature bytes. Omitting it
+        shifts the parse and the node rejects the transaction with `unknown key
+        type`, with the byte it complains about changing every time.
+        """
+        return base64.b64encode(self.tx_bytes + b"\x00" + self.signature).decode()
 
     @property
     def hash_hex(self) -> str:
         return self.tx_hash.hex()
 
     def summary(self) -> dict:
-        return {"tx_hash": self.hash_hex, "encoded_len": len(self.tx_bytes) + 64}
+        return {"tx_hash": self.hash_hex, "encoded_len": len(self.tx_bytes) + 65}
 
 
 def sign_pay(

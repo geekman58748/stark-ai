@@ -114,7 +114,7 @@ broadcast and no contract deployed. The NEAR AI model and Whisper were called li
 | Storage | **Neon Postgres** — accounts, wallets, receipts, channel identities; created on first boot, survives restart. Bills, limits and `units_left` stay in memory |
 | Auth | **live** — sign-up/sign-in against Neon Auth, the backend verifies sessions from its JWKS and gives every account its own wallet and receipts; `/v1` answers **401** without a bearer token |
 | Receipts | **persisted** in Neon Postgres: token ↔ tx hash ↔ request_id, per account, survives restart |
-| Vault contract | **built** — 38/38 tests, wasm target checks clean, clippy clean. Ledger-only: it does not move tokens yet |
+| Vault contract | **deployed to testnet** — `stark-vault.testnet` (2026-10-26); cap, allowlist and pause rules exercised live. 38/38 tests, wasm target checks clean, clippy clean. Ledger-only: it does not move tokens yet |
 | Agent + LLM | **built (M2)** — tool routing, policy gate, `pay()` signing. 59 tests. Real NEAR AI turn verified 2026-10-22. Signs but does not broadcast. **Fast model for the demo (2026-10-24):** `google/gemini-2.5-flash-lite`, 1.35s a turn vs 7.1s for `Qwen/Qwen3.8-27B`, with the account snapshot in the prompt — one env var back if the TEE claim matters |
 | Telegram bot (M4) | **built, fail-closed** — webhook auth, identity linking, dedupe, voice wake gate, renewal pushes. 22 tests. Needs `TELEGRAM_BOT_TOKEN` + `TELEGRAM_WEBHOOK_SECRET` to go live; no real update has ever arrived |
 | Reminders | **built 2026-10-24** — a bill carries `renews_on`, appears in `state.due_soon` inside a 7-day window, and the same line is pushed to a linked chat. No push has ever been sent (no bot token) |
@@ -147,9 +147,10 @@ broadcast and no contract deployed. The NEAR AI model and Whisper were called li
 
 ## Deploy
 
-The marketing site deploys to [hellostark.xyz](https://hellostark.xyz) on
-[Brimble](https://brimble.io) from `main`; see [`apps/website`](apps/website/README.md#deploy).
-Nothing else is deployed yet.
+All three apps deploy to [Brimble](https://brimble.io) from `main`: the marketing site to
+[hellostark.xyz](https://hellostark.xyz), the API to `geddon.hellostark.xyz` and the
+dashboard to `dash.hellostark.xyz` (see [`apps/website`](apps/website/README.md#deploy)).
+The vault contract is on NEAR testnet at `stark-vault.testnet`; nothing is on mainnet.
 
 ## Contributing
 

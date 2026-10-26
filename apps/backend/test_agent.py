@@ -342,10 +342,11 @@ class BorshTests(unittest.TestCase):
         tx = self.build()
         offset = 0
 
-        self.assertEqual(tx[offset], 0)  # TransactionV0
-        offset += 1
+        # No version tag: V0 is recognised by the signer id's length starting here,
+        # with a zero second byte. A leading 0x00 is read as a tag and rejected.
         # Borsh strings are a u32 byte length, then the bytes.
         self.assertEqual(tx[offset:offset + 4], len(self.SIGNER).to_bytes(4, "little"))
+        self.assertEqual(tx[offset + 1], 0)  # second byte of the length: V0, not V1
         offset += 4
         self.assertEqual(tx[offset:offset + len(self.SIGNER)], self.SIGNER.encode())
         offset += len(self.SIGNER)
@@ -408,7 +409,9 @@ class BorshTests(unittest.TestCase):
         import base64
 
         raw = base64.b64decode(signed.base64)
-        self.assertEqual(raw[:-64], signed.tx_bytes)
+        # Signature is { key_type, [u8; 64] }, so 65 bytes follow the transaction.
+        self.assertEqual(raw[:-65], signed.tx_bytes)
+        self.assertEqual(raw[-65], 0)  # KeyType::ED25519
         self.assertTrue(
             near_tx.ed25519_verify(key.public, signed.tx_hash, raw[-64:])
         )

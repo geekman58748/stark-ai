@@ -51,6 +51,20 @@ vault/src/lib.rs      contract wrapper, env-based tests
 mirrors its error codes and sentences, and a backend test reads this Rust source and
 fails if they drift. Change both together; `bun run test` will tell you if you didn't.
 
-The wasm comes from plain `cargo build` (203 KB, verified 2026-10-20). `cargo-near` is
-only needed for the ABI JSON and deploy convenience. Deployment is blocked on a funded
-testnet account; see [`docs/HANDOFF.md`](../../docs/HANDOFF.md) §0.
+The wasm comes from plain `cargo build` (214 KB, 2026-10-26). `cargo-near` is only
+needed for the ABI JSON and deploy convenience; neither it nor `near-cli` is required.
+
+## Deployed
+
+**`stark-vault.testnet`**, deployed 2026-10-26 against `near-sdk` 5.29.1. That account's
+key is deliberately not in this repo.
+
+`new` was called with `owner` and `treasury` both `stark-vault.testnet`, caps of ₦30,000
+monthly / ₦10,000 per payment, and `04512345678` as the only allowlisted meter. On chain
+that has been exercised end to end: `fund`, a `pay` inside the caps (accepted,
+`payment_id` incremented), a `pay` above the per-payment cap (rejected) and a `pay` to a
+meter not on the allowlist (rejected).
+
+`pay` signed through `apps/backend/near_tx.py` has been broadcast against this account,
+which is how the two encoder bugs below were found: `TransactionV0` has no version tag,
+and `Signature` carries a leading key-type byte.
