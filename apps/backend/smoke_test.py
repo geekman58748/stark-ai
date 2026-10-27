@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Smoke test for the Stark API stub. Zero dependencies.
 
-Start the server first:  python3 server.py
+Start the server first:  STARK_STUB_RESET=1 python3 server.py
 Then:                    python3 smoke_test.py
+
+`STARK_STUB_RESET=1` switches on `/v1/_stub/reset`, which the run uses to start
+from the artboard's seed. A deployed API leaves it off, and answers it with 404.
 
 Exits 0 if every check passes, 1 otherwise. Order matters: the payment
 checks mutate in-memory state, so run it against a freshly started server.
@@ -212,7 +215,9 @@ check("bill last amount updated", home.get("last_amount_ngn") == 5000, str(home)
 check("bill last units updated", home.get("last_units") == 23.92, str(home.get("last_units")))
 check("bill last paid updated", home.get("last_paid_at") == receipt.get("created_at"),
       str(home.get("last_paid_at")))
-check("units left rose to 35.32", st2.get("units_left") == 35.32, str(st2.get("units_left")))
+# Units left are worked out from delivered top-ups minus measured use: the seed's
+# 23.9 + 47.8 + 38.3 and this 23.92, with no readings yet after the reset.
+check("units left rose to 133.92", st2.get("units_left") == 133.92, str(st2.get("units_left")))
 
 status, _, _ = call("POST", "/v1/payments", {"bill_id": "bill_home_meter", "amount_ngn": 1000})
 check("second pay 1000 -> 201", status == 201, f"status={status}")
@@ -385,14 +390,15 @@ status, topup, _ = call("POST", "/v1/wallet/topup", {"amount_ngn": 5000})
 check("topup credits",
       status == 201 and topup.get("wallet", {}).get("balance_ngn") == before + 5000,
       f"status={status} {topup.get('wallet')}")
+check("topup is test money", topup.get("entry", {}).get("source") == "Test money",
+      str(topup.get("entry")))
 status, withdraw, _ = call("POST", "/v1/wallet/withdraw", {"amount_ngn": 1000})
-check("withdraw debits",
-      status == 201 and withdraw.get("wallet", {}).get("balance_ngn") == before + 4000,
-      f"status={status} {withdraw.get('wallet')}")
-status, poor, _ = call("POST", "/v1/wallet/withdraw", {"amount_ngn": before + 4001})
-check("over-withdraw -> 409",
-      status == 409 and poor.get("code") == "insufficient_balance",
-      f"status={status} {poor.get('code')}")
+check("withdraw -> 501 not_available",
+      status == 501 and withdraw.get("code") == "not_available",
+      f"status={status} {withdraw.get('code')}")
+status, wallet_after, _ = call("GET", "/v1/wallet")
+check("withdraw took nothing", wallet_after.get("balance_ngn") == before + 5000,
+      str(wallet_after.get("balance_ngn")))
 
 # --- telemetry, telegram, cors ---------------------------------------------
 status, tel, _ = call("POST", "/v1/telemetry", {"device_id": "ac-plug-1", "watts": 1480})

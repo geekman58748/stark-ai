@@ -98,8 +98,13 @@ Everything the dashboard needs in one call. Poll or refetch after any payment.
 }
 ```
 
-`units_left` and `days_left` are `null` when the user has no electricity bill.
-`days_left` is an **estimate** from purchase history until the AC sensor is wired in.
+`units_left` and `days_left` are worked out per account, never invented
+(2026-10-27). `units_left` is the electricity units ever delivered minus the energy
+the account's own readings (`POST /v1/telemetry`) measured since the first top-up;
+`days_left` is that divided by the measured kWh a day over the last 7 days. Both are
+`null` with no electricity bill; `units_left` is `null` before the first delivered
+top-up, and `days_left` is `null` until there is at least an hour of readings.
+Readings only cover devices that report, so measured use can only under-count.
 
 `due_soon` is **additive** (2026-10-24): every bill whose `renews_on` is inside the
 **7-day window**, soonest first — including one that went overdue inside that window
@@ -111,7 +116,7 @@ answer for a user with no renewal dates set.
 
 After a **delivered** payment, that bill's `last_amount_ngn`, `last_units` and
 `last_paid_at` update, and `units_left` increases by the delivered units. A `pending`
-or `failed` payment changes none of them. `days_left` stays the seeded estimate.
+or `failed` payment changes none of them.
 
 ### `Bill`
 
@@ -349,9 +354,8 @@ Send either or both fields; returns the full object above.
 - The per-payment limit cannot exceed the monthly limit (`bad_limits`).
 - Takes effect **immediately for the agent as well as REST payments** — the next
   voice turn is refused at the new limit, with no restart.
-- Not persisted yet: a restart, or `POST /v1/_stub/reset`, restores
-  `₦30,000` / `₦10,000`. Do not tell a user their limit survives a reinstall until
-  it is stored.
+- Stored per account (2026-10-27), so a restart keeps it. An account that never
+  set one starts at `₦30,000` / `₦10,000`.
 
 ### `GET /v1/wallet`
 
@@ -369,8 +373,12 @@ Send either or both fields; returns the full object above.
 ### `POST /v1/wallet/topup`
 
 ```json
-{ "amount_ngn": 20000, "request_id": "dep_7f3c1a9b2d4e", "source": "Bank transfer" }
+{ "amount_ngn": 20000, "request_id": "dep_7f3c1a9b2d4e" }
 ```
+
+**Test money** (2026-10-27): there is no payment provider yet, so nothing is
+collected. The entry's `source` is always `"Test money"` — a `source` in the body is
+ignored — and the app labels it the same way.
 
 Returns **201** with `{ "wallet": { /* GET /v1/wallet */ }, "entry": { /* Receipt */ } }`.
 `entry.type` is `deposit`, `entry.status` is `received`, `entry.bill_id` is `"wallet"`.
@@ -378,7 +386,6 @@ Returns **201** with `{ "wallet": { /* GET /v1/wallet */ }, "entry": { /* Receip
 - `request_id` is optional; without it the server generates one. **Send your own** for
 the same reason as payments: repeating the id returns **200** with the original entry
 and does not credit twice.
-- `source` is free text (max 40 chars), displayed on the activity row.
 - Top-ups never count towards the monthly cap.
 
 ### `POST /v1/wallet/withdraw`
@@ -387,12 +394,9 @@ and does not credit twice.
 { "amount_ngn": 10000, "request_id": "wd_9c2b7e4f1a6d" }
 ```
 
-Returns **201** — same envelope as top-up. `entry.type` is `withdrawal`,
-`entry.status` is `sent`, `entry.bill_id` is `"wallet"`.
-
-Withdrawing lowers `balance_ngn` but **not** `spent_ngn`; the monthly cap is about
-bills, not cash movement. Errors: `bad_amount`, and `insufficient_balance` (409) with
-`{ balance_ngn, amount_ngn }`. Same `request_id` replay rule as top-up.
+**Not available** (2026-10-27): returns **501** `not_available` and takes nothing.
+It used to lower the balance and send nothing anywhere. It comes back, with the
+same envelope as top-up, when a payout provider exists.
 
 ### `GET /v1/suggestions`
 
@@ -593,10 +597,14 @@ falls back to `POST /v1/speak` if it errors.
 From the AC meter bridge. Returns **202**.
 
 ```json
-{ "device_id": "ac-plug-1", "watts": 1480, "ts": "2026-10-20T19:33:13Z" }
+{ "device_id": "ac-plug-1", "watts": 1480 }
 ```
 
-`ts` is optional; the server fills it. **It feeds `/v1/suggestions`** (2026-10-24):
+Stored per account, and stamped with the **server's** clock when it arrives: a `ts`
+in the body is ignored (2026-10-27), because `units_left` and `days_left` are worked
+out from the gaps between readings, and a wrong device clock would move the meter.
+Post each sample as it is taken. `watts` must be a number of 0 or more (`bad_watts`).
+**It feeds `/v1/suggestions`** (2026-10-24):
 the `load_imbalance` line needs two or more `device_id`s in the last 24 hours, and
 reads each device's **average** watts — ten samples of one plug are one habit, not
 ten air conditioners. One device alone can never trigger it, by design.
@@ -724,11 +732,13 @@ into it, but it does contain what people said: treat it as user data.
 
 ### `POST /v1/_stub/reset`
 
-**Stub only — not part of the product contract.** Restores initial mock state so
-tests and demos are repeatable: the three seed bills, units `11.4`, limits
-`₦30,000` / `₦10,000`, balance `₦64,200`, spent `₦23,000`, and the six seed activity
-rows. It deletes bills added during a demo. Safe to ignore from the frontend
-outside a demo reset button.
+**Stub only — not part of the product contract, and off by default.** It exists
+only when the server runs with `STARK_STUB_RESET=1`; otherwise it answers **404**
+`no_route` like any unknown route. When on, it replaces the caller's data with the
+artboard seed so smoke runs are repeatable: the three seed bills, limits
+`₦30,000` / `₦10,000`, balance `₦64,200`, spent `₦23,000`, the six seed activity rows
+(their 110 delivered units become `units_left`), and no readings. New accounts are
+**not** seeded: they open with no bills, ₦0 and no activity.
 
 ---
 
@@ -737,12 +747,12 @@ outside a demo reset button.
 | Piece | Stub today | Real in |
 |---|---|---|
 | Auth | none | M4 |
-| Balances | ₦64,200 seeded | M1 (vault read) |
+| Balances | per account, starts at ₦0; top-ups are labelled test money | M1 (vault read) + a payment provider |
 | Payments | agent policy-checked; `tx_hash` stays `null` unless a signing key is configured | M2 — **signed and signed-only; nothing is broadcast yet** |
 | Token | **vended through VTpass**, fixtures in dry-run, real when `STARK_VENDING=live` | M3 — **live credentials still missing, so no real token has ever been bought** |
 | Voice | **real** — Whisper hears the clip; `transcript_hint` remains a probe | M4a done. Voice notes in Telegram and the browser both work |
 | Suggestions | **computed** from meter, telemetry, delivered receipts and renewals; empty when the data is not there | M6 (the AC sensor makes `load_imbalance` routine rather than demo data) |
-| Persistence | **Neon Postgres**: accounts, wallets, receipts and channel identities, scoped per account, consistent across restarts. Bills, limits and `units_left` are in memory and reset on restart | M3 + auth |
+| Persistence | **Neon Postgres**: accounts, wallets, receipts, bills, limits, readings and channel identities, scoped per account, consistent across restarts | M3 + auth |
 
 Shapes will not change as these land. Only the values become real.
 
@@ -762,3 +772,4 @@ Shapes will not change as these land. Only the values become real.
 | 2026-10-25 | `POST /v1/link/code` added: a single-use, 10-minute code plus the bot's `t.me` deep link, so a chat can be linked from the app. `/start <code>` now redeems it too. No existing shape changed. |
 | 2026-10-25 | Telegram chats keep their last six exchanges (ten-minute idle expiry) and Telegram turns are written to `/v1/turnlog` with `channel: "telegram"`. `/v1/voice` is unchanged: one turn per request. Additive only. |
 | 2026-10-26 | **Auth enforced + storage moved.** Every `/v1` route except the Telegram webhook needs `Authorization: Bearer <token>` from Neon Auth, else **401 `unauthorized`** (`GET /v1/speak/stream` also takes `?token=`); `POST /v1/auth/logout` added. Receipts, wallets, accounts and channel identities now live in Neon Postgres instead of SQLite, scoped per account — two sign-ins no longer share a wallet. New code `unauthorized`. No response shape changed. |
+| 2026-10-27 | No mock data for real accounts. New accounts open empty (no bills, ₦0, no activity). Bills, limits and readings are stored per account. `units_left`/`days_left` computed from top-ups and readings; `/v1/telemetry` ignores a client `ts`. Top-ups are labelled test money; `POST /v1/wallet/withdraw` answers 501 `not_available`. `POST /v1/_stub/reset` is off unless `STARK_STUB_RESET=1`. No shape changed. |

@@ -5,7 +5,7 @@
   "description": "Python bill-pay API. Standard library only, no virtualenv; this file only wires it into the workspace's turbo tasks.",
   "scripts": {
     "dev": "set -a; [ ! -f .env ] || . ./.env; set +a; exec python3 -u server.py",
-    "test": "python3 -m unittest test_agent test_vending test_vtpass test_tg test_tts test_wake test_turnlog test_reminders test_suggestions test_live_paths",
+    "test": "python3 -m unittest test_meter test_accounts test_agent test_vending test_vtpass test_tg test_tts test_wake test_turnlog test_reminders test_suggestions test_live_paths",
     "smoke": "python3 smoke_test.py",
     "tts": "exec ../../.venv-tts/bin/python -u tts_server.py"
   }

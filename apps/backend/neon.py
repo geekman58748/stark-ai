@@ -301,6 +301,36 @@ CREATE TABLE IF NOT EXISTS receipts (
 CREATE INDEX IF NOT EXISTS receipts_created ON receipts (user_id, created_at DESC, seq DESC);
 CREATE INDEX IF NOT EXISTS receipts_pending ON receipts (user_id, bill_id, amount_ngn, status);
 
+-- A bill is stored whole, as the JSON the API returns: its shape is additive
+-- (`plan`, `plan_price_ngn`, `renews_on` came later) and nothing queries inside it.
+-- `seq` keeps the order bills were added in, which is the order the app shows.
+CREATE TABLE IF NOT EXISTS bills (
+    user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    id      TEXT NOT NULL,
+    data    TEXT NOT NULL,
+    seq     BIGSERIAL,
+    PRIMARY KEY (user_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS account_limits (
+    user_id             TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    monthly_cap_ngn     BIGINT NOT NULL,
+    per_payment_cap_ngn BIGINT NOT NULL
+);
+
+-- Appliance readings: one row per sample a plug or meter sensor posts. Units left
+-- and days left on the meter are worked out from these (see `meter.py`). No
+-- apostrophes in these comments: `_statements` would read one as an open quote.
+CREATE TABLE IF NOT EXISTS telemetry (
+    user_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    device_id TEXT NOT NULL,
+    watts     DOUBLE PRECISION NOT NULL,
+    ts        TEXT NOT NULL,
+    seq       BIGSERIAL
+);
+
+CREATE INDEX IF NOT EXISTS telemetry_recent ON telemetry (user_id, ts);
+
 CREATE TABLE IF NOT EXISTS channel_identities (
     channel         TEXT NOT NULL,
     channel_user_id TEXT NOT NULL,

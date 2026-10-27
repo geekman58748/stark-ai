@@ -226,6 +226,19 @@ class ReceiptStore:
             [user_id, month_start],
         ) or 0)
 
+    def units_bought(self, user_id: str) -> tuple[float, str | None]:
+        """Electricity units ever delivered, and when the first of them landed.
+
+        Only electricity top-ups carry `units`; airtime and TV leave it null.
+        """
+        row = self.db.one(
+            "SELECT COALESCE(SUM(units), 0) AS units, MIN(created_at) AS first_at"
+            " FROM receipts"
+            " WHERE user_id = $1 AND status = 'delivered' AND units IS NOT NULL",
+            [user_id],
+        )
+        return float(row["units"]), row["first_at"]
+
     def charge(self, user_id: str, amount_ngn: int) -> dict[str, int]:
         """Move money from balance to spend, atomically.
 

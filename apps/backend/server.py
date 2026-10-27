@@ -19,6 +19,7 @@ import binascii
 import copy
 import itertools
 import json
+import math
 import os
 import re
 import threading
@@ -29,11 +30,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+import account_store
 import agent as agent_layer
 import auth
 import catalog
 import contextvars
 import identities
+import meter
 import neon
 import payments
 import receipts
@@ -41,6 +44,7 @@ import reminders
 import stt
 import suggestions
 import telegram
+import telemetry
 import tts
 import turnlog
 import vault_signer
@@ -65,10 +69,6 @@ SEED_BALANCE_NGN = 64_200
 # top-ups (5,000 + 10,000 + 8,000). The airtime entry is an automatic top-up
 # and the ₦20,000 entry is money in, so neither counts as bill spend.
 SEED_SPENT_NGN = 23_000
-SEED_UNITS_LEFT = 11.4
-SEED_DAYS_LEFT = 4
-UNITS_LEFT = SEED_UNITS_LEFT
-DAYS_LEFT = SEED_DAYS_LEFT
 
 
 def now_iso() -> str:
@@ -301,17 +301,15 @@ def default_limits(for_bills: dict[str, dict[str, Any]]) -> agent_layer.Limits:
     )
 
 
-TELEMETRY: list[dict[str, Any]] = []
-
 # Persistence: receipts, wallets and channel identities live in Neon Postgres, so a
 # restart keeps history and balance in agreement — and two people can sign up without
 # sharing a wallet. `DATABASE_URL` is required; see `.env.example`.
 DB = neon.open_database()
 STORE = receipts.ReceiptStore(DB)
 IDENTITIES = identities.IdentityStore(DB)
-PAYMENTS = payments.PaymentService(STORE, vending.gateway_from_env(
-    default_phone=SEED_BILLS["bill_airtime"]["reference"]
-))
+ACCOUNT_STORE = account_store.AccountStore(DB)
+READINGS = telemetry.TelemetryStore(DB)
+PAYMENTS = payments.PaymentService(STORE, vending.gateway_from_env())
 
 
 # --- the signed-in account ---------------------------------------------------
@@ -372,12 +370,20 @@ def _prepare_account(current: str, *, seeded: bool = False) -> dict[str, Any]:
     loaded = ACCOUNTS.get(current)
     if loaded is not None:
         return loaded
-    owned = copy.deepcopy(SEED_BILLS)
-    state_ = {"bills": owned, "limits": default_limits(owned), "agent": None}
+    owned = ACCOUNT_STORE.bills(current)
+    caps = default_limits(owned)
+    stored = ACCOUNT_STORE.limits(current)
+    if stored is not None:
+        caps = agent_layer.Limits(
+            monthly_cap_ngn=stored[0],
+            per_payment_cap_ngn=stored[1],
+            allowed_meters=caps.allowed_meters,
+        )
+    state_ = {"bills": owned, "limits": caps, "agent": None}
     ACCOUNTS[current] = state_
     state_["agent"] = build_agent(state_["limits"])
     if not seeded:
-        _seed_account(current)
+        _open_account(current)
     return state_
 
 
@@ -388,15 +394,17 @@ def build_agent(for_limits: agent_layer.Limits):
     )
 
 
-def _seed_account(current: str) -> None:
-    """Give a brand-new account the artboard's history and balance, exactly once."""
+def _open_account(current: str) -> None:
+    """Give a brand-new account an empty ₦0 wallet, exactly once.
+
+    It used to be handed the artboard's three bills, ₦64,200 and six receipts, so a
+    real person's first screen was somebody else's meter. Now it is their own,
+    empty. `seeded_at` marks the account as opened.
+    """
     row = DB.one("SELECT seeded_at FROM accounts WHERE id = $1", [current])
     if row is None or row["seeded_at"] is not None:
         return
-    history = seed_receipts()
-    STORE.replace_all(current, history,
-                      balance_ngn=SEED_BALANCE_NGN, spent_ngn=SEED_SPENT_NGN)
-    sync_bill_history(history)
+    STORE.set_wallet(current, 0, 0)
     auth.mark_seeded(DB, current, now_iso())
 
 
@@ -409,14 +417,27 @@ class ApiError(Exception):
         self.body = {"code": code, "message": message, "detail": detail or {}}
 
 
+def _wallet() -> dict[str, int]:
+    return STORE.wallet(account_id()) or {"balance_ngn": 0, "spent_ngn": 0}
+
+
 def has_electricity() -> bool:
     return any(b["kind"] == "electricity" for b in bills().values())
 
 
+def meter_reading() -> tuple[float | None, int | None]:
+    """This account's units left and days left — see `meter.py` for how."""
+    if not has_electricity():
+        return None, None
+    units, first_at = STORE.units_bought(account_id())
+    readings = READINGS.since(account_id(), first_at) if first_at else []
+    return meter.reading(units_bought=units, first_top_up_at=first_at, readings=readings)
+
+
 def state() -> dict[str, Any]:
-    wallet = STORE.wallet(account_id()) or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
+    wallet = _wallet()
     balance, spent = wallet["balance_ngn"], wallet["spent_ngn"]
-    powered = has_electricity()
+    units_left, days_left = meter_reading()
     profile = _PROFILE.get() or {}
     return {
         "user_id": account_id(),
@@ -426,8 +447,8 @@ def state() -> dict[str, Any]:
         "cap_ngn": limits().monthly_cap_ngn,
         "spent_ngn": spent,
         "remaining_cap_ngn": max(limits().monthly_cap_ngn - spent, 0),
-        "units_left": UNITS_LEFT if powered else None,
-        "days_left": DAYS_LEFT if powered else None,
+        "units_left": units_left,
+        "days_left": days_left,
         "bills": list(bills().values()),
         # Additive (docs/API.md): bills with a renewal inside the reminder
         # window, soonest first. The agent's snapshot and the dashboard's
@@ -600,6 +621,7 @@ def h_bill_add(body) -> tuple[int, dict]:
     if renews_on:
         bill["renews_on"] = renews_on
     bills()[bill["id"]] = bill
+    ACCOUNT_STORE.save_bill(account_id(), bill)
     _rebuild_limits()
     return 201, bill
 
@@ -636,11 +658,11 @@ def h_bill_update(body, params) -> tuple[int, dict]:
             if day is None:
                 raise ApiError(400, "bad_renews_on", "renews_on must be a date like 2026-11-03.")
             bill["renews_on"] = day.isoformat()
+    ACCOUNT_STORE.save_bill(account_id(), bill)
     return 200, bill
 
 
 def h_bill_delete(params) -> tuple[int, dict]:
-    global UNITS_LEFT
     bill_id = params["bill_id"]
     if bill_id not in bills():
         raise ApiError(404, "unknown_bill", f"No bill {bill_id}")
@@ -648,28 +670,24 @@ def h_bill_delete(params) -> tuple[int, dict]:
         raise ApiError(409, "bill_in_flight",
                        "That bill has a payment still in flight. Try again after it settles.")
     del bills()[bill_id]
-    if not any(b["kind"] == "electricity" for b in bills().values()):
-        UNITS_LEFT = 0.0
+    ACCOUNT_STORE.delete_bill(account_id(), bill_id)
     _rebuild_limits()
     return 200, {"deleted": True, "bill_id": bill_id}
 
 
 def _apply_delivery_to_state(receipt: dict[str, Any]) -> None:
-    """Keep the bill and the live unit count in step with a delivered payment.
+    """Keep the bill in step with a delivered payment.
 
-    `spent_ngn` is moved by the store; this is the part a user sees on the
-    dashboard — the bill's last top-up and the units it bought.
+    `spent_ngn` is moved by the store, and units left are worked out from the
+    receipts themselves (`meter_reading`); this is the bill's last top-up.
     """
-    global UNITS_LEFT
     bill = bills().get(receipt.get("bill_id"))
     if bill is None:
         return
     bill["last_amount_ngn"] = receipt["amount_ngn"]
     bill["last_units"] = receipt.get("units")
     bill["last_paid_at"] = receipt["created_at"]
-    units = receipt.get("units")
-    if units is not None and bill.get("kind") == "electricity":
-        UNITS_LEFT = round(UNITS_LEFT + float(units), 2)
+    ACCOUNT_STORE.save_bill(account_id(), bill)
 
 
 def book_payment(bill_id: str, amount: int, tx_hash: str | None = None) -> dict:
@@ -685,10 +703,7 @@ def book_payment(bill_id: str, amount: int, tx_hash: str | None = None) -> dict:
     if amount <= 0:
         raise ApiError(400, "bad_amount", "amount_ngn must be positive")
 
-    wallet = STORE.wallet(account_id()) or {
-        "balance_ngn": SEED_BALANCE_NGN,
-        "spent_ngn": SEED_SPENT_NGN,
-    }
+    wallet = _wallet()
     spent, balance = wallet["spent_ngn"], wallet["balance_ngn"]
 
     # Mirrors the onchain policy check, so the UI can build these states today.
@@ -902,7 +917,7 @@ def start_reminder_loop(tick_seconds: int = REMINDER_TICK_SECONDS) -> threading.
 
 
 def _limits_payload() -> dict[str, Any]:
-    wallet = STORE.wallet(account_id()) or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
+    wallet = _wallet()
     spent = wallet["spent_ngn"]
     return {
         "monthly_cap_ngn": limits().monthly_cap_ngn,
@@ -913,7 +928,7 @@ def _limits_payload() -> dict[str, Any]:
 
 
 def _wallet_payload() -> dict[str, Any]:
-    wallet = STORE.wallet(account_id()) or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
+    wallet = _wallet()
     return {
         "currency": "NGN",
         "balance_ngn": wallet["balance_ngn"],
@@ -946,6 +961,9 @@ def _rebuild_limits(*, monthly_cap_ngn: int | None = None,
         ),
     )
     current["agent"].limits = current["limits"]
+    if monthly_cap_ngn is not None or per_payment_cap_ngn is not None:
+        ACCOUNT_STORE.set_limits(account_id(), current["limits"].monthly_cap_ngn,
+                                 current["limits"].per_payment_cap_ngn)
 
 
 def _int_field(body: dict[str, Any], name: str, code: str = "bad_amount") -> int:
@@ -992,6 +1010,8 @@ def h_wallet(_params=None) -> tuple[int, dict]:
 
 
 def h_wallet_topup(body) -> tuple[int, dict]:
+    """Add test money. There is no payment provider yet, so nothing is collected:
+    the entry says so in its source, and the app labels it as test money."""
     amount = _int_field(body, "amount_ngn")
     if amount <= 0:
         raise ApiError(400, "bad_amount", "amount_ngn must be positive")
@@ -1011,7 +1031,7 @@ def h_wallet_topup(body) -> tuple[int, dict]:
         "tx_hash": None,
         "status": "received",
         "entry_type": "deposit",
-        "source": str(body.get("source") or "Bank transfer")[:40],
+        "source": "Test money",
         "vendor": "ledger",
         "vendor_code": "000",
         "vendor_message": "deposit",
@@ -1020,40 +1040,14 @@ def h_wallet_topup(body) -> tuple[int, dict]:
     return 201, {"wallet": _wallet_payload(), "entry": receipts.api_shape(entry)}
 
 
-def h_wallet_withdraw(body) -> tuple[int, dict]:
-    amount = _int_field(body, "amount_ngn")
-    if amount <= 0:
-        raise ApiError(400, "bad_amount", "amount_ngn must be positive")
-    request_id = str(body.get("request_id") or f"wd_{uuid.uuid4().hex[:12]}")
-    existing = STORE.by_request_id(account_id(), request_id)
-    if existing is not None:
-        return 200, {"wallet": _wallet_payload(), "entry": receipts.api_shape(existing)}
-    try:
-        entry, _ = STORE.record_withdrawal(account_id(), {
-            "id": f"rcpt_{uuid.uuid4().hex[:6]}",
-            "request_id": request_id,
-            "bill_id": "wallet",
-            "bill_label": "Withdrawal",
-            "meter": None,
-            "amount_ngn": amount,
-            "units": None,
-            "token": None,
-            "tx_hash": None,
-            "status": "sent",
-            "entry_type": "withdrawal",
-            "source": "To your bank",
-            "vendor": "ledger",
-            "vendor_code": "000",
-            "vendor_message": "withdrawal",
-            "created_at": now_iso(),
-        }, amount)
-    except ValueError:
-        wallet = STORE.wallet(account_id()) or {"balance_ngn": 0, "spent_ngn": 0}
-        raise ApiError(
-            409, "insufficient_balance", "Not enough in your wallet.",
-            {"balance_ngn": wallet["balance_ngn"], "amount_ngn": amount},
-        ) from None
-    return 201, {"wallet": _wallet_payload(), "entry": receipts.api_shape(entry)}
+def h_wallet_withdraw(_body) -> tuple[int, dict]:
+    """Refused until a payout provider exists.
+
+    It used to take the money off the balance and send nothing anywhere, which
+    reads as a completed withdrawal to someone who expects it in their bank.
+    """
+    raise ApiError(501, "not_available",
+                   "Withdrawing to a bank isn't available yet. Nothing was taken.")
 
 
 def h_suggestions(_) -> tuple[int, dict]:
@@ -1064,33 +1058,39 @@ def h_suggestions(_) -> tuple[int, dict]:
     it is not returned — the old hardcoded "AC is 78%" line is gone, and an
     empty list is the honest answer when nothing needs attention.
     """
-    wallet = STORE.wallet(account_id()) or {"balance_ngn": SEED_BALANCE_NGN, "spent_ngn": SEED_SPENT_NGN}
-    powered = has_electricity()
+    wallet = _wallet()
+    units_left, days_left = meter_reading()
+    since = (datetime.now(timezone.utc)
+             - timedelta(seconds=suggestions.LOAD_LOOKBACK_SECONDS)
+             ).strftime("%Y-%m-%dT%H:%M:%SZ")
     return 200, suggestions.build(
         bills=list(bills().values()),
-        units_left=UNITS_LEFT if powered else None,
-        days_left=DAYS_LEFT if powered else None,
+        units_left=units_left,
+        days_left=days_left,
         spent_ngn=wallet["spent_ngn"],
         cap_ngn=limits().monthly_cap_ngn,
-        telemetry=TELEMETRY,
+        telemetry=READINGS.since(account_id(), since),
         receipts=PAYMENTS.recent(account_id(), 50),
         tariff_ngn_per_kwh=TARIFF_NGN_PER_KWH,
     )
 
 
 def h_telemetry(body) -> tuple[int, dict]:
+    """One appliance reading for this account, stamped with the server's clock.
+
+    A `ts` in the body is ignored: units left are worked out from the gaps between
+    readings, so a device clock that is wrong (or a caller that lies) would move
+    someone's meter. A sensor therefore posts each sample as it takes it.
+    """
     try:
         watts = float(body.get("watts", 0))
     except (TypeError, ValueError):
-        raise ApiError(400, "bad_watts", "watts must be a number")
-    TELEMETRY.append(
-        {
-            "device_id": body.get("device_id", "unknown"),
-            "watts": watts,
-            "ts": body.get("ts") or now_iso(),
-        }
-    )
-    return 202, {"accepted": True, "count": len(TELEMETRY)}
+        raise ApiError(400, "bad_watts", "watts must be a number") from None
+    if not math.isfinite(watts) or watts < 0:
+        raise ApiError(400, "bad_watts", "watts must be a number of 0 or more")
+    device_id = str(body.get("device_id") or "unknown").strip()[:64] or "unknown"
+    READINGS.add(account_id(), device_id, watts, now_iso())
+    return 202, {"accepted": True, "count": READINGS.count(account_id())}
 
 
 MAX_AUDIO_BYTES = 8 * 1024 * 1024   # a minute of clipped speech, generously
@@ -1356,9 +1356,12 @@ def h_reset(_body=None, _params=None) -> tuple[int, dict]:
     """Stub-only: restore the seeded state so runs are repeatable.
 
     This wipes the receipt store and re-seeds it, so a demo starts from the
-    artboards' numbers every time.
+    artboards' numbers every time. It is off unless `STARK_STUB_RESET=1`: a
+    deployed API answers it exactly like a route that does not exist, so no
+    signed-in user can swap their real data for the artboard's.
     """
-    global TELEMETRY, UNITS_LEFT
+    if os.environ.get("STARK_STUB_RESET") != "1":
+        raise ApiError(404, "no_route", "No route POST /v1/_stub/reset")
     bills().clear()
     bills().update(copy.deepcopy(SEED_BILLS))
     history = seed_receipts()
@@ -1366,9 +1369,9 @@ def h_reset(_body=None, _params=None) -> tuple[int, dict]:
         account_id(), history, balance_ngn=SEED_BALANCE_NGN, spent_ngn=SEED_SPENT_NGN
     )
     sync_bill_history(history)
+    ACCOUNT_STORE.replace_bills(account_id(), list(bills().values()))
     _rebuild_limits(monthly_cap_ngn=CAP_NGN, per_payment_cap_ngn=PER_PAYMENT_CAP_NGN)
-    UNITS_LEFT = SEED_UNITS_LEFT
-    TELEMETRY = []
+    READINGS.clear(account_id())
     REMINDERS.clear()
     TG_ADAPTER.identities.clear()
     return 200, {"reset": True}
