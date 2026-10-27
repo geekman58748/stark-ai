@@ -41,6 +41,9 @@
       "style": {
         "noNonNullAssertion": "off"
       },
+      "complexity": {
+        "noStaticOnlyClass": "off"
+      },
       "correctness": {
         "useExhaustiveDependencies": "off",
         "noUnusedVariables": "warn"
