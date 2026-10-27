@@ -1,0 +1,67 @@
+"""Every error leaves the API in the contract's `{code, message, detail}` shape.
+
+FastAPI's own defaults (`{"detail": "Not Found"}`, 422 validation lists) would leak
+past the frozen contract, so each kind of failure is mapped here:
+
+- `ApiError`: raised on purpose by a service; already carries its code.
+- Request validation: a DTO's `ContractField` validator carries the contract code;
+  anything else (a JSON body that does not parse) is `400 bad_request`.
+- Unknown path or method: `404 no_route`, as the API has always answered, including
+  for a known path with the wrong method.
+- Anything unexpected: logged and answered `500 stub_error`, so the operator sees it
+  and the client still gets the shape it parses.
+"""
+
+from __future__ import annotations
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.common.api_error import ApiError
+from app.common.dto.contract_field import CONTRACT
+
+
+class HttpExceptionFilter:
+    @staticmethod
+    def register(app: FastAPI) -> None:
+        app.add_exception_handler(ApiError, HttpExceptionFilter.api_error)
+        app.add_exception_handler(RequestValidationError, HttpExceptionFilter.validation)
+        app.add_exception_handler(StarletteHTTPException, HttpExceptionFilter.http)
+        app.add_exception_handler(Exception, HttpExceptionFilter.unexpected)
+
+    @staticmethod
+    async def api_error(_request: Request, err: ApiError) -> JSONResponse:
+        return JSONResponse(err.body, status_code=err.status)
+
+    @staticmethod
+    async def validation(_request: Request, err: RequestValidationError) -> JSONResponse:
+        first = err.errors()[0]
+        if (first.get("ctx") or {}).get(CONTRACT):
+            return JSONResponse(
+                ApiError(400, first["type"], first["msg"]).body, status_code=400
+            )
+        where = ".".join(str(part) for part in first.get("loc", ()) if part != "body")
+        message = f"{where}: {first['msg']}" if where else first["msg"]
+        return JSONResponse(ApiError(400, "bad_request", message).body, status_code=400)
+
+    @staticmethod
+    async def http(request: Request, err: StarletteHTTPException) -> JSONResponse:
+        if err.status_code in (404, 405):
+            return JSONResponse(
+                ApiError(404, "no_route",
+                         f"No route {request.method} {request.url.path}").body,
+                status_code=404,
+            )
+        return JSONResponse(
+            ApiError(err.status_code, "http_error", str(err.detail)).body,
+            status_code=err.status_code,
+        )
+
+    @staticmethod
+    async def unexpected(request: Request, err: Exception) -> JSONResponse:
+        # Logged, not just returned: a 500 the operator never sees is how
+        # "nothing happens" stays unexplained.
+        print(f"  error {request.method} {request.url.path}: {err}")
+        return JSONResponse(ApiError(500, "stub_error", str(err)).body, status_code=500)

@@ -18,7 +18,7 @@
 # domain is a one-line change. Static builds bake VITE_* in at build time: after changing a
 # URL here, redeploy the apps that read it.
 
-# --- API: Python, standard library only -------------------------------------------------------
+# --- API: Python, FastAPI (dependencies installed by the Dockerfile) ----------------------------
 
 [services.stark-api]
 type = "web"

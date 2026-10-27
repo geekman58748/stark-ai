@@ -1,123 +1,115 @@
 # @stark/backend
 
-The Stark API: bills, payments, wallet, limits, voice and the Telegram bot. Python
-standard library only: no virtualenv, no `pip install`. Python 3.9 or newer.
+The Stark API: bills, payments, wallet, limits, voice and the Telegram bot. A
+FastAPI app, laid out after [awesome-nest-boilerplate](https://github.com/NarHakobyan/awesome-nest-boilerplate):
+one module per feature, each with its controller, service and DTOs. Python 3.9 or
+newer (the Docker image runs 3.12).
 
 The HTTP contract the frontend relies on is [`docs/API.md`](../../docs/API.md). It is
-**frozen**: additive changes only. For the full backend state, environment traps and
-what to do next, read [`docs/HANDOFF.md`](../../docs/HANDOFF.md).
+**frozen**: additive changes only. **Swagger UI is at
+[`/docs`](http://127.0.0.1:8000/docs)** (ReDoc at `/redoc`, the spec at
+`/docs/openapi.json`), generated from the same DTOs the routes use. For the full
+backend state, environment traps and what to do next, read
+[`docs/HANDOFF.md`](../../docs/HANDOFF.md).
 
 ## Quick start
 
 ```sh
-cp .env.example .env          # then set DATABASE_URL — the server will not start without it
-bun dev:backend               # from the repo root → http://127.0.0.1:8000
-bun smoke                     # in another shell: 68 checks (70 with the sidecar up)
+cd apps/backend && bun run setup   # once: .venv with FastAPI, uvicorn, httpx
+cp .env.example .env               # then set DATABASE_URL — the server will not start without it
+bun dev:backend                    # from the repo root → http://127.0.0.1:8000, docs at /docs
+bun smoke                          # in another shell: 69 checks
 ```
 
 `DATABASE_URL` (Neon Postgres, pooler URL with `sslmode=require`) is the one hard
-requirement: accounts, wallets, receipts and linked identities live there and the
-schema creates itself on first boot. `NEON_AUTH_BASE_URL` (the same branch's Auth URL)
-makes sign-in work — without it every `/v1` request answers 401. Everything else is
-offline: payments are dry-run against captured fixtures, nothing is signed or
-broadcast, and a deterministic model stands in for the LLM. Each remaining variable
-in [`.env.example`](.env.example) switches one piece on.
+requirement: accounts, wallets, receipts, bills, limits, readings and linked identities
+live there and the schema creates itself on first boot. `NEON_AUTH_BASE_URL` (the same
+branch's Auth URL) makes sign-in work — without it every `/v1` request answers 401.
+Everything else is offline: payments are dry-run against captured fixtures, nothing is
+signed or broadcast, and a deterministic model stands in for the LLM. Each remaining
+variable in [`.env.example`](.env.example) switches one piece on.
 
 | Command (from `apps/backend`) | What it does |
 |---|---|
-| `python3 server.py` | API on port 8000 (no `.env` loading) |
-| `python3 smoke_test.py` | 68 end-to-end checks (sign-up, auth, every endpoint; 70 with the TTS sidecar up); the server must be running |
-| `python3 -m unittest test_agent test_vending test_vtpass test_tg test_tts test_wake test_turnlog test_reminders test_suggestions test_live_paths` | 367 unit tests, hermetic, no server needed (`bun run test` from the root) |
+| `.venv/bin/python -m app` | API on `HOST:PORT` (127.0.0.1:8000; no `.env` loading) |
+| `.venv/bin/python -m tests.smoke_test` | 69 end-to-end checks (sign-up, auth, every endpoint) against a running server; `STARK_SMOKE_BASE` points it elsewhere |
+| `.venv/bin/python -m unittest discover -s tests -t .` | the unit tests, no server needed (`bun run test` from the root) |
 | `bun tts` | the local Kokoro voice sidecar on :8010 (needs `.venv-tts`, see Voice output) |
-| `curl -X POST http://127.0.0.1:8000/v1/_stub/reset` | back to the demo seed; deletes added bills |
+| `curl -X POST http://127.0.0.1:8000/v1/_stub/reset` | back to the demo seed (only with `STARK_STUB_RESET=1`) |
 
 `ffmpeg` on your `PATH` (`brew install ffmpeg`) is **required for voice input** —
 Telegram's OGG and the browser's WebM are both decoded with it. Without it, voice
 asks for text instead of guessing.
 
-## Files
+## Layout
 
 ```
-server.py        zero-dependency API stub, `/v1/voice` routed through the agent
-smoke_test.py    68 checks (70 with the sidecar up), every endpoint and error code
-neon.py          Neon Postgres over HTTPS: connection pool, schema, the queries
-auth.py          Neon Auth sessions: bearer parsing, JWKS verification, account lookup
-agent.py         tool schema, tool routing, policy gate, model loop
-policy.py        the vault's rules in Python, same codes and sentences
-near_tx.py       borsh + ed25519 + base58 + RPC: builds and signs pay()
-vault_signer.py  function-call key wiring, dry-run by default
-receipts.py      per-account receipt + wallet store on Postgres; request_id is the idempotency key
-vending.py       bill kind → VTpass product; amount-priced vs plan-priced
-catalog.py       service ids, plans and prices, read from captured fixtures
-payments.py      record → buy → charge-on-delivery → receipt
-test_agent.py    59 tests: policy parity, RFC 8032 vectors, borsh, the cap gate
-test_vending.py  44 tests: store, idempotent retry, charge-on-delivery, plans
-vtpass.py        VTpass client, dry-run by default
-test_vtpass.py   33 tests, including the CLI wiring and the live shapes
-telegram.py      the Telegram door: webhook auth, identity, wake gate, then the agent
-wake.py          the wake rule both doors share, tolerant of what recognizers do to "stark"
-identities.py    channel identity linking and webhook dedupe, in Postgres
-audio.py         voice note → 16 kHz WAV via ffmpeg, and WAV → OGG/Opus for replies
-stt.py           speech to text on NEAR AI's Whisper, or an honest refusal
-reminders.py     renews_on → due_soon window, the spoken reminder line, a de-duped push queue
-suggestions.py   the suggestion feed, computed from meter, telemetry, receipts and renewals
-tts.py           text to speech — ElevenLabs Flash when keyed (buffered, or streamed), else the local sidecar, else an honest silence
-tts_server.py    the Kokoro-82M sidecar: OpenAI `/v1/audio/speech`, own venv
-turnlog.py       opt-in conversation log: one JSON line per turn, clips beside it
-test_turnlog.py  15 tests: the entry shapes, the files, and that a failing log never fails a turn
-tts-requirements.txt  the sidecar's install list (separate venv, needs Python 3.12)
-test_tg.py       22 tests: the Telegram door, its gates, the audio path and voice replies
-test_wake.py     11 tests: the wake rule's typo tolerance, pinned to real mishearings
-test_tts.py      35 tests: the TTS client, the sidecar's request handling, the Opus encode
-reminders.py     the renewal window and the reminder sentences — pure, clock injected
-test_reminders.py  20 tests: the window edges, overdue, sorting, one push per renewal
-test_suggestions.py  24 tests: each line only when its data supports it, and never a fabricated one
-test_live_paths.py  33 tests: the live HTTP paths (VTpass, NEAR AI, Whisper,
-                 NEAR RPC) against real loopback servers, no credentials
-fixtures/        captured + modeled VTpass responses (see its README)
-.env.example     every environment variable the server reads
+app/
+  main.py                create_app(): modules, error filter, CORS, Swagger
+  __main__.py            `python -m app` — uvicorn on HOST:PORT
+  app_module.py          the composition root: every repository and service, wired once
+  setup_swagger.py       /docs, /redoc, /docs/openapi.json (no fake 422s)
+  common/                ApiError, Clock, dto/ (ErrorDto, ContractField)
+  decorators/            AuthUser (the signed-in account), Module (the AppModule), ApiResponses
+  guards/auth_guard.py   bearer (or ?token=) → Neon Auth session → Account, else 401
+  filters/               every failure → the contract's {code, message, detail}
+  shared/services/       ApiConfigService: the settings the HTTP layer reads
+  database/neon.py       Neon Postgres over HTTPS: connection pool, schema
+  modules/
+    account/             per-account bills, caps and agent, kept warm; AccountRepository
+    auth/                session lookup, sign-out
+    bill/  plan/         saved bills; the priced plan catalogue
+    payment/             BillPaymentService (the contract's checks) → PaymentService (vend, charge on delivery)
+    receipt/             ReceiptRepository: receipts + wallet; request_id is the idempotency key
+    wallet/  limit/      balance and test-money top-ups; spending caps
+    state/  suggestion/  GET /v1/state; the computed suggestion feed
+    telemetry/           readings (server-stamped) and the meter maths
+    voice/               /v1/voice, /v1/speak: stt, tts, audio, the wake rule
+    agent/               tool schema, routing, policy gate, model loop; the per-account toolbox
+    chain/               borsh + ed25519 + base58 + RPC: builds and signs pay()
+    vending/             VTpass client, product catalogue, kind → product
+    telegram/            the bot: webhook, identity linking, the owner's agent
+    reminder/            renewal windows and the push loop
+    turnlog/  stub/      the conversation log; the demo seed and reset
+    health_checker/      GET /, GET /health
+tests/                   unit tests, support.py (TempAccount, ApiHarness), smoke_test.py
+fixtures/                captured + modeled VTpass responses (see its README)
+tts_server.py            the Kokoro-82M sidecar: OpenAI `/v1/audio/speech`, own venv
+requirements*.txt        the API's dependencies; -dev adds the test client
 ```
+
+Each module follows the same shape: `<name>_controller.py` (an `APIRouter`, thin),
+`<name>_service.py` (the rules and their error codes), `dtos/` (one pydantic model
+per file). Request DTOs validate once at the edge and fail with the contract's own
+codes (`bad_amount`, `bad_limits`, …) through `ContractField`. Response DTOs document
+the shapes for Swagger; routes return a `JSONResponse` themselves, so the frozen
+bytes — including fields that are *absent* rather than `null`, like `renews_on` —
+never pass through a serializer that could change them.
 
 ## Running it
 
 ```sh
 bun dev:backend              # from the repo root, loads .env if present
-python3 server.py            # or directly, from apps/backend, without .env
+.venv/bin/python -m app      # or directly, from apps/backend, without .env
 ```
 
-Both serve http://127.0.0.1:8000.
+Both serve http://127.0.0.1:8000, with the API documented at
+http://127.0.0.1:8000/docs.
 
 In another shell, prove it works:
 
 ```sh
-python3 smoke_test.py        # 68 checks (70 with the sidecar up), exits 1 on failure
+STARK_STUB_RESET=1 bun dev:backend   # the smoke run resets to the demo seed
+bun smoke                            # 69 checks, exits 1 on failure
 ```
 
-Then try the two calls the app actually makes:
+New accounts open empty — no bills, ₦0, no activity. `POST /v1/_stub/reset` (with
+`STARK_STUB_RESET=1`) replaces the caller's data with the artboard seed: ₦64,200
+balance, ₦30,000 monthly cap, ₦23,000 spent, the "Home" meter, "Living room TV" on
+DStv Compact, "My line" airtime and the six activity entries, so screens render with
+the numbers already in the design. Shapes and error codes are in
+[`docs/API.md`](../../docs/API.md) and at `/docs`.
 
-```sh
-curl -s http://127.0.0.1:8000/v1/state
-
-curl -s -X POST http://127.0.0.1:8000/v1/payments \
-  -H 'Content-Type: application/json' \
-  -d '{"bill_id":"bill_home_meter","amount_ngn":5000}'
-
-curl -s -X POST http://127.0.0.1:8000/v1/voice \
-  -H 'Content-Type: application/json' \
-  -d '{"transcript_hint":"hello stark what's my light bill"}'
-```
-
-Mock values match the exported artboards (₦64,200 balance, ₦30,000 monthly cap,
-₦23,000 spent / ₦7,000 left, "Home" meter, "Living room TV" on DStv Compact, "My
-line" airtime, "4 days left") so screens render with the numbers already in the
-design. `/v1/activity` is seeded with the artboards' six entries, including the
-declined ₦15,000 attempt and the +₦20,000 bank transfer.
-
-The screens' other routes are live in the same server: `GET /v1/plans`,
-`POST`/`PATCH`/`DELETE /v1/bills`, `GET`/`PATCH /v1/limits`, `GET /v1/wallet`, and
-`POST /v1/wallet/topup` / `withdraw`. Shapes and error codes are in
-[`docs/API.md`](../../docs/API.md). Bills, limits and `units_left` are in memory, so a
-restart returns them to the seed; receipts and the wallet survive.
 
 ## Agent
 
@@ -157,12 +149,11 @@ transcript → model picks a tool → policy gate → sign pay() → book the pa
   instead of inventing a receipt-sending feature.
 
 ```sh
-python3 -m unittest test_agent     # 70 tests
-python3 -m unittest test_vending   # 44 tests
-python3 -m unittest test_vtpass    # 30 tests
-python3 smoke_test.py              # 68 checks, server must be running
-python3 -m unittest test_tg        # 22 tests: the Telegram door and its gates
-python3 -m unittest test_tts       # 21 tests: the voice path, without torch
+.venv/bin/python -m unittest tests.test_agent     # policy parity, RFC 8032, the cap gate
+.venv/bin/python -m unittest tests.test_vending   # store, idempotent retry, plans
+.venv/bin/python -m unittest tests.test_vtpass    # the VTpass client and its shapes
+.venv/bin/python -m unittest tests.test_tg        # the Telegram door and its gates
+.venv/bin/python -m unittest tests.test_tts       # the voice path, without torch
 ```
 
 ## Telegram bot
@@ -372,11 +363,11 @@ discarded rather than returned as a 500.
 Dry-run by default, so it works with no credentials:
 
 ```sh
-python3 vtpass.py variations                       # prepaid | postpaid
-python3 vtpass.py verify --meter 04512345678
-python3 vtpass.py buy --meter 04512345678 --amount 5000 --phone 08031234567
-python3 vtpass.py buy ... --fixture pay_pending.json    # exercise the pending path
-python3 -m unittest test_vtpass -v                 # 33 tests
+.venv/bin/python -m app.modules.vending.vtpass variations                       # prepaid | postpaid
+.venv/bin/python -m app.modules.vending.vtpass verify --meter 04512345678
+.venv/bin/python -m app.modules.vending.vtpass buy --meter 04512345678 --amount 5000 --phone 08031234567
+.venv/bin/python -m app.modules.vending.vtpass buy ... --fixture pay_pending.json    # exercise the pending path
+.venv/bin/python -m unittest tests.test_vtpass -v
 ```
 
 Two behaviours the agent depends on:

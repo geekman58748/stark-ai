@@ -432,27 +432,24 @@ Deliberately **not** claimed: `privacy` (a weak fourth claim dilutes the README)
 
 ## 4. What's built
 
-Python is stdlib-only — no venv, no install step. The contract is Rust, which needs
-`RUSTUP_HOME` set (§1).
+The API is FastAPI (`apps/backend/requirements.txt`; `bun run setup` in
+`apps/backend` makes the `.venv`), laid out one module per feature after
+awesome-nest-boilerplate — see `apps/backend/README.md` § Layout. Swagger UI is at
+`/docs`. The contract is Rust, which needs `RUSTUP_HOME` set (§1).
 
 ```
 apps/backend/
-  server.py                    API server; sessions + per-account data in Postgres, bills/telemetry in memory
-  neon.py                      Neon Postgres over HTTPS: connection pool, schema, queries
-  auth.py                      Neon Auth sessions: bearer parsing, JWKS verify, account lookup
-  smoke_test.py                68 checks (70 with the sidecar up): sign-up, auth, every route
-  agent.py                     tool schema + routing + policy gate + model loop
-  policy.py                    the vault's rules in Python (mirror of policy.rs)
-  near_tx.py                   borsh, ed25519, base58, RPC, sign pay()
-  vault_signer.py              function-call key wiring, dry-run by default
-  receipts.py                  Postgres store: receipts + wallet, per account, request_id keyed
-  vending.py                   bill kind -> VTpass product; amount- vs plan-priced
-  payments.py                  record -> buy -> charge on delivery
-  catalog.py                   VTpass service ids, plans, prices (from fixtures)
-  test_agent.py                59 tests: policy parity, RFC 8032, borsh, the gate
-  test_vending.py              44 tests: store, retry, charge-on-delivery, plans
-  vtpass.py                    VTpass client + CLI, dry-run by default
-  test_vtpass.py               30 tests incl. CLI wiring
+  app/main.py                  create_app(): modules, error filter, CORS, Swagger
+  app/app_module.py            composition root: every repository and service, wired once
+  app/guards/auth_guard.py     Neon Auth session -> Account, else 401
+  app/database/neon.py         Neon Postgres over HTTPS: connection pool, schema, queries
+  app/modules/<feature>/       controller + service + dtos/ (+ repository where it stores)
+  app/modules/agent/           tool schema + routing + policy gate + model loop; policy.py mirrors policy.rs
+  app/modules/chain/           borsh, ed25519, base58, RPC, sign pay(); vault signer, dry-run by default
+  app/modules/receipt/         Postgres store: receipts + wallet, per account, request_id keyed
+  app/modules/payment/         contract checks -> record -> buy -> charge on delivery
+  app/modules/vending/         VTpass client + CLI, catalogue, kind -> product (dry-run by default)
+  tests/                       unit tests, support.py (TempAccount, ApiHarness), smoke_test.py
   fixtures/                    VTpass responses (see §10 on provenance)
 apps/contracts/
   vault/                       NEAR contract: caps, allowlist, owner withdraw
@@ -467,23 +464,24 @@ docs/HANDOFF.md                this file
 ### Run it
 
 ```sh
-cd /Users/mac/stark/backend
-python3 server.py                 # http://127.0.0.1:8000  (port 8000)
+cd apps/backend
+bun run setup                     # once
+bun dev                           # http://127.0.0.1:8000, Swagger at /docs
 ```
 
 ```sh
-cd /Users/mac/stark/backend
-python3 smoke_test.py             # 50/50, exits 1 on failure
-python3 -m unittest test_vtpass   # 30/30
-python3 vtpass.py variations      # dry-run, no keys needed
+cd apps/backend
+bun smoke                         # exits 1 on failure (server running, STARK_STUB_RESET=1)
+bun run test                      # every unit test
+.venv/bin/python -m app.modules.vending.vtpass variations   # dry-run, no keys needed
 ```
 
 ### Verify the whole thing in ~30 seconds
 
 ```sh
-cd /Users/mac/stark/backend
-python3 -m unittest test_vtpass 2>&1 | tail -3
-python3 vtpass.py buy --meter 04512345678 --amount 5000 --phone 08031234567
+cd apps/backend
+.venv/bin/python -m unittest tests.test_vtpass 2>&1 | tail -3
+.venv/bin/python -m app.modules.vending.vtpass buy --meter 04512345678 --amount 5000 --phone 08031234567
 curl -s http://127.0.0.1:8000/v1/state
 ```
 

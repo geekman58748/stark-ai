@@ -1,0 +1,3 @@
+# Tests: FastAPI's TestClient runs on httpx.
+-r requirements.txt
+httpx==0.28.1

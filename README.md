@@ -63,7 +63,7 @@ has its own README; start there when you work on it.
 |---|---|---|
 | [`apps/website`](apps/website) | marketing site for hellostark.xyz | React Router, pre-rendered static HTML |
 | [`apps/dashboard`](apps/dashboard) | the Stark app users manage bills in | TanStack Start (SPA) + TanStack Query |
-| [`apps/backend`](apps/backend) | API, agent, bill vending, Telegram bot | Python, standard library only |
+| [`apps/backend`](apps/backend) | API, agent, bill vending, Telegram bot | Python, FastAPI (Swagger at `/docs`) |
 | [`apps/contracts`](apps/contracts) | NEAR vault contract: caps and allowlist | Rust, near-sdk |
 | [`packages/ui`](packages/ui) | the design system: shadcn/ui components on Base UI, themed to Stark | shadcn, Base UI, Tailwind v4, Reicon |
 | [`packages/api`](packages/api) | typed `/v1` client, query options and mutations | TanStack Query |

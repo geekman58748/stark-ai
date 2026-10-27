@@ -1,0 +1,44 @@
+"""Every priced data and TV plan, straight from the captured VTpass catalogue."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.common.api_error import ApiError
+from app.modules.bill.bill_kind import PLAN_KINDS
+from app.modules.vending import catalog
+
+
+class PlanService:
+    @staticmethod
+    def plans(kind: str, provider: str) -> list[dict[str, Any]]:
+        kind = kind.strip().lower()
+        if kind and kind not in PLAN_KINDS:
+            raise ApiError(400, "bad_kind", "Plans exist only for data and TV.")
+        wanted = catalog.slug(provider.strip())
+        rows: list[dict[str, Any]] = []
+        for each_kind in ([kind] if kind else list(PLAN_KINDS)):
+            for service in catalog.CATALOG.services(each_kind):
+                service_id = str(service.get("serviceID") or "")
+                name = str(service.get("name") or service_id)
+                # Loosely: "mtn" must find "mtn-data", the way a picker's provider
+                # chip does. Exact matching returned an empty list for the very
+                # example in docs/API.md.
+                if wanted and not any(
+                    wanted in slug for slug in (catalog.slug(service_id), catalog.slug(name))
+                ):
+                    continue
+                product = catalog.CATALOG.product(each_kind, service_id)
+                if product is None or not product.needs_plan:
+                    continue
+                for plan in catalog.CATALOG.plans(product):
+                    rows.append({
+                        "kind": each_kind,
+                        "provider": service_id,
+                        "service_name": name,
+                        "plan": plan.code,
+                        "label": plan.name,
+                        "price_ngn": plan.price_ngn,
+                    })
+        rows.sort(key=lambda row: (row["kind"], row["provider"], row["price_ngn"]))
+        return rows

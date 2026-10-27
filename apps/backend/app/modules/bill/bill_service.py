@@ -1,0 +1,171 @@
+"""Saved bills: add, edit, remove, and keep in step with delivered payments.
+
+Every change is written through to `bills` and re-scopes the agent's meter
+allowlist, so the agent can pay a new bill (and cannot pay a removed one) in the
+very next turn.
+"""
+
+from __future__ import annotations
+
+import re
+import uuid
+from typing import Any
+
+from app.common.api_error import ApiError
+from app.modules.account.account_repository import AccountRepository
+from app.modules.account.account_service import AccountService
+from app.modules.bill.bill_kind import PLAN_KINDS, BillKind
+from app.modules.bill.dtos.create_bill_dto import CreateBillDto
+from app.modules.bill.dtos.update_bill_dto import UpdateBillDto
+from app.modules.receipt.receipt_repository import ReceiptRepository
+from app.modules.reminder import reminders
+from app.modules.vending import catalog
+
+
+class BillService:
+    def __init__(self, accounts: AccountService, repository: AccountRepository,
+                 receipts: ReceiptRepository) -> None:
+        self.accounts = accounts
+        self.repository = repository
+        self.receipts = receipts
+
+    def bills(self, account_id: str) -> dict[str, dict[str, Any]]:
+        return self.accounts.state(account_id).bills
+
+    def get(self, account_id: str, bill_id: str) -> dict[str, Any]:
+        bill = self.bills(account_id).get(bill_id)
+        if bill is None:
+            raise ApiError(404, "unknown_bill", f"No bill {bill_id}")
+        return bill
+
+    def add(self, account_id: str, dto: CreateBillDto) -> dict[str, Any]:
+        kind = dto.kind.strip().lower()
+        if kind not in BillKind.values():
+            raise ApiError(400, "bad_kind",
+                           f"kind must be one of {', '.join(BillKind.values())}")
+        provider = dto.provider.strip()
+        if not provider:
+            raise ApiError(400, "bad_bill", "provider is required")
+        reference = re.sub(r"\s+", "", dto.reference)
+        if not 4 <= len(reference) <= 32:
+            raise ApiError(400, "bad_reference", "reference must be 4–32 characters")
+        label = dto.label.strip() or provider
+        plan = dto.plan.strip() or None
+        plan_price = None
+        renews_on = self._renews_on(dto.renews_on) if dto.renews_on else None
+
+        if kind == BillKind.ELECTRICITY:
+            # Only Ikeja is confirmed. Pretending another DISCO works would vend on
+            # Ikeja's service id, which is the kind of silent lie this repo avoids.
+            if catalog.slug(provider) not in ("ikeja", "ikejaelectric"):
+                raise ApiError(400, "unsupported_product",
+                               "Only Ikeja Electric is confirmed for electricity.")
+            plan = None
+        elif kind in (BillKind.AIRTIME, BillKind.DATA, BillKind.TV):
+            product = catalog.CATALOG.product(kind, provider)
+            if product is None:
+                raise ApiError(400, "unsupported_product",
+                               f"I can't find {provider} for {kind}.")
+            if product.needs_plan:
+                if not plan:
+                    raise ApiError(400, "plan_required", "Choose a plan first.")
+                chosen = catalog.CATALOG.plan(product, plan)
+                if chosen is None:
+                    raise ApiError(400, "unknown_plan",
+                                   f"No '{plan}' plan for {product.name}.")
+                plan_price = chosen.price_ngn
+            else:
+                plan = None
+        else:
+            # Internet and water have no confirmed VTpass product yet; the bill can
+            # be saved, but paying it will refuse and charge nothing.
+            plan = None
+
+        bills = self.bills(account_id)
+        if any(b["kind"] == kind and b["reference"] == reference for b in bills.values()):
+            raise ApiError(409, "duplicate_bill", "That bill is already saved.")
+
+        bill: dict[str, Any] = {
+            "id": f"bill_{uuid.uuid4().hex[:8]}",
+            "kind": kind,
+            "provider": provider,
+            "label": label,
+            "reference": reference,
+            "last_amount_ngn": None,
+            "last_units": None,
+            "last_paid_at": None,
+        }
+        if plan:
+            bill["plan"] = plan
+        if plan_price is not None:
+            bill["plan_price_ngn"] = plan_price
+        if renews_on:
+            bill["renews_on"] = renews_on
+        bills[bill["id"]] = bill
+        self.repository.save_bill(account_id, bill)
+        self.accounts.rebuild_limits(account_id)
+        return bill
+
+    def update(self, account_id: str, bill_id: str, dto: UpdateBillDto) -> dict[str, Any]:
+        bill = self.get(account_id, bill_id)
+        sent = dto.model_fields_set
+        if "label" in sent:
+            label = (dto.label or "").strip()
+            if not label:
+                raise ApiError(400, "bad_bill", "label cannot be empty")
+            bill["label"] = label
+        if "plan" in sent:
+            if bill["kind"] not in PLAN_KINDS:
+                raise ApiError(400, "bad_bill", "Only data and TV bills have plans.")
+            product = catalog.CATALOG.product(bill["kind"], bill["provider"])
+            if product is None:
+                raise ApiError(400, "unsupported_product", "That provider has no plans.")
+            code = (dto.plan or "").strip()
+            chosen = catalog.CATALOG.plan(product, code) if code else None
+            if chosen is None:
+                raise ApiError(400, "unknown_plan", f"No '{code}' plan for {product.name}.")
+            bill["plan"] = chosen.code
+            bill["plan_price_ngn"] = chosen.price_ngn
+        if "renews_on" in sent:
+            # Repairing the calendar is the point of the field: set it to a date, or
+            # clear it with "" / null for a bill that does not renew on a cycle.
+            raw_date = (dto.renews_on or "").strip()
+            if raw_date:
+                bill["renews_on"] = self._renews_on(raw_date)
+            else:
+                bill.pop("renews_on", None)
+        self.repository.save_bill(account_id, bill)
+        return bill
+
+    def delete(self, account_id: str, bill_id: str) -> dict[str, Any]:
+        bills = self.bills(account_id)
+        if bill_id not in bills:
+            raise ApiError(404, "unknown_bill", f"No bill {bill_id}")
+        if self.receipts.has_pending(account_id, bill_id):
+            raise ApiError(409, "bill_in_flight",
+                           "That bill has a payment still in flight. Try again after it settles.")
+        del bills[bill_id]
+        self.repository.delete_bill(account_id, bill_id)
+        self.accounts.rebuild_limits(account_id)
+        return {"deleted": True, "bill_id": bill_id}
+
+    def apply_delivery(self, account_id: str, receipt: dict[str, Any]) -> None:
+        """Point the bill at a delivered payment: its last top-up and the units it bought.
+
+        `spent_ngn` is moved by the receipt store, and units left are worked out
+        from the receipts themselves (`TelemetryService.meter_reading`).
+        """
+        bill = self.bills(account_id).get(receipt.get("bill_id"))
+        if bill is None:
+            return
+        bill["last_amount_ngn"] = receipt["amount_ngn"]
+        bill["last_units"] = receipt.get("units")
+        bill["last_paid_at"] = receipt["created_at"]
+        self.repository.save_bill(account_id, bill)
+
+    @staticmethod
+    def _renews_on(raw: str) -> str:
+        day = reminders.parse_date(raw)
+        if day is None:
+            raise ApiError(400, "bad_renews_on", "renews_on must be a date like 2026-11-03.")
+        return day.isoformat()

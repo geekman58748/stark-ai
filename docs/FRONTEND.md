@@ -13,18 +13,18 @@ Last updated: 2026-10-22.
 
 ```sh
 cd apps/backend
-python3 server.py          # http://127.0.0.1:8000, no dependencies
+bun run setup              # once: a .venv with FastAPI and uvicorn
+bun dev                    # http://127.0.0.1:8000 — every route is browsable at /docs
 ```
 
 In another shell:
 
 ```sh
 cd apps/backend
-python3 smoke_test.py      # 68 checks (70 with the TTS sidecar up), exits 1 if anything is broken
+bun smoke                  # 69 checks, exits 1 if anything is broken
 ```
 
-That is the whole setup. No npm install, no virtualenv, no docker. Any python3
-works. The server keeps its data in Neon Postgres (`DATABASE_URL` in
+That is the whole setup. Any python3 from 3.9 works. The server keeps its data in Neon Postgres (`DATABASE_URL` in
 `apps/backend/.env`), so restarts keep history, balances and linked chats.
 
 To return everything to the demo state (seeded bills, seed balance, seed
@@ -407,8 +407,8 @@ by hand:
 
 ```sh
 cd apps/backend
-python3 smoke_test.py
-curl -s http://127.0.0.1:8000/v1/state | python3 -m json.tool
+bun smoke
+open http://127.0.0.1:8000/docs   # Authorize with your token, then "Try it out"
 ```
 
 If the smoke test passes and a route still misbehaves, it is ours, not yours.

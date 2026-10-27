@@ -4,8 +4,10 @@
 this point the only allowed change is **additive** (new fields, new endpoints).
 Renames, removals and type changes mean bumping to `/v2`.
 
-A runnable stub implements all of this today: `apps/backend/server.py`. No chain, no
-bill API, no AI — mock data only, so the frontend can be built in parallel.
+The FastAPI app in `apps/backend` implements all of this, and serves the same
+surface as Swagger UI at **`/docs`** (spec at `/docs/openapi.json`), generated from
+the DTOs the routes use. This file stays the written contract: where they differ,
+this file is the rule and the code is the bug.
 
 ---
 
@@ -57,6 +59,8 @@ Every non-2xx response has this body:
 | `bill_in_flight` | 409 | The bill has a pending payment; try again after it settles |
 | `bad_limits` | 400 | A limit is not positive, or per-payment exceeds monthly |
 | `no_route` | 404 | Unknown path |
+| `bad_request` | 400 | The body is not valid JSON, or a field has the wrong type (additive, 2026-10-27) |
+| `not_configured` | 409 | `POST /v1/link/code` while `STARK_TG_OWNER_EMAIL` names no account (additive, 2026-10-27) |
 
 > Ordering note: the **per-payment** cap is checked first, then the **monthly** cap,
 > then the balance. An amount that breaches all three returns `over_per_payment_cap`.
@@ -773,3 +777,4 @@ Shapes will not change as these land. Only the values become real.
 | 2026-10-25 | Telegram chats keep their last six exchanges (ten-minute idle expiry) and Telegram turns are written to `/v1/turnlog` with `channel: "telegram"`. `/v1/voice` is unchanged: one turn per request. Additive only. |
 | 2026-10-26 | **Auth enforced + storage moved.** Every `/v1` route except the Telegram webhook needs `Authorization: Bearer <token>` from Neon Auth, else **401 `unauthorized`** (`GET /v1/speak/stream` also takes `?token=`); `POST /v1/auth/logout` added. Receipts, wallets, accounts and channel identities now live in Neon Postgres instead of SQLite, scoped per account — two sign-ins no longer share a wallet. New code `unauthorized`. No response shape changed. |
 | 2026-10-27 | No mock data for real accounts. New accounts open empty (no bills, ₦0, no activity). Bills, limits and readings are stored per account. `units_left`/`days_left` computed from top-ups and readings; `/v1/telemetry` ignores a client `ts`. Top-ups are labelled test money; `POST /v1/wallet/withdraw` answers 501 `not_available`. `POST /v1/_stub/reset` is off unless `STARK_STUB_RESET=1`. No shape changed. |
+| 2026-10-27 | **Backend on FastAPI**, organised per feature module (controller, service, DTOs); Swagger UI at `/docs`. Every shape and code is unchanged. Request bodies are JSON (as every client already sends) except `/v1/voice`, which still takes multipart; a body that is not JSON is `400 bad_request`. `PATCH /v1/bills` `renews_on: null` now clears the date as documented. `POST /v1/link/code` answers `409 not_configured` instead of a 500 when the bot has no owner account. |

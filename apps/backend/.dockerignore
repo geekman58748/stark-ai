@@ -3,5 +3,7 @@
 stark.db*
 __pycache__
 *.pyc
+.venv
+logs
 node_modules
 package.json
