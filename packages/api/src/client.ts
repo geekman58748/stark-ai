@@ -17,7 +17,6 @@ import type {
   VoiceReply,
   Wallet,
   WalletMovement,
-  WithdrawInput,
 } from "./types";
 
 let baseUrl = "";
@@ -100,7 +99,6 @@ export const api = {
   updateLimits: (patch: LimitsPatch) => request<Limits>("PATCH", "/v1/limits", patch),
   wallet: () => request<Wallet>("GET", "/v1/wallet"),
   topUp: (input: TopUpInput) => request<WalletMovement>("POST", "/v1/wallet/topup", input),
-  withdraw: (input: WithdrawInput) => request<WalletMovement>("POST", "/v1/wallet/withdraw", input),
   suggestions: () => request<Suggestion[]>("GET", "/v1/suggestions"),
   /**
    * Ends the session server-side as well as locally: the provider's session row

@@ -7,7 +7,6 @@ import type {
   NewBill,
   PaymentInput,
   TopUpInput,
-  WithdrawInput,
 } from "./types";
 
 // Money moved or a bill changed: balance, caps, units and history can all shift together.
@@ -72,14 +71,6 @@ export function useTopUp() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: TopUpInput) => api.topUp(input),
-    onSuccess: () => invalidateMoney(qc),
-  });
-}
-
-export function useWithdraw() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: WithdrawInput) => api.withdraw(input),
     onSuccess: () => invalidateMoney(qc),
   });
 }

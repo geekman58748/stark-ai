@@ -1,6 +1,4 @@
-import { FundMethodCard } from "@/components/wallet/fund-method-card";
-import { FundMethodPicker } from "@/components/wallet/fund-method-picker";
-import { type FundMethod, FundMethods } from "@/lib/wallet/fund-methods";
+import { TestMoneyNote } from "@/components/wallet/test-money-note";
 import { errorCopy, useTopUp } from "@stark/api";
 import { AmountField } from "@stark/ui/components/amount-field";
 import { Button } from "@stark/ui/components/button";
@@ -10,23 +8,15 @@ import { formatNaira } from "@stark/utils/format";
 import { requestId } from "@stark/utils/id";
 import { useMemo, useState } from "react";
 
-export function FundForm({
-  initialMethod = "bank",
-  onDone,
-}: {
-  initialMethod?: FundMethod;
-  onDone: () => void;
-}) {
+export function FundForm({ onDone }: { onDone: () => void }) {
   const [amount, setAmount] = useState(20000);
-  const [method, setMethod] = useState<FundMethod>(initialMethod);
   const topUp = useTopUp();
 
-  const key = useMemo(() => requestId("dep"), [amount, method]);
-  const current = FundMethods.get(method);
+  const key = useMemo(() => requestId("dep"), [amount]);
 
-  const handleFundWallet = () =>
+  const handleAddTestMoney = () =>
     topUp.mutate(
-      { amount_ngn: amount, request_id: key, source: current.source },
+      { amount_ngn: amount, request_id: key },
       { onSuccess: onDone },
     );
 
@@ -38,8 +28,7 @@ export function FundForm({
         onChange={setAmount}
         presets={[10000, 20000, 50000]}
       />
-      <FundMethodPicker value={method} onValueChange={setMethod} />
-      <FundMethodCard name={current.name} detail={current.detail} />
+      <TestMoneyNote />
       {topUp.error ? (
         <FieldError className="text-[13px]">
           {errorCopy(topUp.error)}
@@ -49,10 +38,10 @@ export function FundForm({
         size="lg"
         block
         disabled={amount <= 0 || topUp.isPending}
-        onClick={handleFundWallet}
+        onClick={handleAddTestMoney}
       >
         {topUp.isPending ? <Spinner /> : null}
-        {topUp.isPending ? "Adding…" : `Add ${formatNaira(amount)}`}
+        {topUp.isPending ? "Adding…" : `Add ${formatNaira(amount)} test money`}
       </Button>
     </div>
   );

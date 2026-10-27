@@ -167,5 +167,5 @@ export type LinkCode = {
 
 export type LimitsPatch = { monthly_cap_ngn?: number; per_payment_cap_ngn?: number };
 export type PaymentInput = { bill_id: string; amount_ngn: number };
-export type TopUpInput = { amount_ngn: number; request_id?: string; source?: string };
-export type WithdrawInput = { amount_ngn: number; request_id?: string };
+/** Test money: there is no payment provider yet, so nothing is collected. */
+export type TopUpInput = { amount_ngn: number; request_id?: string };

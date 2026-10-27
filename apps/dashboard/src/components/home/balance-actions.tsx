@@ -5,14 +5,14 @@ export function BalanceActions() {
   return (
     <div className="flex flex-wrap gap-2">
       <Button nativeButton={false} render={<Link to="/wallet/add" />}>
-        Add money
+        Add test money
       </Button>
       <Button
         variant="secondary"
         nativeButton={false}
         render={<Link to="/wallet" />}
       >
-        Withdraw
+        Wallet
       </Button>
     </div>
   );

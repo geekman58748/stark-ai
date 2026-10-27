@@ -1,5 +1,4 @@
 import { PageTitle } from "@/components/shell/page-title";
-import { AddMoneyWays } from "@/components/wallet/add-money-ways";
 import { MoneyMoves } from "@/components/wallet/money-moves";
 import { WalletBalanceCard } from "@/components/wallet/wallet-balance-card";
 import { activityQuery, walletQuery } from "@stark/api";
@@ -28,9 +27,6 @@ function WalletPage() {
     <>
       <PageTitle>Wallet</PageTitle>
       <WalletBalanceCard wallet={wallet} />
-
-      <SectionHeading>Ways to add money</SectionHeading>
-      <AddMoneyWays />
 
       <SectionHeading>Money in and out</SectionHeading>
       <MoneyMoves moves={moves} />
