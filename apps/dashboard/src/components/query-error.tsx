@@ -5,7 +5,6 @@ import { useQueryErrorResetBoundary } from "@tanstack/react-query";
 import { type ErrorComponentProps, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-/** Route error boundary: usually the backend isn't running. */
 export function QueryError({ error }: ErrorComponentProps) {
   const router = useRouter();
   const { reset } = useQueryErrorResetBoundary();

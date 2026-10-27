@@ -3,12 +3,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 
-import { storedToken } from "./lib/auth";
+import { sessionStore } from "./lib/auth/session-store";
 
-// Empty in development (Vite proxies /v1). Set VITE_STARK_API_URL for a deployed build.
 setApiBaseUrl(import.meta.env.VITE_STARK_API_URL ?? "");
-// A token from a previous visit becomes the bearer header on every /v1 call.
-setAuthToken(storedToken());
+
+setAuthToken(sessionStore.token());
 
 export function getRouter() {
   const queryClient = new QueryClient({
@@ -22,7 +21,6 @@ export function getRouter() {
     context: { queryClient },
     scrollRestoration: true,
     defaultPreload: "intent",
-    // Loaders only warm the query cache; components read from it, so let Query decide freshness.
     defaultPreloadStaleTime: 0,
     Wrap: ({ children }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
