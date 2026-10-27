@@ -31,36 +31,52 @@ export function useSpeaker(onFinished: () => void) {
     const seq = ++speakSeq.current;
     stopSpeaking();
     speaking.current = true;
-    const play = (src: string) => {
+
+    /** A stream refuses twice (once for the load, once for play()); one fetch. */
+    let resolving = false;
+
+    /** Play one clip. A clip that will not play goes through `onRefuse` when it
+     *  has one, so the stream's refusal hands off to the buffered voice instead
+     *  of ending playback — ending it here is what reopened the mic over a reply
+     *  that was still coming, and cut Stark off mid-sentence. */
+    const play = (src: string, onRefuse?: (a: HTMLAudioElement) => void) => {
       const a = new Audio(src);
       player.current = a;
+      const refuse = () => {
+        if (player.current !== a) return;
+        if (onRefuse) onRefuse(a);
+        else finishPlayback(a);
+      };
       a.addEventListener("ended", () => finishPlayback(a));
-      a.addEventListener("error", () => finishPlayback(a));
-      void a.play().catch(() => {
-        // Autoplay refused: the words are on screen, so go back to listening
-        // instead of waiting for a clip that will never start.
-        if (player.current === a) finishPlayback(a);
-      });
+      a.addEventListener("error", refuse);
+      // Autoplay refused or the source unplayable: the words are on screen, so
+      // hand back (or fall through) rather than wait for a clip that never starts.
+      void a.play().catch(refuse);
       return a;
     };
-    const streamed = play(api.speakStreamUrl(text));
-    let fellBack = false;
-    streamed.addEventListener("error", () => {
-      if (fellBack || seq !== speakSeq.current) return;
-      fellBack = true;
+
+    /** The stream refused — fetch the whole clip. If it never lands (no voice
+     *  provider configured, a dropped request) the mic still comes back, once. */
+    const bufferedFallback = (a: HTMLAudioElement) => {
+      if (resolving || seq !== speakSeq.current) return;
+      resolving = true;
       api
         .speak(text)
         .then(({ audio }) => {
-          if (!audio || seq !== speakSeq.current) return;
-          if (player.current === streamed) {
-            player.current.pause();
-            player.current = null;
-          }
+          if (seq !== speakSeq.current) return;
+          if (!audio) return finishPlayback(a);
+          if (player.current !== a) return;
+          a.pause();
+          player.current = null;
           speaking.current = true;
           play(audio);
         })
-        .catch(() => undefined);
-    });
+        .catch(() => {
+          if (seq === speakSeq.current) finishPlayback(a);
+        });
+    };
+
+    play(api.speakStreamUrl(text), bufferedFallback);
   };
 
   return { speak, stopSpeaking, speaking };

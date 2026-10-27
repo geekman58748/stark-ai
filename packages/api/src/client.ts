@@ -131,8 +131,19 @@ export const api = {
    * Where the streamed voice lives: `new Audio(api.speakStreamUrl(text))` starts
    * talking on the first bytes instead of waiting for the whole clip to be built.
    * Point an `<audio>` at it and fall back to `speak` if it errors.
+   *
+   * An `<audio>` element cannot set an `Authorization` header, so the session
+   * token rides along as `?token=` — the one route the contract accepts it on
+   * (docs/API.md). Without it the stream answers 401 and the Talk screen never
+   * gets past the refusal. `URLSearchParams` also encodes a literal `+` in the
+   * text, which `encodeURIComponent` would leave for the server to read as a
+   * space.
    */
-  speakStreamUrl: (text: string) => `${baseUrl}/v1/speak/stream?text=${encodeURIComponent(text)}`,
+  speakStreamUrl: (text: string) => {
+    const params = new URLSearchParams({ text });
+    if (authToken) params.set("token", authToken);
+    return `${baseUrl}/v1/speak/stream?${params.toString()}`;
+  },
   /** Stub only: restores the seeded demo state. Never call it while someone is demoing. */
   resetDemo: () => request<unknown>("POST", "/v1/_stub/reset", {}),
 };
