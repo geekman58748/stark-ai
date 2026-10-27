@@ -1,13 +1,7 @@
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import { queryKeys } from "./queries";
-import type {
-  BillPatch,
-  LimitsPatch,
-  NewBill,
-  PaymentInput,
-  TopUpInput,
-} from "./types";
+import type { BillPatch, LimitsPatch, NewBill, PaymentInput, TopUpInput } from "./types";
 
 // Money moved or a bill changed: balance, caps, units and history can all shift together.
 function invalidateMoney(qc: QueryClient) {
