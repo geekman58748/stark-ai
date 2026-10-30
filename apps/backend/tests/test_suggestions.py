@@ -111,10 +111,17 @@ class UnitsSignal(unittest.TestCase):
         self.assertIn("roughly 4 days", found[0]["text"])
 
     def test_a_real_burn_rate_wins_over_the_estimate(self):
+        # `build` reads the real clock and burn_rate's lookback is 14 days, so
+        # these two deliveries must be relative to now. Pinned to NOW they age
+        # out of the window, burn_rate falls back to None, and the suggestion
+        # silently degrades to the estimate (or vanishes when days_left is also
+        # beyond LOW_UNITS_DAYS) — the same trap recent() and renewing_in()
+        # were introduced for.
         found = build_suggestions(
             units_left=12.0, days_left=9,
             # 24 units across 8 days = 3.0 a day, so 12 left is 4 days.
-            receipts=[receipt(12.0, when=ts(days=10)), receipt(12.0, when=ts(days=2))],
+            receipts=[receipt(12.0, when=recent(days=10)),
+                      receipt(12.0, when=recent(days=2))],
         )
         self.assertEqual(found[0]["reason"], "units_low")
         self.assertIn("3.0 units a day", found[0]["text"])

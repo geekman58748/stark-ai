@@ -169,14 +169,25 @@ status, gone, _ = call("GET", f"/v1/bills/{added.get('id')}")
 check("deleted bill -> 404",
       status == 404 and gone.get("code") == "unknown_bill", f"status={status}")
 
-# Suggestions are computed now (suggestions.py): the meter line and the DStv
-# renewal come from live state; the old hardcoded "AC is 78%" line is gone.
+# Suggestions are computed now (suggestions.py): the DStv renewal comes from live
+# state and the old hardcoded "AC is 78%" line is gone.
+#
+# The meter line is deliberately *not* asserted to be present. `units_left` and
+# `days_left` are derived (telemetry.meter.reading) rather than seeded, so with
+# no readings yet the seed's 110 units read as ~21 days of runway, and
+# `_units_item` returns None because a full meter is not news — the same rule
+# tests.test_suggestions pins as `test_a_meter_far_from_empty_is_not_news`.
+# Asserting `sug_units` here was asserting the old in-memory seed, and it rotted
+# the day the meter became computed. What must still hold is that any units line
+# that does appear is a real one, with a reason we actually compute.
 status, sugg, _ = call("GET", "/v1/suggestions")
 sug_text = " ".join(s.get("text", "") for s in sugg)
+units_lines = [s for s in sugg if s.get("id") == "sug_units"]
 check("suggestions computed from state",
-      status == 200 and any(s.get("id") == "sug_units" for s in sugg)
-      and any(s.get("reason") == "bill_due" for s in sugg)
-      and "78%" not in sug_text,
+      status == 200 and any(s.get("reason") == "bill_due" for s in sugg)
+      and "78%" not in sug_text
+      and all(s.get("reason") in ("units_low", "units_low_estimate")
+              for s in units_lines),
       f"status={status} {[s.get('id') for s in sugg]}")
 
 # --- renews_on --------------------------------------------------------------
