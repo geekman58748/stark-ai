@@ -1,8 +1,8 @@
-import { TopUpBar } from "@/components/bills/top-up-bar";
 import type { Receipt } from "@stark/api";
 import { Card } from "@stark/ui/components/card";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
 import { formatNaira, formatShortDate } from "@stark/utils/format";
+import { TopUpBar } from "@/components/bills/top-up-bar";
 
 export function TopUpChart({ history }: { history: Receipt[] }) {
   const paid = history
@@ -22,12 +22,7 @@ export function TopUpChart({ history }: { history: Receipt[] }) {
         className="flex h-40 items-end gap-2.5"
       >
         {paid.map((r, i) => (
-          <TopUpBar
-            key={r.id}
-            receipt={r}
-            max={max}
-            latest={i === paid.length - 1}
-          />
+          <TopUpBar key={r.id} receipt={r} max={max} latest={i === paid.length - 1} />
         ))}
       </div>
       <div className="tabular flex justify-between text-[11px] text-muted-foreground">

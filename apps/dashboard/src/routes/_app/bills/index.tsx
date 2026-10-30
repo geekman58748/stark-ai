@@ -1,3 +1,7 @@
+import { stateQuery } from "@stark/api";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { AddAnotherBillButton } from "@/components/bills/add-another-bill-button";
 import { BillGroup } from "@/components/bills/bill-group";
 import { BillSectionTabs } from "@/components/bills/bill-section-tabs";
@@ -5,10 +9,6 @@ import { BillsEmpty } from "@/components/bills/bills-empty";
 import { BillsHeader } from "@/components/bills/bills-header";
 import { BillSections } from "@/lib/bills/bill-sections";
 import { Bills } from "@/lib/bills/bills";
-import { stateQuery } from "@stark/api";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { z } from "zod";
 
 export const Route = createFileRoute("/_app/bills/")({
   validateSearch: z.object({

@@ -7,12 +7,7 @@ export function DuePayButton({ due }: { due: DueBill }) {
   return (
     <Button
       nativeButton={false}
-      render={
-        <Link
-          to="/pay"
-          search={{ bill: due.id, amount: due.price_ngn ?? undefined }}
-        />
-      }
+      render={<Link to="/pay" search={{ bill: due.id, amount: due.price_ngn ?? undefined }} />}
     >
       Pay{due.price_ngn ? ` ${formatNaira(due.price_ngn)}` : " it"}
     </Button>

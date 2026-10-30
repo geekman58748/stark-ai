@@ -1,7 +1,7 @@
-import { MethodIcon } from "@/components/auth/method-icon";
-import type { Method } from "@/components/auth/methods";
 import { Button } from "@stark/ui/components/button";
 import type { ReactNode } from "react";
+import { MethodIcon } from "@/components/auth/method-icon";
+import type { Method } from "@/components/auth/methods";
 
 export function SignInOption({
   method,
@@ -29,9 +29,7 @@ export function SignInOption({
       <MethodIcon method={method} />
       {children}
       {tag ? (
-        <span className="absolute right-5 text-[11px] font-normal text-faint">
-          {tag}
-        </span>
+        <span className="absolute right-5 text-[11px] font-normal text-faint">{tag}</span>
       ) : null}
     </Button>
   );

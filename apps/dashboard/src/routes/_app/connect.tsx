@@ -36,9 +36,7 @@ function Connect() {
         {minted ? <MintedCode minted={minted} /> : null}
 
         {link.error ? (
-          <FieldError className="text-[13px]">
-            {errorCopy(link.error)}
-          </FieldError>
+          <FieldError className="text-[13px]">{errorCopy(link.error)}</FieldError>
         ) : null}
 
         <Button

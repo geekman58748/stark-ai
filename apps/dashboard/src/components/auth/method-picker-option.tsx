@@ -1,6 +1,6 @@
+import { cn } from "@stark/ui/utils/cn";
 import { MethodIcon } from "@/components/auth/method-icon";
 import type { Method } from "@/components/auth/methods";
-import { cn } from "@stark/ui/utils/cn";
 
 export function MethodPickerOption({
   method,

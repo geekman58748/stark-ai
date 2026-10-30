@@ -1,7 +1,7 @@
-import { PlanSelect } from "@/components/bills/plan-select";
 import type { Plan } from "@stark/api";
 import { Field, FieldLabel } from "@stark/ui/components/field";
 import { useId } from "react";
+import { PlanSelect } from "@/components/bills/plan-select";
 
 export function PlanField({
   plans,
@@ -20,13 +20,7 @@ export function PlanField({
       <FieldLabel htmlFor={planId} className="font-normal text-fg-2">
         Plan
       </FieldLabel>
-      <PlanSelect
-        id={planId}
-        plans={plans}
-        provider={provider}
-        value={value}
-        onChange={onChange}
-      />
+      <PlanSelect id={planId} plans={plans} provider={provider} value={value} onChange={onChange} />
     </Field>
   );
 }

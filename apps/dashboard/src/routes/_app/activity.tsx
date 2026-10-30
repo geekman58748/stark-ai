@@ -1,14 +1,14 @@
+import { activityQuery } from "@stark/api";
+import { isToday } from "@stark/utils/format";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { ActivityEmpty } from "@/components/activity/activity-empty";
 import { ActivityFilters } from "@/components/activity/activity-filters";
 import { ActivitySection } from "@/components/activity/activity-section";
 import { ReceiptCard } from "@/components/activity/receipt-card";
 import { PageTitle } from "@/components/shell/page-title";
 import { Receipts } from "@/lib/receipts/receipts";
-import { activityQuery } from "@stark/api";
-import { isToday } from "@stark/utils/format";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { z } from "zod";
 
 export const Route = createFileRoute("/_app/activity")({
   validateSearch: z.object({
@@ -16,8 +16,7 @@ export const Route = createFileRoute("/_app/activity")({
     receipt: z.string().optional(),
     bill: z.string().optional(),
   }),
-  loader: ({ context }) =>
-    context.queryClient.query({ ...activityQuery(), staleTime: "static" }),
+  loader: ({ context }) => context.queryClient.query({ ...activityQuery(), staleTime: "static" }),
   head: () => ({ meta: [{ title: "Activity · Stark" }] }),
   component: Activity,
 });
@@ -29,9 +28,7 @@ function Activity() {
   const filter = search.filter ?? "all";
 
   const rows = data.filter(
-    (r) =>
-      Receipts.matchesFilter(r, filter) &&
-      (!search.bill || r.bill_id === search.bill),
+    (r) => Receipts.matchesFilter(r, filter) && (!search.bill || r.bill_id === search.bill),
   );
   const selected = rows.find((r) => r.id === search.receipt) ?? rows[0];
   const today = rows.filter((r) => isToday(r.created_at));
@@ -56,18 +53,10 @@ function Activity() {
       {selected ? <ReceiptCard receipt={selected} /> : null}
 
       {today.length ? (
-        <ActivitySection
-          title="Today"
-          receipts={today}
-          selectedId={selected?.id}
-        />
+        <ActivitySection title="Today" receipts={today} selectedId={selected?.id} />
       ) : null}
       {earlier.length ? (
-        <ActivitySection
-          title="Earlier"
-          receipts={earlier}
-          selectedId={selected?.id}
-        />
+        <ActivitySection title="Earlier" receipts={earlier} selectedId={selected?.id} />
       ) : null}
       {!rows.length ? <ActivityEmpty /> : null}
     </>

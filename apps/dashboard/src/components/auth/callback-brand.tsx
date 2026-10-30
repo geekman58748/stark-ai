@@ -1,6 +1,6 @@
-import { AUTH_CARD } from "@/components/auth/methods";
 import { LogoMark } from "@stark/ui/components/logo";
 import { Link } from "@tanstack/react-router";
+import { AUTH_CARD } from "@/components/auth/methods";
 
 export function CallbackBrand() {
   return (

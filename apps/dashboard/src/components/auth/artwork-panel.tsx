@@ -8,8 +8,7 @@ export function ArtworkPanel() {
       <div
         className="relative w-full overflow-hidden rounded-[20px]"
         style={{
-          boxShadow:
-            "0 24px 70px -28px rgb(0 0 0 / 0.85), 0 2px 10px rgb(0 0 0 / 0.45)",
+          boxShadow: "0 24px 70px -28px rgb(0 0 0 / 0.85), 0 2px 10px rgb(0 0 0 / 0.45)",
         }}
       >
         <Artwork />

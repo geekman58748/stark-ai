@@ -13,10 +13,7 @@ export function VoiceOrb({
   onTap: () => void;
 }) {
   return (
-    <div
-      className="voice-orb flex flex-col items-center gap-5"
-      data-state={stage}
-    >
+    <div className="voice-orb flex flex-col items-center gap-5" data-state={stage}>
       <div className="relative grid place-items-center">
         <OrbHalo />
         <MicButton stage={stage} live={live} onTap={onTap} />

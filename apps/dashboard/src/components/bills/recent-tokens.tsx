@@ -1,13 +1,11 @@
-import { TokenLine } from "@/components/pay/token-line";
 import type { Receipt } from "@stark/api";
 import { RowList } from "@stark/ui/components/list-row";
 import { SectionHeading } from "@stark/ui/components/section-heading";
 import { formatNaira, formatShortDate } from "@stark/utils/format";
+import { TokenLine } from "@/components/pay/token-line";
 
 export function RecentTokens({ history }: { history: Receipt[] }) {
-  const withTokens = history
-    .filter((r) => r.status === "delivered" && r.token)
-    .slice(0, 3);
+  const withTokens = history.filter((r) => r.status === "delivered" && r.token).slice(0, 3);
   if (!withTokens.length) return null;
   return (
     <>

@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { BillForm } from "@/components/bills/bill-form";
 import { BackLink } from "@/components/shell/back-link";
 import { PageTitle } from "@/components/shell/page-title";
-import { BillForm } from "@/components/bills/bill-form";
 
 export const Route = createFileRoute("/_app/bills/new")({
   head: () => ({ meta: [{ title: "Add a bill · Stark" }] }),
@@ -18,9 +18,7 @@ function NewBill() {
         <p className="m-0 text-fg-2">Stark can pay it as soon as it’s saved.</p>
       </div>
       <BillForm
-        onAdded={(bill) =>
-          navigate({ to: "/bills/$billId", params: { billId: bill.id } })
-        }
+        onAdded={(bill) => navigate({ to: "/bills/$billId", params: { billId: bill.id } })}
       />
     </div>
   );

@@ -1,11 +1,7 @@
+import type { Bill, State } from "@stark/api";
+import { formatNaira, formatShortDate, maskReference } from "@stark/utils/format";
 import { BillKinds } from "@/lib/bills/bill-kinds";
 import { Renewals } from "@/lib/renewals/renewals";
-import type { Bill, State } from "@stark/api";
-import {
-  formatNaira,
-  formatShortDate,
-  maskReference,
-} from "@stark/utils/format";
 
 export type BillStatus = { text: string; attention: boolean };
 
@@ -18,10 +14,8 @@ export class Bills {
 
   static subtitle(bill: Bill): string {
     const parts = [BillKinds.label(bill.kind), bill.provider];
-    if (bill.kind === "electricity")
-      parts.push(`meter ${maskReference(bill.reference)}`);
-    if (bill.kind === "airtime" || bill.kind === "data")
-      parts.push(maskReference(bill.reference));
+    if (bill.kind === "electricity") parts.push(`meter ${maskReference(bill.reference)}`);
+    if (bill.kind === "airtime" || bill.kind === "data") parts.push(maskReference(bill.reference));
     return parts.join(" · ");
   }
 
@@ -49,7 +43,7 @@ export class Bills {
         };
       }
     }
-    
+
     if (bill.plan_price_ngn) {
       return {
         text: bill.last_paid_at

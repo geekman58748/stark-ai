@@ -1,6 +1,6 @@
+import { useState } from "react";
 import { Field } from "@/components/auth/field";
 import { PasswordRevealButton } from "@/components/auth/password-reveal-button";
-import { useState } from "react";
 
 export function PasswordField({
   autoComplete,
@@ -25,10 +25,7 @@ export function PasswordField({
       value={value}
       onChange={onChange}
       trailing={
-        <PasswordRevealButton
-          revealed={revealed}
-          onToggle={() => setRevealed((was) => !was)}
-        />
+        <PasswordRevealButton revealed={revealed} onToggle={() => setRevealed((was) => !was)} />
       }
     />
   );

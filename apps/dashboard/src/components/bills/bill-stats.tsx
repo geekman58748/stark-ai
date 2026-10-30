@@ -2,13 +2,7 @@ import type { Bill, Receipt } from "@stark/api";
 import { Stat, StatGrid } from "@stark/ui/components/stat";
 import { formatNaira, formatShortDate } from "@stark/utils/format";
 
-export function BillStats({
-  bill,
-  history,
-}: {
-  bill: Bill;
-  history: Receipt[];
-}) {
+export function BillStats({ bill, history }: { bill: Bill; history: Receipt[] }) {
   const paid = history.filter((r) => r.status === "delivered");
   const monthAgo = Date.now() - 30 * 24 * 3600 * 1000;
   const lastMonth = paid

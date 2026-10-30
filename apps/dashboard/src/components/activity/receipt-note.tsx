@@ -4,8 +4,7 @@ export function ReceiptNote({ status }: { status: Receipt["status"] }) {
   if (status === "declined") {
     return (
       <p className="m-0 text-[13px] text-fg-2">
-        Stark stopped this because it broke one of your rules. Nothing was
-        charged.
+        Stark stopped this because it broke one of your rules. Nothing was charged.
       </p>
     );
   }

@@ -5,12 +5,8 @@ export function MeterHeadline({ daysLeft }: { daysLeft: number }) {
     <>
       <Eyebrow>Light left</Eyebrow>
       <div className="flex flex-wrap items-baseline gap-2.5">
-        <span className="font-serif text-5xl leading-none">
-          About {daysLeft} days
-        </span>
-        <span className="text-xs text-muted-foreground">
-          estimated from your top-ups
-        </span>
+        <span className="font-serif text-5xl leading-none">About {daysLeft} days</span>
+        <span className="text-xs text-muted-foreground">estimated from your top-ups</span>
       </div>
     </>
   );

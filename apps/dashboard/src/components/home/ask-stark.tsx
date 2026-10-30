@@ -1,12 +1,8 @@
-import { AskSendButton } from "@/components/home/ask-send-button";
-import { AskSpeakButton } from "@/components/home/ask-speak-button";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@stark/ui/components/input-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@stark/ui/components/input-group";
 import { useNavigate } from "@tanstack/react-router";
 import { type SubmitEvent, useState } from "react";
+import { AskSendButton } from "@/components/home/ask-send-button";
+import { AskSpeakButton } from "@/components/home/ask-speak-button";
 
 export function AskStark() {
   const navigate = useNavigate();

@@ -1,8 +1,8 @@
+import { Button } from "@stark/ui/components/button";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AsksBeforePayingNote } from "@/components/bills/asks-before-paying-note";
 import { BillForm } from "@/components/bills/bill-form";
 import { OnboardingShell } from "@/components/shell/onboarding-shell";
-import { Button } from "@stark/ui/components/button";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/start/bill")({
   head: () => ({ meta: [{ title: "Your first bill · Stark" }] }),

@@ -17,11 +17,7 @@ export class AuthClient {
     this.sessions = sessions;
   }
 
-  async signUp(input: {
-    email: string;
-    password: string;
-    name?: string;
-  }): Promise<Session> {
+  async signUp(input: { email: string; password: string; name?: string }): Promise<Session> {
     const session = await this.post<Session>("/sign-up/email", {
       email: input.email.trim(),
       password: input.password,
@@ -82,9 +78,7 @@ export class AuthClient {
   private get baseUrl(): string {
     const url = import.meta.env.VITE_NEON_AUTH_URL;
     if (!url) {
-      throw new Error(
-        "Sign-in is not configured: set VITE_NEON_AUTH_URL (see .env.example).",
-      );
+      throw new Error("Sign-in is not configured: set VITE_NEON_AUTH_URL (see .env.example).");
     }
     return url.replace(/\/$/, "");
   }
@@ -98,14 +92,11 @@ export class AuthClient {
       body: JSON.stringify(body),
     });
 
-    const data = (await res.json().catch(() => null)) as
-      (T & { message?: string }) | null;
+    const data = (await res.json().catch(() => null)) as (T & { message?: string }) | null;
 
     if (!res.ok) {
       // The provider's messages are already user-facing, so they are shown as-is.
-      throw new Error(
-        data?.message ?? `Could not reach the sign-in service (${res.status}).`,
-      );
+      throw new Error(data?.message ?? `Could not reach the sign-in service (${res.status}).`);
     }
     if (!data) throw new Error("The sign-in service returned nothing.");
     return data;

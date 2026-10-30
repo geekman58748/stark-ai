@@ -18,9 +18,7 @@ export function NothingToPay() {
           <Icons.Bills size={16} />
         </EmptyMedia>
         <EmptyTitle>Nothing to pay yet</EmptyTitle>
-        <EmptyDescription>
-          Add a bill first, then Stark can pay it.
-        </EmptyDescription>
+        <EmptyDescription>Add a bill first, then Stark can pay it.</EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
         <Button nativeButton={false} render={<Link to="/bills/new" />}>

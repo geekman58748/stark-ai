@@ -1,10 +1,4 @@
-export function OnboardingHeading({
-  title,
-  lead,
-}: {
-  title: string;
-  lead: string;
-}) {
+export function OnboardingHeading({ title, lead }: { title: string; lead: string }) {
   return (
     <div className="flex flex-col gap-2">
       <h1 className="m-0 font-serif text-[34px] leading-[1.1] font-medium tracking-[-0.01em]">

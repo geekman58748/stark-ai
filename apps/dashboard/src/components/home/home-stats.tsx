@@ -2,13 +2,7 @@ import type { Bill, State } from "@stark/api";
 import { Stat, StatGrid } from "@stark/ui/components/stat";
 import { formatNaira } from "@stark/utils/format";
 
-export function HomeStats({
-  state,
-  meter,
-}: {
-  state: State;
-  meter: Bill | undefined;
-}) {
+export function HomeStats({ state, meter }: { state: State; meter: Bill | undefined }) {
   return (
     <StatGrid>
       <Stat label="Spent this month">

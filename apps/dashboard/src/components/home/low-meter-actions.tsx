@@ -20,11 +20,7 @@ export function LowMeterActions({ meter }: { meter: Bill }) {
       >
         Top up {meter.last_amount_ngn ? formatNaira(meter.last_amount_ngn) : ""}
       </Button>
-      <Button
-        variant="secondary"
-        nativeButton={false}
-        render={<Link to="/bills" />}
-      >
+      <Button variant="secondary" nativeButton={false} render={<Link to="/bills" />}>
         Later
       </Button>
     </>

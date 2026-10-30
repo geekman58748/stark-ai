@@ -1,6 +1,6 @@
-import { ChangePlanForm } from "@/components/bills/change-plan-form";
 import type { Bill } from "@stark/api";
 import { Dialog, DialogContent } from "@stark/ui/components/dialog";
+import { ChangePlanForm } from "@/components/bills/change-plan-form";
 
 export function ChangePlanDialog({
   bill,

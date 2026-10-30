@@ -1,7 +1,7 @@
+import { createFileRoute } from "@tanstack/react-router";
 import { AuthIntro } from "@/components/auth/auth-intro";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { SignUpForm } from "@/components/auth/sign-up-form";
-import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/start/")({
   head: () => ({ meta: [{ title: "Sign up · Stark" }] }),

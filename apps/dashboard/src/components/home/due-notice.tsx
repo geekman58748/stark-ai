@@ -1,9 +1,9 @@
+import type { DueBill } from "@stark/api";
+import { Notice } from "@stark/ui/components/notice";
 import { BillIcon } from "@/components/bills/bill-icon";
 import { DuePayButton } from "@/components/home/due-pay-button";
 import { Bills } from "@/lib/bills/bills";
 import { Renewals } from "@/lib/renewals/renewals";
-import type { DueBill } from "@stark/api";
-import { Notice } from "@stark/ui/components/notice";
 
 export function DueNotice({ due }: { due: DueBill }) {
   return (

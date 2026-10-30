@@ -25,9 +25,7 @@ export class Renewals {
 
   static day(iso: string): string | null {
     const date = Renewals.date(iso);
-    return date
-      ? `${Renewals.MONTHS[date.getMonth()]} ${date.getDate()}`
-      : null;
+    return date ? `${Renewals.MONTHS[date.getMonth()]} ${date.getDate()}` : null;
   }
 
   static when(daysUntil: number): string {

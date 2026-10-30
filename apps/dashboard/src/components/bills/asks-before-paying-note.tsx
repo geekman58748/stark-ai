@@ -11,10 +11,8 @@ export function AsksBeforePayingNote() {
       <Icons.Shield size={16} className="flex-none text-brand-warm" />
       <span>
         Stark always asks before paying
-        {limits
-          ? ` and won’t spend more than ${formatNaira(limits.monthly_cap_ngn)} a month`
-          : ""}
-        . <Link to="/settings">Change</Link>
+        {limits ? ` and won’t spend more than ${formatNaira(limits.monthly_cap_ngn)} a month` : ""}.{" "}
+        <Link to="/settings">Change</Link>
       </span>
     </p>
   );

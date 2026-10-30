@@ -8,11 +8,7 @@ export function BillSectionsNav({ bill }: { bill: Bill }) {
       <span aria-current="page" className={pillTabClass(true)}>
         Overview
       </span>
-      <Link
-        to="/activity"
-        search={{ bill: bill.id }}
-        className={pillTabClass(false)}
-      >
+      <Link to="/activity" search={{ bill: bill.id }} className={pillTabClass(false)}>
         History
       </Link>
       <Link to="/settings" className={pillTabClass(false)}>

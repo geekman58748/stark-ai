@@ -1,6 +1,6 @@
+import type { Bill } from "@stark/api";
 import { BillFacts } from "@/components/bills/bill-facts";
 import { BillTitle } from "@/components/bills/bill-title";
-import type { Bill } from "@stark/api";
 
 export function BillHeader({
   bill,

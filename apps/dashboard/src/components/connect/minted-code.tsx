@@ -1,5 +1,5 @@
-import { TelegramDeepLink } from "@/components/connect/telegram-deep-link";
 import type { LinkCode } from "@stark/api";
+import { TelegramDeepLink } from "@/components/connect/telegram-deep-link";
 
 export function MintedCode({ minted }: { minted: LinkCode }) {
   return (
@@ -18,10 +18,7 @@ export function MintedCode({ minted }: { minted: LinkCode }) {
           : "Type it by hand — the server has no bot token, so there is no one-tap link."}
       </span>
       {minted.deep_link ? (
-        <TelegramDeepLink
-          href={minted.deep_link}
-          botUsername={minted.bot_username}
-        />
+        <TelegramDeepLink href={minted.deep_link} botUsername={minted.bot_username} />
       ) : null}
     </div>
   );

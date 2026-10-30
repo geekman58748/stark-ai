@@ -1,9 +1,8 @@
 import { setApiBaseUrl, setAuthToken } from "@stark/api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
-import { routeTree } from "./routeTree.gen";
-
 import { sessionStore } from "./lib/auth/session-store";
+import { routeTree } from "./routeTree.gen";
 
 setApiBaseUrl(import.meta.env.VITE_STARK_API_URL ?? "");
 

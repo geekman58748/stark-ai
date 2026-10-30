@@ -1,5 +1,5 @@
-import type { Method } from "@/components/auth/methods";
 import { Icons } from "@stark/ui/components/icons";
+import type { Method } from "@/components/auth/methods";
 
 export function MethodIcon({ method }: { method: Method }) {
   switch (method) {

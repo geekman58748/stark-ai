@@ -1,6 +1,6 @@
-import { AUTH_CARD } from "@/components/auth/methods";
 import { LogoMark } from "@stark/ui/components/logo";
 import { Link } from "@tanstack/react-router";
+import { AUTH_CARD } from "@/components/auth/methods";
 
 export function AuthHeader({ step }: { step?: string }) {
   return (
@@ -13,9 +13,7 @@ export function AuthHeader({ step }: { step?: string }) {
         <LogoMark size={26} cutout={AUTH_CARD} />
         <span className="text-[15px] font-semibold">Stark</span>
       </Link>
-      {step ? (
-        <span className="tabular text-[12px] text-faint">{step}</span>
-      ) : null}
+      {step ? <span className="tabular text-[12px] text-faint">{step}</span> : null}
     </header>
   );
 }

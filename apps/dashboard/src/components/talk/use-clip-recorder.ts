@@ -46,9 +46,7 @@ export function useClipRecorder() {
             t.stop();
           });
           if (disposed.current) return;
-          handlers.onClip(
-            new Blob(parts, { type: rec.mimeType || "audio/webm" }),
-          );
+          handlers.onClip(new Blob(parts, { type: rec.mimeType || "audio/webm" }));
         };
         recorder.current = rec;
         rec.start();

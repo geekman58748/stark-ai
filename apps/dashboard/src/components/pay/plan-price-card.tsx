@@ -1,13 +1,7 @@
 import { Card } from "@stark/ui/components/card";
 import { formatNaira } from "@stark/utils/format";
 
-export function PlanPriceCard({
-  amount,
-  provider,
-}: {
-  amount: number;
-  provider: string;
-}) {
+export function PlanPriceCard({ amount, provider }: { amount: number; provider: string }) {
   return (
     <Card className="flex-row items-center gap-3 p-4">
       <span className="flex flex-1 flex-col">

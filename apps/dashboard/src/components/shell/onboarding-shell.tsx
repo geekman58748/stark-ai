@@ -1,7 +1,7 @@
-import { OnboardingHeader } from "@/components/shell/onboarding-header";
-import { OnboardingHeading } from "@/components/shell/onboarding-heading";
 import { Steps } from "@stark/ui/components/steps";
 import type { ReactNode } from "react";
+import { OnboardingHeader } from "@/components/shell/onboarding-header";
+import { OnboardingHeading } from "@/components/shell/onboarding-heading";
 
 export function OnboardingShell({
   step,

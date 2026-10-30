@@ -1,15 +1,11 @@
-import { BillDialogFooter } from "@/components/bills/bill-dialog-footer";
-import { BillEditError } from "@/components/bills/bill-edit-error";
-import { PlanSelect } from "@/components/bills/plan-select";
 import { type Bill, plansQuery, useUpdateBill } from "@stark/api";
-import {
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@stark/ui/components/dialog";
+import { DialogDescription, DialogHeader, DialogTitle } from "@stark/ui/components/dialog";
 import { Field, FieldLabel } from "@stark/ui/components/field";
 import { useQuery } from "@tanstack/react-query";
 import { type SubmitEvent, useId, useState } from "react";
+import { BillDialogFooter } from "@/components/bills/bill-dialog-footer";
+import { BillEditError } from "@/components/bills/bill-edit-error";
+import { PlanSelect } from "@/components/bills/plan-select";
 
 export function ChangePlanForm({
   bill,
@@ -20,9 +16,7 @@ export function ChangePlanForm({
   plan: string;
   onDone: () => void;
 }) {
-  const plans = useQuery(
-    plansQuery(bill.kind === "tv" ? "tv" : "data", bill.provider),
-  );
+  const plans = useQuery(plansQuery(bill.kind === "tv" ? "tv" : "data", bill.provider));
   const [picked, setPicked] = useState(plan);
   const update = useUpdateBill(bill.id);
   const id = useId();
@@ -37,8 +31,7 @@ export function ChangePlanForm({
       <DialogHeader>
         <DialogTitle>Change plan</DialogTitle>
         <DialogDescription>
-          Stark buys this plan from {bill.provider} each time {bill.label}{" "}
-          renews.
+          Stark buys this plan from {bill.provider} each time {bill.label} renews.
         </DialogDescription>
       </DialogHeader>
       <Field>
@@ -55,10 +48,7 @@ export function ChangePlanForm({
         />
         {update.error ? <BillEditError error={update.error} /> : null}
       </Field>
-      <BillDialogFooter
-        disabled={picked === plan || update.isPending}
-        pending={update.isPending}
-      >
+      <BillDialogFooter disabled={picked === plan || update.isPending} pending={update.isPending}>
         Save plan
       </BillDialogFooter>
     </form>

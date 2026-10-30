@@ -1,4 +1,3 @@
-import { BillEditError } from "@/components/bills/bill-edit-error";
 import { type Bill, useDeleteBill } from "@stark/api";
 import {
   AlertDialog,
@@ -12,6 +11,7 @@ import {
 import { Button } from "@stark/ui/components/button";
 import { Spinner } from "@stark/ui/components/spinner";
 import { useNavigate } from "@tanstack/react-router";
+import { BillEditError } from "@/components/bills/bill-edit-error";
 
 export function RemoveBillDialog({
   bill,
@@ -30,8 +30,7 @@ export function RemoveBillDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Remove {bill.label}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Stark won’t be able to pay it any more. Its history stays in your
-            activity.
+            Stark won’t be able to pay it any more. Its history stays in your activity.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {remove.error ? <BillEditError error={remove.error} /> : null}

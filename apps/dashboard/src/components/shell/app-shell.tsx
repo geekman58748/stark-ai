@@ -1,7 +1,7 @@
+import type { ReactNode } from "react";
 import { AppHeader } from "@/components/shell/app-header";
 import { Dock } from "@/components/shell/dock";
 import { TabBar } from "@/components/shell/tab-bar";
-import type { ReactNode } from "react";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (

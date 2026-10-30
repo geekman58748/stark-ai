@@ -1,8 +1,8 @@
+import type { Bill, Receipt } from "@stark/api";
+import { Card } from "@stark/ui/components/card";
 import { BillStats } from "@/components/bills/bill-stats";
 import { MeterHeadline } from "@/components/bills/meter-headline";
 import { PaymentHeadline } from "@/components/bills/payment-headline";
-import type { Bill, Receipt } from "@stark/api";
-import { Card } from "@stark/ui/components/card";
 
 export function BillOverview({
   bill,

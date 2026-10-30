@@ -9,8 +9,7 @@ import { SpendingLimitsForm } from "@/components/settings/spending-limits-form";
 import { PageTitle } from "@/components/shell/page-title";
 
 export const Route = createFileRoute("/_app/settings")({
-  loader: ({ context }) =>
-    context.queryClient.query({ ...limitsQuery(), staleTime: "static" }),
+  loader: ({ context }) => context.queryClient.query({ ...limitsQuery(), staleTime: "static" }),
   head: () => ({ meta: [{ title: "Settings · Stark" }] }),
   component: Settings,
 });

@@ -1,9 +1,9 @@
-import { BalanceFigure } from "@/components/wallet/balance-figure";
-import { WalletActions } from "@/components/wallet/wallet-actions";
-import { WalletStats } from "@/components/wallet/wallet-stats";
 import type { Wallet } from "@stark/api";
 import { Card } from "@stark/ui/components/card";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
+import { BalanceFigure } from "@/components/wallet/balance-figure";
+import { WalletActions } from "@/components/wallet/wallet-actions";
+import { WalletStats } from "@/components/wallet/wallet-stats";
 
 export function WalletBalanceCard({ wallet }: { wallet: Wallet }) {
   return (

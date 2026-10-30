@@ -11,13 +11,7 @@ import { Icons } from "@stark/ui/components/icons";
 
 export type BillEdit = "rename" | "plan" | "remove";
 
-export function BillEditMenu({
-  bill,
-  onEdit,
-}: {
-  bill: Bill;
-  onEdit: (edit: BillEdit) => void;
-}) {
+export function BillEditMenu({ bill, onEdit }: { bill: Bill; onEdit: (edit: BillEdit) => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="secondary" />}>
@@ -25,19 +19,12 @@ export function BillEditMenu({
         <Icons.ChevronDown size={14} />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="min-w-44">
-        <DropdownMenuItem onClick={() => onEdit("rename")}>
-          Rename
-        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onEdit("rename")}>Rename</DropdownMenuItem>
         {bill.plan ? (
-          <DropdownMenuItem onClick={() => onEdit("plan")}>
-            Change plan
-          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onEdit("plan")}>Change plan</DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          onClick={() => onEdit("remove")}
-        >
+        <DropdownMenuItem variant="destructive" onClick={() => onEdit("remove")}>
           Remove bill
         </DropdownMenuItem>
       </DropdownMenuContent>

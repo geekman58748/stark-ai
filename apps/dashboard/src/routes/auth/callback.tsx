@@ -36,9 +36,7 @@ function AuthCallback() {
     const search = window.location.search;
     if (new URLSearchParams(search).get("error")) {
       setPending(false);
-      setError(
-        "Google did not finish signing you in. Try again, or use your email.",
-      );
+      setError("Google did not finish signing you in. Try again, or use your email.");
       return;
     }
 
@@ -46,9 +44,7 @@ function AuthCallback() {
       .sessionFromCallback(search)
       .then((session) => {
         if (!session) {
-          setError(
-            "That sign-in link has expired. Start again and it will work.",
-          );
+          setError("That sign-in link has expired. Start again and it will work.");
           setPending(false);
           return;
         }
@@ -57,11 +53,7 @@ function AuthCallback() {
         window.history.replaceState({}, "", window.location.pathname);
         return navigate({ to: "/" });
       })
-      .catch((err) =>
-        setError(
-          err instanceof Error ? err.message : "Could not finish signing in.",
-        ),
-      )
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not finish signing in."))
       .finally(() => setPending(false));
   }, [navigate]);
 
@@ -73,11 +65,7 @@ function AuthCallback() {
       <div className="w-full max-w-[400px]">
         <CallbackBrand />
         <CallbackTitle error={error} />
-        {error ? (
-          <CallbackError error={error} />
-        ) : (
-          <CallbackPending pending={pending} />
-        )}
+        {error ? <CallbackError error={error} /> : <CallbackPending pending={pending} />}
       </div>
     </div>
   );

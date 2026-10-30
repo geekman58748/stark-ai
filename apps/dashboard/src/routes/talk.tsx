@@ -1,3 +1,7 @@
+import { stateQuery } from "@stark/api";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { SpendNote } from "@/components/talk/spend-note";
 import { StageCaption } from "@/components/talk/stage-caption";
 import { StatusCards } from "@/components/talk/status-cards";
@@ -7,10 +11,6 @@ import { TranscriptCard } from "@/components/talk/transcript-card";
 import { TypeForm } from "@/components/talk/type-form";
 import { useVoiceSession } from "@/components/talk/use-voice-session";
 import { VoiceOrb } from "@/components/talk/voice-orb";
-import { stateQuery } from "@stark/api";
-import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { z } from "zod";
 
 export const Route = createFileRoute("/talk")({
   validateSearch: z.object({ q: z.string().optional() }),
@@ -33,11 +33,7 @@ function Talk() {
 
       <div className="relative mx-auto flex w-full max-w-120 flex-1 flex-col gap-5 lg:grid lg:max-w-6xl lg:grid-cols-[1fr_minmax(0,440px)] lg:items-center lg:gap-16 lg:py-10">
         <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center lg:gap-8">
-          <VoiceOrb
-            stage={talk.stage}
-            live={live}
-            onTap={talk.handleMicrophoneTap}
-          />
+          <VoiceOrb stage={talk.stage} live={live} onTap={talk.handleMicrophoneTap} />
           <StageCaption
             stage={talk.stage}
             canListen={talk.canListen}
@@ -49,15 +45,8 @@ function Talk() {
 
         <div className="contents lg:flex lg:flex-col lg:gap-5">
           {state ? <StatusCards state={state} /> : null}
-          <TranscriptCard
-            stage={talk.stage}
-            reply={talk.reply}
-            heard={talk.heard}
-          />
-          <TypeForm
-            thinking={talk.stage === "thinking"}
-            onSend={talk.handleTypedMessage}
-          />
+          <TranscriptCard stage={talk.stage} reply={talk.reply} heard={talk.heard} />
+          <TypeForm thinking={talk.stage === "thinking"} onSend={talk.handleTypedMessage} />
           <SpendNote />
         </div>
       </div>

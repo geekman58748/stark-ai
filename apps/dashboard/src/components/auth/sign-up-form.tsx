@@ -1,17 +1,14 @@
-import { FormError } from "@/components/auth/form-error";
-import { MethodIcon } from "@/components/auth/method-icon";
-import { MethodNote } from "@/components/auth/method-note";
-import { MethodPicker } from "@/components/auth/method-picker";
-import { type Method, METHODS } from "@/components/auth/methods";
-import {
-  type SignUpDetails,
-  SignUpEmailFields,
-} from "@/components/auth/sign-up-email-fields";
-import { authClient } from "@/lib/auth/auth-client";
 import { setAuthToken } from "@stark/api";
 import { Button } from "@stark/ui/components/button";
 import { useNavigate } from "@tanstack/react-router";
 import { type SubmitEvent, useState } from "react";
+import { FormError } from "@/components/auth/form-error";
+import { MethodIcon } from "@/components/auth/method-icon";
+import { MethodNote } from "@/components/auth/method-note";
+import { MethodPicker } from "@/components/auth/method-picker";
+import { METHODS, type Method } from "@/components/auth/methods";
+import { type SignUpDetails, SignUpEmailFields } from "@/components/auth/sign-up-email-fields";
+import { authClient } from "@/lib/auth/auth-client";
 
 const CTA: Record<Method, string> = {
   email: "Create account",
@@ -42,9 +39,7 @@ export function SignUpForm() {
       try {
         await authClient.signInWithGoogle();
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Could not reach Google.",
-        );
+        setError(err instanceof Error ? err.message : "Could not reach Google.");
         setPending(false);
       }
       return;
@@ -62,9 +57,7 @@ export function SignUpForm() {
       setAuthToken(session.token);
       await navigate({ to: "/" });
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not create the account.",
-      );
+      setError(err instanceof Error ? err.message : "Could not create the account.");
     } finally {
       setPending(false);
     }
@@ -72,11 +65,7 @@ export function SignUpForm() {
 
   return (
     <form className="mt-7 flex flex-col" onSubmit={handleSignUp}>
-      <MethodPicker
-        label="Sign-up method"
-        value={method}
-        onChange={setMethod}
-      />
+      <MethodPicker label="Sign-up method" value={method} onChange={setMethod} />
 
       <div className="mt-4 flex min-h-52 flex-col gap-3">
         {method === "email" ? (

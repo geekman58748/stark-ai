@@ -12,10 +12,7 @@ export function VoiceLine({
   children: ReactNode;
 }) {
   return (
-    <span
-      className={cn("voice-in", className)}
-      style={{ "--d": delay } as CSSProperties}
-    >
+    <span className={cn("voice-in", className)} style={{ "--d": delay } as CSSProperties}>
       {children}
     </span>
   );

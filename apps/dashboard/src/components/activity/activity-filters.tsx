@@ -1,5 +1,5 @@
-import type { ActivityFilter } from "@/lib/receipts/receipts";
 import { PillTabs } from "@stark/ui/components/pill-tabs";
+import type { ActivityFilter } from "@/lib/receipts/receipts";
 
 const filters: { value: ActivityFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -15,7 +15,5 @@ export function ActivityFilters({
   value: ActivityFilter;
   onChange: (value: ActivityFilter) => void;
 }) {
-  return (
-    <PillTabs label="Show" value={value} tabs={filters} onChange={onChange} />
-  );
+  return <PillTabs label="Show" value={value} tabs={filters} onChange={onChange} />;
 }

@@ -1,4 +1,7 @@
-import { BackLink } from "@/components/shell/back-link";
+import { activityQuery, billQuery, stateQuery } from "@stark/api";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { BillActions } from "@/components/bills/bill-actions";
 import type { BillEdit } from "@/components/bills/bill-edit-menu";
 import { BillHeader } from "@/components/bills/bill-header";
@@ -9,11 +12,8 @@ import { RecentTokens } from "@/components/bills/recent-tokens";
 import { RemoveBillDialog } from "@/components/bills/remove-bill-dialog";
 import { RenameBillDialog } from "@/components/bills/rename-bill-dialog";
 import { TopUpChart } from "@/components/bills/top-up-chart";
+import { BackLink } from "@/components/shell/back-link";
 import { Bills } from "@/lib/bills/bills";
-import { activityQuery, billQuery, stateQuery } from "@stark/api";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 
 export const Route = createFileRoute("/_app/bills/$billId")({
   loader: ({ context, params }) =>
@@ -42,18 +42,10 @@ function BillDetail() {
   return (
     <>
       <BackLink to="/bills">Bills</BackLink>
-      <BillHeader
-        bill={bill}
-        attention={status.attention}
-        firstPaid={firstPaid}
-      />
+      <BillHeader bill={bill} attention={status.attention} firstPaid={firstPaid} />
       <BillActions bill={bill} onEdit={setEditing} />
 
-      <RenameBillDialog
-        bill={bill}
-        open={editing === "rename"}
-        onClose={() => setEditing(null)}
-      />
+      <RenameBillDialog bill={bill} open={editing === "rename"} onClose={() => setEditing(null)} />
       {bill.plan ? (
         <ChangePlanDialog
           bill={bill}
@@ -62,11 +54,7 @@ function BillDetail() {
           onClose={() => setEditing(null)}
         />
       ) : null}
-      <RemoveBillDialog
-        bill={bill}
-        open={editing === "remove"}
-        onCancel={() => setEditing(null)}
-      />
+      <RemoveBillDialog bill={bill} open={editing === "remove"} onCancel={() => setEditing(null)} />
 
       <BillSectionsNav bill={bill} />
 

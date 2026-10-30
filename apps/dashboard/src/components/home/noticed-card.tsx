@@ -1,7 +1,7 @@
-import { NoticedItem } from "@/components/home/noticed-item";
 import type { Suggestion } from "@stark/api";
 import { Card } from "@stark/ui/components/card";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
+import { NoticedItem } from "@/components/home/noticed-item";
 
 export function NoticedCard({ suggestions }: { suggestions: Suggestion[] }) {
   return (

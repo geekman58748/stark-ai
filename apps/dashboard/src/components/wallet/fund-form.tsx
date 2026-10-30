@@ -1,4 +1,3 @@
-import { TestMoneyNote } from "@/components/wallet/test-money-note";
 import { errorCopy, useTopUp } from "@stark/api";
 import { AmountField } from "@stark/ui/components/amount-field";
 import { Button } from "@stark/ui/components/button";
@@ -7,6 +6,7 @@ import { Spinner } from "@stark/ui/components/spinner";
 import { formatNaira } from "@stark/utils/format";
 import { requestId } from "@stark/utils/id";
 import { useMemo, useState } from "react";
+import { TestMoneyNote } from "@/components/wallet/test-money-note";
 
 export function FundForm({ onDone }: { onDone: () => void }) {
   const [amount, setAmount] = useState(20000);
@@ -15,10 +15,7 @@ export function FundForm({ onDone }: { onDone: () => void }) {
   const key = useMemo(() => requestId("dep"), [amount]);
 
   const handleAddTestMoney = () =>
-    topUp.mutate(
-      { amount_ngn: amount, request_id: key },
-      { onSuccess: onDone },
-    );
+    topUp.mutate({ amount_ngn: amount, request_id: key }, { onSuccess: onDone });
 
   return (
     <div className="flex flex-col gap-6">
@@ -30,9 +27,7 @@ export function FundForm({ onDone }: { onDone: () => void }) {
       />
       <TestMoneyNote />
       {topUp.error ? (
-        <FieldError className="text-[13px]">
-          {errorCopy(topUp.error)}
-        </FieldError>
+        <FieldError className="text-[13px]">{errorCopy(topUp.error)}</FieldError>
       ) : null}
       <Button
         size="lg"

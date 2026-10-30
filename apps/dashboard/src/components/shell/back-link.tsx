@@ -3,13 +3,7 @@ import { Icons } from "@stark/ui/components/icons";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-export function BackLink({
-  to,
-  children,
-}: {
-  to: string;
-  children: ReactNode;
-}) {
+export function BackLink({ to, children }: { to: string; children: ReactNode }) {
   return (
     <Button
       variant="ghost"

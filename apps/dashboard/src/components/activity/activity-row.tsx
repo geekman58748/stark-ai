@@ -1,27 +1,17 @@
-import { ActivityRowStatus } from "@/components/activity/activity-row-status";
-import { Receipts } from "@/lib/receipts/receipts";
 import type { Receipt } from "@stark/api";
 import { listRowClass, RowText } from "@stark/ui/components/list-row";
 import { cn } from "@stark/ui/utils/cn";
 import { formatActivityTime, formatNaira } from "@stark/utils/format";
 import { Link } from "@tanstack/react-router";
+import { ActivityRowStatus } from "@/components/activity/activity-row-status";
+import { Receipts } from "@/lib/receipts/receipts";
 
-export function ActivityRow({
-  receipt,
-  selected,
-}: {
-  receipt: Receipt;
-  selected?: boolean;
-}) {
+export function ActivityRow({ receipt, selected }: { receipt: Receipt; selected?: boolean }) {
   return (
     <Link
       to="/activity"
       search={(prev) => ({ ...prev, receipt: receipt.id })}
-      className={cn(
-        listRowClass,
-        "py-2.5",
-        selected && "border-brand-warm/50 bg-surface-selected",
-      )}
+      className={cn(listRowClass, "py-2.5", selected && "border-brand-warm/50 bg-surface-selected")}
     >
       <span className="tabular w-11 text-xs text-muted-foreground">
         {formatActivityTime(receipt.created_at)}

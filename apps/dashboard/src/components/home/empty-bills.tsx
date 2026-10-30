@@ -16,16 +16,10 @@ export function EmptyBills() {
         <EmptyMedia variant="icon">
           <Icons.Bills size={16} />
         </EmptyMedia>
-        <EmptyDescription>
-          Add a bill and Stark starts watching it for you.
-        </EmptyDescription>
+        <EmptyDescription>Add a bill and Stark starts watching it for you.</EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
-        <Button
-          variant="secondary"
-          nativeButton={false}
-          render={<Link to="/bills/new" />}
-        >
+        <Button variant="secondary" nativeButton={false} render={<Link to="/bills/new" />}>
           <Icons.Add size={16} />
           Add your first bill
         </Button>

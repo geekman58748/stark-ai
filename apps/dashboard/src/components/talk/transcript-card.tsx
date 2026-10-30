@@ -1,10 +1,10 @@
+import type { VoiceReply } from "@stark/api";
+import { Card } from "@stark/ui/components/card";
+import { cn } from "@stark/ui/utils/cn";
 import { HeardLines } from "@/components/talk/heard-lines";
 import { ReplyLines } from "@/components/talk/reply-lines";
 import { TryLines } from "@/components/talk/try-lines";
 import type { Stage } from "@/lib/talk/types";
-import type { VoiceReply } from "@stark/api";
-import { Card } from "@stark/ui/components/card";
-import { cn } from "@stark/ui/utils/cn";
 
 export function TranscriptCard({
   stage,

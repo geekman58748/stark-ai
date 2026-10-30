@@ -1,9 +1,3 @@
-import { AddBillError } from "@/components/bills/add-bill-error";
-import { BillKindChips } from "@/components/bills/bill-kind-chips";
-import { PendingProviderNote } from "@/components/bills/pending-provider-note";
-import { PlanField } from "@/components/bills/plan-field";
-import { ProviderField } from "@/components/bills/provider-field";
-import { BillKinds } from "@/lib/bills/bill-kinds";
 import { type Bill, type BillKind, plansQuery, useAddBill } from "@stark/api";
 import { Button } from "@stark/ui/components/button";
 import { FieldGroup } from "@stark/ui/components/field";
@@ -11,6 +5,12 @@ import { Spinner } from "@stark/ui/components/spinner";
 import { TextField } from "@stark/ui/components/text-field";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, type SubmitEvent, useState } from "react";
+import { AddBillError } from "@/components/bills/add-bill-error";
+import { BillKindChips } from "@/components/bills/bill-kind-chips";
+import { PendingProviderNote } from "@/components/bills/pending-provider-note";
+import { PlanField } from "@/components/bills/plan-field";
+import { ProviderField } from "@/components/bills/provider-field";
+import { BillKinds } from "@/lib/bills/bill-kinds";
 
 export function BillForm({
   onAdded,
@@ -67,11 +67,7 @@ export function BillForm({
       <FieldGroup className="gap-6">
         <BillKindChips kind={kind} onPick={handleKindChange} />
 
-        <ProviderField
-          kind={kind}
-          provider={provider}
-          onChange={handleProviderChange}
-        />
+        <ProviderField kind={kind} provider={provider} onChange={handleProviderChange} />
 
         <TextField
           label={BillKinds.referenceLabel[kind]}
@@ -84,23 +80,12 @@ export function BillForm({
         />
 
         {sellsPlans ? (
-          <PlanField
-            plans={plans.data}
-            provider={provider}
-            value={plan}
-            onChange={setPlan}
-          />
+          <PlanField plans={plans.data} provider={provider} value={plan} onChange={setPlan} />
         ) : null}
 
-        <TextField
-          label="Call it"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-        />
+        <TextField label="Call it" value={label} onChange={(e) => setLabel(e.target.value)} />
 
-        {kind === "internet" || kind === "water" ? (
-          <PendingProviderNote />
-        ) : null}
+        {kind === "internet" || kind === "water" ? <PendingProviderNote /> : null}
 
         {footer}
 
@@ -110,9 +95,7 @@ export function BillForm({
           type="submit"
           size="lg"
           block
-          disabled={
-            addBill.isPending || !reference.trim() || (sellsPlans && !plan)
-          }
+          disabled={addBill.isPending || !reference.trim() || (sellsPlans && !plan)}
         >
           {addBill.isPending ? <Spinner /> : null}
           {addBill.isPending ? "Adding…" : submitLabel}

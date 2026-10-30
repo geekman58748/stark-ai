@@ -1,5 +1,10 @@
-import { BackLink } from "@/components/shell/back-link";
-import { PageTitle } from "@/components/shell/page-title";
+import { limitsQuery, stateQuery, usePayBill } from "@stark/api";
+import { AmountField } from "@stark/ui/components/amount-field";
+import { Card } from "@stark/ui/components/card";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { z } from "zod";
 import { BillPicker } from "@/components/pay/bill-picker";
 import { LimitHint } from "@/components/pay/limit-hint";
 import { NothingToPay } from "@/components/pay/nothing-to-pay";
@@ -8,23 +13,17 @@ import { PayResult } from "@/components/pay/pay-result";
 import { PayStats } from "@/components/pay/pay-stats";
 import { PlanPriceCard } from "@/components/pay/plan-price-card";
 import { Refused } from "@/components/pay/refused";
+import { BackLink } from "@/components/shell/back-link";
+import { PageTitle } from "@/components/shell/page-title";
 import { Bills } from "@/lib/bills/bills";
 import { PaymentLimits } from "@/lib/wallet/payment-limits";
-import { limitsQuery, stateQuery, usePayBill } from "@stark/api";
-import { AmountField } from "@stark/ui/components/amount-field";
-import { Card } from "@stark/ui/components/card";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { z } from "zod";
 
 export const Route = createFileRoute("/_app/pay")({
   validateSearch: z.object({
     bill: z.string().optional(),
     amount: z.number().int().positive().optional(),
   }),
-  loader: ({ context }) =>
-    context.queryClient.query({ ...limitsQuery(), staleTime: "static" }),
+  loader: ({ context }) => context.queryClient.query({ ...limitsQuery(), staleTime: "static" }),
   head: () => ({ meta: [{ title: "Pay a bill · Stark" }] }),
   component: Pay,
 });
@@ -69,30 +68,19 @@ function Pay() {
     pay.reset();
   };
 
-  const handlePay = () =>
-    bill && pay.mutate({ bill_id: bill.id, amount_ngn: amount });
+  const handlePay = () => bill && pay.mutate({ bill_id: bill.id, amount_ngn: amount });
 
   return (
     <div className="flex w-full max-w-140 flex-col gap-5 self-center">
       <BackLink to="/">Home</BackLink>
       <PageTitle>Pay a bill</PageTitle>
 
-      <BillPicker
-        bills={payable}
-        state={state}
-        value={billId}
-        onValueChange={handleBillChange}
-      />
+      <BillPicker bills={payable} state={state} value={billId} onValueChange={handleBillChange} />
 
       {bill && Bills.fixedAmount(bill) ? (
         <PlanPriceCard amount={amount} provider={bill.provider} />
       ) : (
-        <AmountField
-          label="Amount"
-          value={typed}
-          onChange={handleAmountChange}
-          presets={presets}
-        />
+        <AmountField label="Amount" value={typed} onChange={handleAmountChange} presets={presets} />
       )}
 
       {pay.data ? (
@@ -101,9 +89,7 @@ function Pay() {
         <Card>
           <PayStats remaining={limits.remaining_cap_ngn} amount={amount} />
           <LimitHint hint={hint} />
-          {pay.error ? (
-            <Refused error={pay.error} onPay={handlePayOffer} />
-          ) : null}
+          {pay.error ? <Refused error={pay.error} onPay={handlePayOffer} /> : null}
           <PayButton
             amount={amount}
             pending={pay.isPending}

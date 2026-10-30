@@ -1,14 +1,8 @@
-import { BillIcon } from "@/components/bills/bill-icon";
 import type { Bill } from "@stark/api";
 import { StatusPill } from "@stark/ui/components/status-pill";
+import { BillIcon } from "@/components/bills/bill-icon";
 
-export function BillTitle({
-  bill,
-  attention,
-}: {
-  bill: Bill;
-  attention: boolean;
-}) {
+export function BillTitle({ bill, attention }: { bill: Bill; attention: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
       <BillIcon bill={bill} />

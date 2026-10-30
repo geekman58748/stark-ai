@@ -1,14 +1,10 @@
+import { cn } from "@stark/ui/utils/cn";
+import { Link } from "@tanstack/react-router";
 import type { tabs } from "@/components/shell/tabs";
 import { usePath } from "@/components/shell/use-path";
 import { NavMatch } from "@/lib/navigation/nav-match";
-import { cn } from "@stark/ui/utils/cn";
-import { Link } from "@tanstack/react-router";
 
-export function DockTab({
-  tab: { to, label, icon: Icon, exact },
-}: {
-  tab: (typeof tabs)[number];
-}) {
+export function DockTab({ tab: { to, label, icon: Icon, exact } }: { tab: (typeof tabs)[number] }) {
   const path = usePath();
   return (
     <Link

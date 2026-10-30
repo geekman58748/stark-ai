@@ -1,4 +1,3 @@
-import { BillKinds } from "@/lib/bills/bill-kinds";
 import type { BillKind } from "@stark/api";
 import { Field, FieldLabel } from "@stark/ui/components/field";
 import {
@@ -9,6 +8,7 @@ import {
   SelectValue,
 } from "@stark/ui/components/select";
 import { useId } from "react";
+import { BillKinds } from "@/lib/bills/bill-kinds";
 
 export function ProviderField({
   kind,

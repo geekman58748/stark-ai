@@ -1,14 +1,14 @@
+import { useVoice, useVoiceAudio, type VoiceReply } from "@stark/api";
+import { useEffect, useRef, useState } from "react";
 import { useClipRecorder } from "@/components/talk/use-clip-recorder";
 import { useSpeaker } from "@/components/talk/use-speaker";
+import { SleepIntent } from "@/lib/speech/sleep-intent";
+import type { Recognition } from "@/lib/speech/speech-recognizer";
+import { SpeechRecognizer } from "@/lib/speech/speech-recognizer";
 import { AudioRecording } from "@/lib/talk/audio-recording";
 import { MicErrors } from "@/lib/talk/mic-errors";
 import { StarkAddress } from "@/lib/talk/stark-address";
 import type { Stage } from "@/lib/talk/types";
-import { SleepIntent } from "@/lib/speech/sleep-intent";
-import { SpeechRecognizer } from "@/lib/speech/speech-recognizer";
-import type { Recognition } from "@/lib/speech/speech-recognizer";
-import { useVoice, useVoiceAudio, type VoiceReply } from "@stark/api";
-import { useEffect, useRef, useState } from "react";
 
 const RESTART_MS = 350;
 
@@ -140,8 +140,7 @@ export function useVoiceSession(q: string | undefined) {
     // Inside a session the words are addressed without hearing "Stark" again —
     // the same prefix typing and `?q=` already use. Outside one the transcript
     // goes exactly as heard, so the server's wake gate still decides.
-    const transcript =
-      opts.address || inSession() ? StarkAddress.apply(said) : said;
+    const transcript = opts.address || inSession() ? StarkAddress.apply(said) : said;
     voice.mutate(transcript, {
       onSuccess: (res) => {
         if (res.ignored) {
@@ -149,9 +148,7 @@ export function useVoiceSession(q: string | undefined) {
           // wake.py's alias set is tuned against.
           if (import.meta.env.DEV) console.debug("[wake] ignored:", said);
           closeIdle();
-          setNotice(
-            "Start with “Hey Stark” — then say what you need; typos and accents are fine.",
-          );
+          setNotice("Start with “Hey Stark” — then say what you need; typos and accents are fine.");
           return;
         }
         setReply(res);
@@ -282,10 +279,7 @@ export function useVoiceSession(q: string | undefined) {
   );
 
   useEffect(
-    () =>
-      setCanListen(
-        SpeechRecognizer.create() !== null || AudioRecording.supported(),
-      ),
+    () => setCanListen(SpeechRecognizer.create() !== null || AudioRecording.supported()),
     [],
   );
 
@@ -297,13 +291,10 @@ export function useVoiceSession(q: string | undefined) {
       if (document.visibilityState !== "hidden" || !awake.current) return;
       endSession();
       go("idle");
-      setNotice(
-        "Asleep — the mic stops while this tab is hidden. Tap to wake me.",
-      );
+      setNotice("Asleep — the mic stops while this tab is hidden. Tap to wake me.");
     };
     document.addEventListener("visibilitychange", handleTabHidden);
-    return () =>
-      document.removeEventListener("visibilitychange", handleTabHidden);
+    return () => document.removeEventListener("visibilitychange", handleTabHidden);
   }, []);
 
   useEffect(() => {

@@ -1,5 +1,5 @@
-import type { StatusDisplay } from "@/lib/receipts/receipts";
 import { cn } from "@stark/ui/utils/cn";
+import type { StatusDisplay } from "@/lib/receipts/receipts";
 
 export function ActivityRowStatus({ status }: { status: StatusDisplay }) {
   return (

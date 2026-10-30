@@ -6,13 +6,7 @@ import { formatNaira } from "@stark/utils/format";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 /** A refusal explains the rule that stopped it, and offers what Stark can pay instead. */
-export function Refused({
-  error,
-  onPay,
-}: {
-  error: Error;
-  onPay: (amount: number) => void;
-}) {
+export function Refused({ error, onPay }: { error: Error; onPay: (amount: number) => void }) {
   const { data: limits } = useSuspenseQuery(limitsQuery());
   const offer = isApiError(error, "over_per_payment_cap")
     ? limits.per_payment_cap_ngn

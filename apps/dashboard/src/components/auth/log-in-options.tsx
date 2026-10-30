@@ -1,9 +1,9 @@
+import { useState } from "react";
 import { FormError } from "@/components/auth/form-error";
 import { OrDivider } from "@/components/auth/or-divider";
 import { SignInOption } from "@/components/auth/sign-in-option";
 import { authClient } from "@/lib/auth/auth-client";
 import type { SignInMethod } from "@/lib/auth/types";
-import { useState } from "react";
 
 export function LogInOptions({
   lastUsed,

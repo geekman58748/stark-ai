@@ -1,7 +1,7 @@
-import { ActivityRow } from "@/components/activity/activity-row";
 import type { Receipt } from "@stark/api";
 import { Empty, EmptyDescription } from "@stark/ui/components/empty";
 import { RowList } from "@stark/ui/components/list-row";
+import { ActivityRow } from "@/components/activity/activity-row";
 
 export function MoneyMoves({ moves }: { moves: Receipt[] }) {
   return (

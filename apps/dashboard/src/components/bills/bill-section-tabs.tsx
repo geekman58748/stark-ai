@@ -1,5 +1,5 @@
-import { type BillSection, BillSections } from "@/lib/bills/bill-sections";
 import { PillTabs } from "@stark/ui/components/pill-tabs";
+import { type BillSection, BillSections } from "@/lib/bills/bill-sections";
 
 export function BillSectionTabs({
   value,

@@ -21,10 +21,7 @@ export function AuthIntro({
       </h1>
       <p className="m-0 mt-2.5 text-[14px] text-fg-2">
         {prompt}{" "}
-        <Link
-          to={link.to}
-          className="font-medium text-brand no-underline hover:text-brand-warm"
-        >
+        <Link to={link.to} className="font-medium text-brand no-underline hover:text-brand-warm">
           {link.label}
         </Link>
       </p>

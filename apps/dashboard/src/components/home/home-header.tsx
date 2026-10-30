@@ -1,13 +1,7 @@
 import { StatusPill } from "@stark/ui/components/status-pill";
 import { greeting } from "@stark/utils/format";
 
-export function HomeHeader({
-  firstName,
-  needing,
-}: {
-  firstName: string;
-  needing: number;
-}) {
+export function HomeHeader({ firstName, needing }: { firstName: string; needing: number }) {
   const headline =
     needing === 0
       ? "Everything’s covered"

@@ -1,18 +1,17 @@
-import { LimitsActions } from "@/components/settings/limits-actions";
-import { LimitsDescription } from "@/components/settings/limits-description";
-import { LimitsSavedNote } from "@/components/settings/limits-saved-note";
 import { errorCopy, type Limits, useUpdateLimits } from "@stark/api";
 import { AmountField } from "@stark/ui/components/amount-field";
 import { Card } from "@stark/ui/components/card";
 import { FieldError, FieldGroup } from "@stark/ui/components/field";
 import { type SubmitEvent, useState } from "react";
+import { LimitsActions } from "@/components/settings/limits-actions";
+import { LimitsDescription } from "@/components/settings/limits-description";
+import { LimitsSavedNote } from "@/components/settings/limits-saved-note";
 
 export function SpendingLimitsForm({ limits }: { limits: Limits }) {
   const [monthly, setMonthly] = useState(limits.monthly_cap_ngn);
   const [per, setPer] = useState(limits.per_payment_cap_ngn);
   const update = useUpdateLimits();
-  const dirty =
-    monthly !== limits.monthly_cap_ngn || per !== limits.per_payment_cap_ngn;
+  const dirty = monthly !== limits.monthly_cap_ngn || per !== limits.per_payment_cap_ngn;
   const invalid = monthly <= 0 || per <= 0 || per > monthly;
 
   const handleSaveLimits = (event: SubmitEvent<HTMLFormElement>) => {
@@ -54,16 +53,12 @@ export function SpendingLimitsForm({ limits }: { limits: Limits }) {
             onChange={handlePerPaymentChange}
             presets={[5000, 10000, 20000]}
             error={
-              per > monthly
-                ? "A single payment can’t be more than the monthly limit."
-                : undefined
+              per > monthly ? "A single payment can’t be more than the monthly limit." : undefined
             }
           />
           <LimitsDescription spent={limits.spent_ngn} />
           {update.error ? (
-            <FieldError className="text-[13px]">
-              {errorCopy(update.error)}
-            </FieldError>
+            <FieldError className="text-[13px]">{errorCopy(update.error)}</FieldError>
           ) : null}
           {update.isSuccess && !dirty ? <LimitsSavedNote /> : null}
           {dirty ? (

@@ -1,14 +1,8 @@
-import { BillKinds } from "@/lib/bills/bill-kinds";
 import type { Bill } from "@stark/api";
 import { formatLongDate, maskReference } from "@stark/utils/format";
+import { BillKinds } from "@/lib/bills/bill-kinds";
 
-export function BillFacts({
-  bill,
-  firstPaid,
-}: {
-  bill: Bill;
-  firstPaid: string | undefined;
-}) {
+export function BillFacts({ bill, firstPaid }: { bill: Bill; firstPaid: string | undefined }) {
   return (
     <p className="m-0 flex flex-wrap gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground">
       <span>{BillKinds.label(bill.kind)}</span>

@@ -1,10 +1,10 @@
-import { sessionStore } from "@/lib/auth/session-store";
 import { api, setAuthToken } from "@stark/api";
 import { Button } from "@stark/ui/components/button";
 import { FieldError } from "@stark/ui/components/field";
 import { Spinner } from "@stark/ui/components/spinner";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { sessionStore } from "@/lib/auth/session-store";
 
 export function SignOut() {
   const navigate = useNavigate();

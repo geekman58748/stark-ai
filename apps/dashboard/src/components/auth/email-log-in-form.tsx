@@ -1,12 +1,12 @@
+import { setAuthToken } from "@stark/api";
+import { Button } from "@stark/ui/components/button";
+import { useNavigate } from "@tanstack/react-router";
+import { type SubmitEvent, useState } from "react";
 import { Field } from "@/components/auth/field";
 import { FormError } from "@/components/auth/form-error";
 import { OrDivider } from "@/components/auth/or-divider";
 import { PasswordField } from "@/components/auth/password-field";
 import { authClient } from "@/lib/auth/auth-client";
-import { setAuthToken } from "@stark/api";
-import { Button } from "@stark/ui/components/button";
-import { useNavigate } from "@tanstack/react-router";
-import { type SubmitEvent, useState } from "react";
 
 export function EmailLogInForm({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();

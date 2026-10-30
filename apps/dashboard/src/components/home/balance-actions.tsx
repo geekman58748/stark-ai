@@ -7,11 +7,7 @@ export function BalanceActions() {
       <Button nativeButton={false} render={<Link to="/wallet/add" />}>
         Add test money
       </Button>
-      <Button
-        variant="secondary"
-        nativeButton={false}
-        render={<Link to="/wallet" />}
-      >
+      <Button variant="secondary" nativeButton={false} render={<Link to="/wallet" />}>
         Wallet
       </Button>
     </div>

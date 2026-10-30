@@ -1,6 +1,6 @@
-import { PaymentMode } from "@/lib/receipts/payment-mode";
 import { CopyButton } from "@stark/ui/components/copy-button";
 import { formatToken } from "@stark/utils/format";
+import { PaymentMode } from "@/lib/receipts/payment-mode";
 
 export function TokenLine({ token, note }: { token: string; note?: string }) {
   return (
@@ -10,9 +10,7 @@ export function TokenLine({ token, note }: { token: string; note?: string }) {
           {formatToken(token)}
         </span>
         <span className="text-xs text-muted-foreground">
-          {[note, PaymentMode.live ? null : "sample token"]
-            .filter(Boolean)
-            .join(" · ")}
+          {[note, PaymentMode.live ? null : "sample token"].filter(Boolean).join(" · ")}
         </span>
       </span>
       <CopyButton value={token.replace(/\s+/g, "")} />

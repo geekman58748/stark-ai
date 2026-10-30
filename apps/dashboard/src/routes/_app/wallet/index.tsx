@@ -1,10 +1,10 @@
-import { PageTitle } from "@/components/shell/page-title";
-import { MoneyMoves } from "@/components/wallet/money-moves";
-import { WalletBalanceCard } from "@/components/wallet/wallet-balance-card";
 import { activityQuery, walletQuery } from "@stark/api";
 import { SectionHeading } from "@stark/ui/components/section-heading";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { PageTitle } from "@/components/shell/page-title";
+import { MoneyMoves } from "@/components/wallet/money-moves";
+import { WalletBalanceCard } from "@/components/wallet/wallet-balance-card";
 
 export const Route = createFileRoute("/_app/wallet/")({
   loader: ({ context }) =>
@@ -19,9 +19,7 @@ export const Route = createFileRoute("/_app/wallet/")({
 function WalletPage() {
   const { data: wallet } = useSuspenseQuery(walletQuery());
   const { data: activity } = useSuspenseQuery(activityQuery());
-  const moves = activity.filter(
-    (r) => r.type === "deposit" || r.type === "withdrawal",
-  );
+  const moves = activity.filter((r) => r.type === "deposit" || r.type === "withdrawal");
 
   return (
     <>

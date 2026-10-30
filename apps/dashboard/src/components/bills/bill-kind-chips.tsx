@@ -1,6 +1,6 @@
-import { BillKinds } from "@/lib/bills/bill-kinds";
 import type { BillKind } from "@stark/api";
 import { ChipGroup, ChoiceChip } from "@stark/ui/components/choice-chip";
+import { BillKinds } from "@/lib/bills/bill-kinds";
 
 export function BillKindChips({
   kind,

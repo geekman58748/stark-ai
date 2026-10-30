@@ -13,9 +13,7 @@ export function MethodNote({ method }: { method: Exclude<Method, "email"> }) {
       <span className="grid size-10 place-items-center rounded-xl bg-brand-wash text-brand-warm">
         <MethodIcon method={method} />
       </span>
-      <p className="m-0 max-w-[26ch] text-[14px] leading-relaxed text-fg-2">
-        {COPY[method]}
-      </p>
+      <p className="m-0 max-w-[26ch] text-[14px] leading-relaxed text-fg-2">{COPY[method]}</p>
     </div>
   );
 }

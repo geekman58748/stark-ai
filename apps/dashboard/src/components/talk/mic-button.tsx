@@ -1,7 +1,7 @@
-import type { Stage } from "@/lib/talk/types";
 import { Button } from "@stark/ui/components/button";
 import { Icons } from "@stark/ui/components/icons";
 import { cn } from "@stark/ui/utils/cn";
+import type { Stage } from "@/lib/talk/types";
 
 export function MicButton({
   stage,

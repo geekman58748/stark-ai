@@ -1,9 +1,9 @@
-import { PayResultActions } from "@/components/pay/pay-result-actions";
-import { TokenLine } from "@/components/pay/token-line";
 import type { Bill, Receipt } from "@stark/api";
 import { Card } from "@stark/ui/components/card";
 import { IconTile } from "@stark/ui/components/icon-tile";
 import { Icons } from "@stark/ui/components/icons";
+import { PayResultActions } from "@/components/pay/pay-result-actions";
+import { TokenLine } from "@/components/pay/token-line";
 
 export function PayResult({
   receipt,
@@ -33,15 +33,11 @@ export function PayResult({
   return (
     <Card aria-live="polite">
       <div className="flex items-center gap-3">
-        <IconTile>
-          {delivered ? <Icons.Check size={16} /> : <Icons.Clock size={16} />}
-        </IconTile>
+        <IconTile>{delivered ? <Icons.Check size={16} /> : <Icons.Clock size={16} />}</IconTile>
         <span className="font-serif text-2xl">{title}</span>
       </div>
       {receipt.token ? <TokenLine token={receipt.token} /> : null}
-      {body ? (
-        <span className="text-xs text-muted-foreground">{body}</span>
-      ) : null}
+      {body ? <span className="text-xs text-muted-foreground">{body}</span> : null}
       <PayResultActions onAgain={onAgain} />
     </Card>
   );

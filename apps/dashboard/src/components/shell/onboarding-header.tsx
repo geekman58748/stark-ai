@@ -16,9 +16,7 @@ export function OnboardingHeader({ step }: { step: 1 | 2 | 3 }) {
         /
       </span>
       <span className="text-[13px] font-medium">Get started</span>
-      <span className="tabular ml-auto text-xs text-muted-foreground">
-        {step} of 3
-      </span>
+      <span className="tabular ml-auto text-xs text-muted-foreground">{step} of 3</span>
     </header>
   );
 }

@@ -1,7 +1,7 @@
-import { Receipts } from "@/lib/receipts/receipts";
 import type { Receipt } from "@stark/api";
 import { cn } from "@stark/ui/utils/cn";
 import { formatDateTime, formatNaira } from "@stark/utils/format";
+import { Receipts } from "@/lib/receipts/receipts";
 
 export function ReceiptAmount({ receipt }: { receipt: Receipt }) {
   return (

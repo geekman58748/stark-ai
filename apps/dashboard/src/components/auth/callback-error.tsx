@@ -5,10 +5,7 @@ export function CallbackError({ error }: { error: string }) {
   const navigate = useNavigate();
   return (
     <>
-      <p
-        role="alert"
-        className="m-0 mt-2.5 text-[14px] leading-relaxed text-fg-2"
-      >
+      <p role="alert" className="m-0 mt-2.5 text-[14px] leading-relaxed text-fg-2">
         {error}
       </p>
       <Button
@@ -23,10 +20,7 @@ export function CallbackError({ error }: { error: string }) {
       </Button>
       <p className="m-0 mt-3 text-[13px] text-faint">
         Or{" "}
-        <Link
-          to="/login"
-          className="font-medium text-brand no-underline hover:text-brand-warm"
-        >
+        <Link to="/login" className="font-medium text-brand no-underline hover:text-brand-warm">
           log in with your email
         </Link>
         .

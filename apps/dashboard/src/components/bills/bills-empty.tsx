@@ -7,11 +7,7 @@ export function BillsEmpty() {
   return (
     <Empty className="rounded-row border border-dashed border-white/12 p-6">
       <EmptyDescription>No bills here yet.</EmptyDescription>
-      <Button
-        variant="secondary"
-        nativeButton={false}
-        render={<Link to="/bills/new" />}
-      >
+      <Button variant="secondary" nativeButton={false} render={<Link to="/bills/new" />}>
         <Icons.Add size={16} />
         Add a bill
       </Button>
