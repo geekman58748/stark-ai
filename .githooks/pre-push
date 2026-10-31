@@ -1,0 +1,13 @@
+#!/bin/sh
+# Blocks secrets and droppers from ever being pushed.
+# Added after commit 011df7f pushed a committed .env, a VS Code auto-run task
+# and obfuscated droppers named `init`. Enable per clone with:
+#   git config core.hooksPath .githooks
+bad=$(git ls-tree -r --name-only HEAD | grep -E \
+  '(^|/)\.env$|(^|/)\.env\.(local|development|production|staging|test)$|(^|/)\.vscode/tasks\.json$|(^|/)init$|\.orc$|(^|/)config\.bat$' || true)
+if [ -n "$bad" ]; then
+  echo "pre-push BLOCKED - these must never be pushed:" >&2
+  echo "$bad" | sed 's/^/    /' >&2
+  exit 1
+fi
+exit 0
