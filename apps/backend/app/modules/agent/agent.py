@@ -96,6 +96,15 @@ Rules:
 - To switch an appliance, call switch_appliance with a device_id from the devices
   in the account. Never invent one. A question about a device, like "is the TV
   on?", is not an instruction: answer it and switch nothing.
+- A pronoun is a device. The devices in the account are the only things you can
+  switch, so when it lists exactly one, "it", "that" and "the telly" are that
+  device and "turn it off", "turn it on", "switch it on", "put it back on" and
+  "turn it back on" are all orders to call switch_appliance now. Measured
+  failure: with only
+  tv-plug-1 saved, "turn it back on" was answered "which device did you want to
+  switch on" instead of switch_appliance(device_id=tv-plug-1, on=true). Asking
+  which device when the account holds one is a refusal to do the job. Ask which
+  device only when two saved devices could be the one meant.
 - Say only what the plug reported. "The TV is on" needs status on and confirmed
   true. Standby means the socket is live but the set is asleep, so say that. If
   the plug did not answer, the TV did not change. When the result says simulated,
@@ -152,9 +161,11 @@ Rules:
 - For a hypothetical about money, do the arithmetic on the numbers in the account and
   answer with the figure. "If I pay A and top up B, how much is left?" is a
   subtraction, not a request to pay either one.
-- You can pay bills and nothing else. You cannot send or forward messages, receipts
-  or money to WhatsApp, Telegram, email or SMS. Say plainly that you cannot do that
-  yet, and never imply something was sent.
+- You can pay bills and switch the devices saved in the account, and nothing
+  else. You cannot send or forward messages, receipts or money to WhatsApp,
+  Telegram, email or SMS. Say plainly that you cannot do that yet, and never
+  imply something was sent. Switching a saved device is something you can do, so
+  never answer a switch order by saying you cannot control it.
 - When the account shows something worth acting on before being asked — units
   or days low, a bill renewing within the week, the monthly limit nearly used —
   end with one short sentence saying so, plainly. Once, not after every reply,
@@ -233,7 +244,7 @@ def asks_instead_of_paying(transcript: str) -> bool:
 # sentence that opens as a question keeps its question unless it is asking
 # permission ("can you turn it off" is the user saying yes in advance).
 _SWITCH_IMPERATIVE = re.compile(
-    r"\b(?:turn|switch|power|shut|cut)\b[^.]{0,24}\b(?:on|off)\b", re.IGNORECASE
+    r"\b(?:turn|switch|power|shut|cut)\b[^.]{0,24}\b(on|off)\b", re.IGNORECASE
 )
 _SWITCH_ASK = re.compile(
     r"^\s*(?:is|are|was|were|did|does|do|has|have|why|what|whats|what's|how|which"
@@ -254,7 +265,7 @@ def asks_instead_of_switching(transcript: str) -> bool:
     ("did you turn it off?"). Permission still switches.
     """
     said = _WAKE.sub("", transcript or "")
-    if not _SWITCH_IMPERATIVE.search(said):
+    if not _SWITCH_IMPERATIVE.search(said) and not _PUT_ON.search(said):
         return True
     if _SWITCH_ASK.search(said) and not _SWITCH_PERMISSION.search(said):
         return True
@@ -525,6 +536,18 @@ _SWITCH_RE = re.compile(
     r"\b(?:turn|switch|power|shut|cut)\b[^.]{0,24}\b(?:on|off)\b", re.IGNORECASE
 )
 _DEVICE_RE = re.compile(r"\b(tv|telly|television|plug|device|socket)\b", re.IGNORECASE)
+# "turn it back on" names the device the way people actually talk after they have
+# just mentioned it. Measured live 2026-11-04: without this, that sentence read as
+# no device at all, so the switch was never even offered and Stark asked which one.
+_PRONOUN_DEVICE = re.compile(r"\b(?:it|that|this|them)\b", re.IGNORECASE)
+# "Put it back on" is how people say it, and `put` is not one of the switch
+# verbs. Narrow on purpose — a pronoun or a device, then on/off — because
+# "put 500 on my meter" is a payment and must never read as a switch.
+_PUT_ON = re.compile(
+    r"\bput\s+(?:it|that|this|them|the\s+(?:tv|telly|television|plug|device|socket))"
+    r"\s+(?:back\s+)?(on|off)\b",
+    re.IGNORECASE,
+)
 _SWITCH_ON = re.compile(r"\b(on|off)\b", re.IGNORECASE)
 
 
@@ -579,6 +602,29 @@ def _default_amount(bill: dict) -> int:
     return int(price) if isinstance(price, int) and price > 0 else DEFAULT_AMOUNT_NGN
 
 
+def _switch_sentence(data: dict) -> str:
+    """What a switch may be said to have done, from the plug's own read-back.
+
+    Shared by the model's tool result and the deterministic path below it, so no
+    sentence can ever be more confident than the result behind it.
+    """
+    label = data.get("label", "The device")
+    status = data.get("status")
+    if not data.get("confirmed"):
+        return f"{label} didn't answer, so I can't confirm it changed."
+    if status == "on":
+        spoken = f"{label} is on."
+    elif status == "standby":
+        spoken = f"Power's on but {label} is still asleep. Its remote will wake it."
+    elif status == "off":
+        spoken = f"{label} is off."
+    else:
+        spoken = f"{label} is {status}."
+    if data.get("simulated"):
+        spoken += " That was the simulated plug."
+    return spoken
+
+
 class FakeModel:
     """Deterministic stand-in for the LLM.
 
@@ -603,8 +649,9 @@ class FakeModel:
         heard = user_text.lower()
         if _ACTIVITY_RE.search(heard):
             return ModelTurn(tool_calls=[ToolCall("recent_activity", {})])
-        if _DEVICE_RE.search(heard) and (_SWITCH_RE.search(heard)
-                                        or _SWITCH_ASK.search(heard)):
+        if (_DEVICE_RE.search(heard) or _PRONOUN_DEVICE.search(heard)) and (
+                _SWITCH_RE.search(heard) or _PUT_ON.search(heard)
+                or _SWITCH_ASK.search(heard)):
             # The device list is what names a device, so read it first, exactly
             # as a careful model would before calling switch_appliance.
             return ModelTurn(tool_calls=[ToolCall("list_devices", {})])
@@ -743,28 +790,9 @@ class FakeModel:
                 return ModelTurn(
                     content=error.get("message") or "That didn't work."
                 )
-            data = result.get("data") or {}
-            label = data.get("label", "The device")
-            status = data.get("status")
-            if not data.get("confirmed"):
-                return ModelTurn(
-                    content=(
-                        f"{label} didn't answer, so I can't confirm it changed."
-                    )
-                )
-            if status == "on":
-                spoken = f"{label} is on."
-            elif status == "standby":
-                spoken = (
-                    f"Power's on but {label} is still asleep. Its remote will wake it."
-                )
-            elif status == "off":
-                spoken = f"{label} is off."
-            else:
-                spoken = f"{label} is {status}."
-            if data.get("simulated"):
-                spoken += " That was the simulated plug."
-            return ModelTurn(content=spoken)
+            return ModelTurn(
+                content=_switch_sentence(result.get("data") or {})
+            )
 
         return ModelTurn(content="I couldn't do that one. Want to try again?")
 
@@ -1038,6 +1066,21 @@ class Agent:
                 snapshot["devices"] = self.toolbox.list_devices()
             except Exception:
                 snapshot["devices"] = []
+            # One saved device means a pronoun has an answer, and saying so is
+            # what turns "switch it on" into a call. Measured 2026-11-04 against
+            # the live model: with only tv-plug-1 saved, "turn it back on" and
+            # "switch it on" were answered "which device did you want to switch",
+            # because a prompt rule is advice and the account is the record. The
+            # note names the device, never its state, so nothing is claimed here
+            # that the plug has not read back.
+            saved = snapshot["devices"] if isinstance(snapshot["devices"], list) else []
+            if len(saved) == 1 and isinstance(saved[0], dict):
+                snapshot["note"] = (
+                    f"Only one device is saved: {saved[0].get('label')} "
+                    f"(device_id {saved[0].get('id')}). Any 'it', 'that' or other "
+                    "pronoun in a switch order means this device, so switch it "
+                    "instead of asking which one."
+                )
             # The owner's number lives only as the airtime bill's reference, which
             # is why the model used to answer "what's my phone number?" three
             # different ways in one conversation (measured 2026-10-24). Naming it
@@ -1096,6 +1139,11 @@ class Agent:
 
         try:
             applied = self._drive(messages, reply, effect, has_snapshot, transcript)
+            # A clear order for the only saved device has to end in a switch, not
+            # in the model talking itself out of one. Measured live 2026-11-04:
+            # "put it back on" came back "I cannot switch it on without a clear
+            # command" with one device saved and nothing left to disambiguate.
+            applied = self._do_the_obvious_switch(applied, transcript)
         except Exception as err:
             # The model is unreachable, timed out, or answered something that is
             # not a turn. The user still gets a sentence: the alternative is a
@@ -1115,6 +1163,54 @@ class Agent:
         if thread and applied.code != "model_unavailable":
             self.threads.remember(thread, transcript, applied.reply)
         return applied
+
+    def _unacted_switch(self, transcript: str) -> dict | None:
+        """The switch an unambiguous order asked for, if there is one.
+
+        Only the case with nothing left to reason about: one device saved and an
+        imperative switch phrase. Every other reading stays the model's job.
+        """
+        if asks_instead_of_switching(transcript):
+            return None
+        said = _WAKE.sub("", transcript or "")
+        direction = _PUT_ON.search(said) or _SWITCH_IMPERATIVE.search(said)
+        if direction is None:
+            return None
+        try:
+            devices = self.toolbox.list_devices()
+        except Exception:
+            return None
+        if len(devices) != 1 or not isinstance(devices[0], dict):
+            return None
+        return {
+            "device_id": devices[0].get("id", ""),
+            "on": direction.group(1).lower() == "on",
+        }
+
+    def _do_the_obvious_switch(self, reply: AgentReply, transcript: str) -> AgentReply:
+        """Do the order the model only talked about.
+
+        The switch goes through `_switch_appliance`, so it meets the same
+        registry check and the same read-back as any other switch — this path
+        can refuse or report an unconfirmed plug exactly as the model's can.
+        """
+        if "switch_appliance" in reply.actions:
+            return reply
+        arguments = self._unacted_switch(transcript)
+        if arguments is None:
+            return reply
+        try:
+            result = self._switch_appliance(arguments, transcript)
+        except Exception as err:  # a refusal lands the way a tool call's does
+            reply.reply = getattr(err, "message", "") or reply.reply
+            return reply
+        if not result.get("ok"):
+            error = result.get("error") or {}
+            reply.reply = error.get("message") or reply.reply
+            return reply
+        reply.actions.append("switch_appliance")
+        reply.reply = _switch_sentence(result.get("data") or {})
+        return reply
 
     def _drive(self, messages: list[dict], reply: AgentReply, effect: dict,
                has_snapshot: bool, transcript: str) -> AgentReply:

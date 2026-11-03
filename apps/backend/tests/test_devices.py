@@ -81,6 +81,15 @@ class DevicelessToolbox:
         raise AssertionError("no payment in a TV test")
 
 
+class RefusingModel:
+    """Answers in words and never calls a tool — the live failure of 2026-11-04."""
+
+    name = "refusing"
+
+    def turn(self, messages, tools):
+        return agent_mod.ModelTurn(content="Which device did you want to switch on?")
+
+
 def agent_for(toolbox) -> agent_mod.Agent:
     return agent_mod.Agent(
         model=agent_mod.FakeModel(),
@@ -163,6 +172,55 @@ class GateTests(unittest.TestCase):
         reply = agent_for(toolbox).respond("turn off the TV")
         self.assertEqual(toolbox.switch_calls, [("tv-plug-1", False)])
         self.assertEqual(reply.reply, "Living room TV is off.")
+
+    def agent_with_refusing_model(self, toolbox) -> agent_mod.Agent:
+        return agent_mod.Agent(
+            model=RefusingModel(),
+            toolbox=toolbox,
+            limits=agent_mod.Limits(monthly_cap_ngn=30_000, per_payment_cap_ngn=10_000,
+                                    allowed_meters=frozenset()),
+        )
+
+    def test_a_model_that_only_talks_still_turns_the_tv_back_on(self):
+        # Measured live 2026-11-04: with only tv-plug-1 saved, "put it back on"
+        # was answered "I cannot switch it on without a clear command". One
+        # device and an imperative leave nothing to ask about, so the order runs.
+        toolbox = DevicelessToolbox()
+        reply = self.agent_with_refusing_model(toolbox).respond("put it back on")
+        self.assertEqual(toolbox.switch_calls, [("tv-plug-1", True)])
+        self.assertEqual(reply.reply, "Living room TV is on.")
+
+    def test_put_it_back_on_switches_with_the_deterministic_model_too(self):
+        toolbox = DevicelessToolbox()
+        reply = agent_for(toolbox).respond("put it back on")
+        self.assertEqual(toolbox.switch_calls, [("tv-plug-1", True)])
+        self.assertEqual(reply.reply, "Living room TV is on.")
+
+    def test_a_question_is_never_rescued_into_a_switch(self):
+        toolbox = DevicelessToolbox()
+        reply = self.agent_with_refusing_model(toolbox).respond("is it on?")
+        self.assertEqual(toolbox.switch_calls, [])
+        self.assertIn("Which device", reply.reply)
+
+    def test_two_devices_are_not_guessed_at_even_for_an_order(self):
+        second = {"id": "plug-2", "label": "Bedroom plug", "kind": "plug"}
+        toolbox = DevicelessToolbox(devices=[TV, second])
+        reply = self.agent_with_refusing_model(toolbox).respond("turn it off")
+        self.assertEqual(toolbox.switch_calls, [])
+        self.assertIn("Which device", reply.reply)
+
+    def test_a_payment_that_says_put_on_is_not_a_switch(self):
+        # "put 500 on my meter" contains put and on; it must stay a payment.
+        self.assertTrue(agent_mod.asks_instead_of_switching("put 500 on my meter"))
+
+    def test_a_pronoun_switches_the_only_device_instead_of_asking(self):
+        # Measured live 2026-11-04: "hey stark turn it back on" answered "I can
+        # only switch devices that are listed" — the word "it" named no device,
+        # so the switch was never offered. One device makes it unambiguous.
+        toolbox = DevicelessToolbox()
+        reply = agent_for(toolbox).respond("turn it back on")
+        self.assertEqual(toolbox.switch_calls, [("tv-plug-1", True)])
+        self.assertEqual(reply.reply, "Living room TV is on.")
 
     def test_permission_still_switches(self):
         toolbox = DevicelessToolbox()
