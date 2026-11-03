@@ -17,6 +17,7 @@ from app.modules.auth import auth_controller
 from app.modules.approval import approval_controller
 from app.modules.bill import bill_controller
 from app.modules.control import control_controller
+from app.modules.demo import demo_controller
 from app.modules.health_checker import health_checker_controller
 from app.modules.limit import limit_controller
 from app.modules.payment import payment_controller
@@ -36,7 +37,7 @@ CONTROLLERS = (
     payment_controller, limit_controller, wallet_controller, suggestion_controller,
     telemetry_controller, voice_controller, telegram_controller, auth_controller,
     turnlog_controller, stub_controller, control_controller,
-    approval_controller,
+    approval_controller, demo_controller,
 )
 
 

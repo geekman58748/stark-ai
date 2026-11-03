@@ -418,6 +418,19 @@ approve. Nothing is paid unless you approve it within an hour."
 - The wait is `approval_window_minutes` on `/v1/limits`: one of 15, 30, 60 (default),
   360 or 1440, set with `PATCH /v1/limits` (`bad_limits` otherwise).
 
+### `GET /v1/demo`
+
+A made-up sample account for the public demo page (additive, 2026-11-03). **No
+`Authorization` needed**, no database read, and nothing can be paid from it.
+
+```json
+{ "state": State, "activity": Receipt[], "approvals": PaymentRequest[],
+  "limits": { "monthly_cap_ngn": 30000, "per_payment_cap_ngn": 10000 } }
+```
+
+Built from the same seed as `POST /v1/_stub/reset`, with timestamps that move with
+the clock, so it always has a renewal due and one request waiting.
+
 ### `GET /v1/wallet`
 
 ```json
@@ -837,3 +850,4 @@ Shapes will not change as these land. Only the values become real.
 | 2026-10-27 | **Backend on FastAPI**, organised per feature module (controller, service, DTOs); Swagger UI at `/docs`. Every shape and code is unchanged. Request bodies are JSON (as every client already sends) except `/v1/voice`, which still takes multipart; a body that is not JSON is `400 bad_request`. `PATCH /v1/bills` `renews_on: null` now clears the date as documented. `POST /v1/link/code` answers `409 not_configured` instead of a 500 when the bot has no owner account. |
 | 2026-11-03 | Pause: `GET /v1/controls`, `POST /v1/controls/pause`, `POST /v1/controls/resume`; `/v1/state` gains `paused`; new code `paused` (423), checked before every other payment rule. Telegram gains `/pause` and `/resume`. Additive only. |
 | 2026-11-03 | Approvals: `GET /v1/approvals`, `POST /v1/approvals/{id}/approve`, `POST /v1/approvals/{id}/deny`; `/v1/limits` gains `approval_window_minutes` (also patchable); `Receipt` gains `reason` for `declined` entries, which the agent now writes for refusals. New codes `unknown_request`, `request_closed`. Additive only. |
+| 2026-11-03 | `GET /v1/demo`: a public, read-only sample account (no auth). Additive only. |

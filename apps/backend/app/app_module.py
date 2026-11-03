@@ -18,6 +18,7 @@ from app.modules.auth.auth_service import AuthService
 from app.modules.bill.bill_service import BillService
 from app.modules.chain import vault_signer
 from app.modules.control.control_service import ControlService
+from app.modules.demo.demo_service import DemoService
 from app.modules.limit.limit_service import LimitService
 from app.modules.payment.bill_payment_service import BillPaymentService
 from app.modules.payment.payment_service import PaymentService
@@ -50,6 +51,7 @@ class AppModule:
         self.auth = AuthService(db)
         self.accounts = AccountService(self.auth, self.account_repository, self.receipts,
                                        self._build_agent)
+        self.demo = DemoService()
         self.controls = ControlService(self.accounts, self.account_repository)
         self.bills = BillService(self.accounts, self.account_repository, self.receipts)
         self.plans = PlanService()
