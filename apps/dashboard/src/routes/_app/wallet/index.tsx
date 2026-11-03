@@ -1,4 +1,4 @@
-import { activityQuery, walletQuery } from "@stark/api";
+import { activityQuery, walletQuery } from "@stark/api/queries";
 import { SectionHeading } from "@stark/ui/components/section-heading";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";

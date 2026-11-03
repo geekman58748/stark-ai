@@ -1,4 +1,4 @@
-import type { Plan } from "@stark/api";
+import type { Plan } from "@stark/api/types";
 import { Field, FieldLabel } from "@stark/ui/components/field";
 import { useId } from "react";
 import { PlanSelect } from "@/components/bills/plan-select";

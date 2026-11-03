@@ -1,4 +1,4 @@
-import type { BillKind } from "@stark/api";
+import type { BillKind } from "@stark/api/types";
 import type { IconName } from "@stark/ui/components/icons";
 
 export class BillKinds {

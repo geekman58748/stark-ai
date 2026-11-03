@@ -1,4 +1,4 @@
-import { activityQuery } from "@stark/api";
+import { activityQuery } from "@stark/api/queries";
 import { isToday } from "@stark/utils/format";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";

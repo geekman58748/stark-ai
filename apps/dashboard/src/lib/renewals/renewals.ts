@@ -1,22 +1,8 @@
-import type { DueBill } from "@stark/api";
+import type { DueBill } from "@stark/api/types";
 import { formatNaira } from "@stark/utils/format";
+import { format } from "date-fns";
 
 export class Renewals {
-  private static readonly MONTHS = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-
   static date(iso: string): Date | null {
     const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
     if (!match) return null;
@@ -25,7 +11,7 @@ export class Renewals {
 
   static day(iso: string): string | null {
     const date = Renewals.date(iso);
-    return date ? `${Renewals.MONTHS[date.getMonth()]} ${date.getDate()}` : null;
+    return date ? format(date, "MMM d") : null;
   }
 
   static when(daysUntil: number): string {

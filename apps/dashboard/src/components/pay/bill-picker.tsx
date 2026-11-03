@@ -1,4 +1,4 @@
-import type { Bill, State } from "@stark/api";
+import type { Bill, State } from "@stark/api/types";
 import { RadioList, RadioRow } from "@stark/ui/components/radio-row";
 import { BillKinds } from "@/lib/bills/bill-kinds";
 import { Bills } from "@/lib/bills/bills";

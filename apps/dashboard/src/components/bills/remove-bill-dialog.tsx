@@ -1,4 +1,5 @@
-import { type Bill, useDeleteBill } from "@stark/api";
+import { useDeleteBill } from "@stark/api/mutations";
+import type { Bill } from "@stark/api/types";
 import {
   AlertDialog,
   AlertDialogCancel,

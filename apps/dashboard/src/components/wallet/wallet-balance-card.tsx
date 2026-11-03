@@ -1,4 +1,4 @@
-import type { Wallet } from "@stark/api";
+import type { Wallet } from "@stark/api/types";
 import { Card } from "@stark/ui/components/card";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
 import { BalanceFigure } from "@/components/wallet/balance-figure";

@@ -1,4 +1,4 @@
-import { activityQuery, stateQuery, suggestionsQuery } from "@stark/api";
+import { activityQuery, stateQuery, suggestionsQuery } from "@stark/api/queries";
 import { noop, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AskStark } from "@/components/home/ask-stark";

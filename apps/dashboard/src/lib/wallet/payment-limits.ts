@@ -1,4 +1,4 @@
-import type { Limits } from "@stark/api";
+import type { Limits } from "@stark/api/types";
 import { formatNaira } from "@stark/utils/format";
 
 export class PaymentLimits {

@@ -1,4 +1,4 @@
-import type { Bill, Receipt } from "@stark/api";
+import type { Bill, Receipt } from "@stark/api/types";
 import { Card } from "@stark/ui/components/card";
 import { BillStats } from "@/components/bills/bill-stats";
 import { MeterHeadline } from "@/components/bills/meter-headline";

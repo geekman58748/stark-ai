@@ -1,4 +1,4 @@
-import type { Wallet } from "@stark/api";
+import type { Wallet } from "@stark/api/types";
 import { Stat, StatGrid } from "@stark/ui/components/stat";
 import { formatNaira } from "@stark/utils/format";
 

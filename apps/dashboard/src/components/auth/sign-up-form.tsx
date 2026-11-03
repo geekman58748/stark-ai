@@ -1,4 +1,4 @@
-import { setAuthToken } from "@stark/api";
+import { setAuthToken } from "@stark/api/client";
 import { Button } from "@stark/ui/components/button";
 import { useNavigate } from "@tanstack/react-router";
 import { type SubmitEvent, useState } from "react";

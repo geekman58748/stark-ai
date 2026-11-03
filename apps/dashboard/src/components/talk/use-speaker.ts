@@ -1,4 +1,4 @@
-import { api } from "@stark/api";
+import { api } from "@stark/api/client";
 import { useRef } from "react";
 
 /** Plays Stark's replies; `onFinished` runs once a clip ends (or never starts). */

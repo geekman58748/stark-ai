@@ -1,4 +1,4 @@
-import type { Suggestion } from "@stark/api";
+import type { Suggestion } from "@stark/api/types";
 import { Card } from "@stark/ui/components/card";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
 import { NoticedItem } from "@/components/home/noticed-item";

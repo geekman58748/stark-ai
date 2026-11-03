@@ -1,4 +1,6 @@
-import { type Bill, type BillKind, plansQuery, useAddBill } from "@stark/api";
+import { useAddBill } from "@stark/api/mutations";
+import { plansQuery } from "@stark/api/queries";
+import type { Bill, BillKind } from "@stark/api/types";
 import { Button } from "@stark/ui/components/button";
 import { FieldGroup } from "@stark/ui/components/field";
 import { Spinner } from "@stark/ui/components/spinner";

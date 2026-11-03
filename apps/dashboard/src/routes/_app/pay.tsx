@@ -1,4 +1,5 @@
-import { limitsQuery, stateQuery, usePayBill } from "@stark/api";
+import { usePayBill } from "@stark/api/mutations";
+import { limitsQuery, stateQuery } from "@stark/api/queries";
 import { AmountField } from "@stark/ui/components/amount-field";
 import { Card } from "@stark/ui/components/card";
 import { useSuspenseQuery } from "@tanstack/react-query";

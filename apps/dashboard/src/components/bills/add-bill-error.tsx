@@ -1,4 +1,4 @@
-import { errorCopy } from "@stark/api";
+import { errorCopy } from "@stark/api/errors";
 import { FieldError } from "@stark/ui/components/field";
 import { Icons } from "@stark/ui/components/icons";
 

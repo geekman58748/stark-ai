@@ -1,4 +1,4 @@
-import { limitsQuery } from "@stark/api";
+import { limitsQuery } from "@stark/api/queries";
 import { SectionHeading } from "@stark/ui/components/section-heading";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";

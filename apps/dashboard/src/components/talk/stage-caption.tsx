@@ -1,4 +1,4 @@
-import { errorCopy } from "@stark/api";
+import { errorCopy } from "@stark/api/errors";
 import type { Stage } from "@/lib/talk/types";
 
 export function StageCaption({

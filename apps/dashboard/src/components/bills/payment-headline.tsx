@@ -1,4 +1,4 @@
-import type { Bill } from "@stark/api";
+import type { Bill } from "@stark/api/types";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
 import { formatNaira, formatShortDate } from "@stark/utils/format";
 

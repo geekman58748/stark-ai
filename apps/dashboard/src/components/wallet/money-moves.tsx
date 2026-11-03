@@ -1,4 +1,4 @@
-import type { Receipt } from "@stark/api";
+import type { Receipt } from "@stark/api/types";
 import { Empty, EmptyDescription } from "@stark/ui/components/empty";
 import { RowList } from "@stark/ui/components/list-row";
 import { ActivityRow } from "@/components/activity/activity-row";

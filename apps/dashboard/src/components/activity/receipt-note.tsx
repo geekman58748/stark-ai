@@ -1,4 +1,4 @@
-import type { Receipt } from "@stark/api";
+import type { Receipt } from "@stark/api/types";
 
 export function ReceiptNote({ status }: { status: Receipt["status"] }) {
   if (status === "declined") {

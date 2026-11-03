@@ -1,4 +1,4 @@
-import { api, setAuthToken } from "@stark/api";
+import { api, setAuthToken } from "@stark/api/client";
 import { Button } from "@stark/ui/components/button";
 import { FieldError } from "@stark/ui/components/field";
 import { Spinner } from "@stark/ui/components/spinner";

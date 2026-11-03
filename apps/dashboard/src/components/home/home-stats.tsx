@@ -1,4 +1,4 @@
-import type { Bill, State } from "@stark/api";
+import type { Bill, State } from "@stark/api/types";
 import { Stat, StatGrid } from "@stark/ui/components/stat";
 import { formatNaira } from "@stark/utils/format";
 

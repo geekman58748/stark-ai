@@ -1,4 +1,4 @@
-import type { Receipt } from "@stark/api";
+import type { Receipt } from "@stark/api/types";
 
 export type StatusDisplay = { label: string; tone: "brand" | "muted" | "fg" };
 

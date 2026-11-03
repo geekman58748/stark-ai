@@ -1,4 +1,4 @@
-import type { VoiceReply } from "@stark/api";
+import type { VoiceReply } from "@stark/api/types";
 import { Card } from "@stark/ui/components/card";
 import { cn } from "@stark/ui/utils/cn";
 import { HeardLines } from "@/components/talk/heard-lines";

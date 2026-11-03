@@ -1,4 +1,4 @@
-import type { Bill, State } from "@stark/api";
+import type { Bill, State } from "@stark/api/types";
 import { formatNaira, formatShortDate, maskReference } from "@stark/utils/format";
 import { BillKinds } from "@/lib/bills/bill-kinds";
 import { Renewals } from "@/lib/renewals/renewals";

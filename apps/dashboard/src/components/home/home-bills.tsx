@@ -1,4 +1,4 @@
-import type { State } from "@stark/api";
+import type { State } from "@stark/api/types";
 import { RowList } from "@stark/ui/components/list-row";
 import { SectionHeading } from "@stark/ui/components/section-heading";
 import { BillRow } from "@/components/bills/bill-row";

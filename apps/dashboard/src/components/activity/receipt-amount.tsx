@@ -1,4 +1,4 @@
-import type { Receipt } from "@stark/api";
+import type { Receipt } from "@stark/api/types";
 import { cn } from "@stark/ui/utils/cn";
 import { formatDateTime, formatNaira } from "@stark/utils/format";
 import { Receipts } from "@/lib/receipts/receipts";
