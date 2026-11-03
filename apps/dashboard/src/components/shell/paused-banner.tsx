@@ -3,13 +3,15 @@ import { stateQuery } from "@stark/api/queries";
 import { Button } from "@stark/ui/components/button";
 import { Icons } from "@stark/ui/components/icons";
 import { Notice } from "@stark/ui/components/notice";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 export function PausedBanner() {
-  const { data: state } = useSuspenseQuery(stateQuery());
+  // Not suspense: this also renders inside the app's error screen, where the state
+  // that failed to load must not throw a second time.
+  const { data: state } = useQuery(stateQuery());
   const setPaused = useSetPaused();
 
-  if (!state.paused) return null;
+  if (!state?.paused) return null;
 
   const handleResume = () => setPaused.mutate(false);
 
