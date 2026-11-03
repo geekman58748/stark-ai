@@ -38,7 +38,9 @@ function Home() {
   const noticed = (suggestions ?? []).filter(
     (sug) => !(low && sug.reason.startsWith("units_low")) && sug.id !== `sug_due_${due?.id}`,
   );
-  const needing = Number(Boolean(low)) + Number(Boolean(due)) + waiting.length;
+  // An empty wallet needs them too: Stark can't pay anything from ₦0.
+  const needing =
+    Number(Boolean(low)) + Number(Boolean(due)) + Number(state.balance_ngn <= 0) + waiting.length;
 
   return (
     <>

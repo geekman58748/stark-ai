@@ -16,6 +16,7 @@ const pageNames: [string, string][] = [
   ["/connect", "Connect a chat"],
   ["/pay", "Pay a bill"],
   ["/activity", "Activity"],
+  ["/approvals", "Approvals"],
   ["/wallet", "Wallet"],
   ["/settings", "Settings"],
 ];
