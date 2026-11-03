@@ -3,7 +3,9 @@ import { SectionHeading } from "@stark/ui/components/section-heading";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AccountCard } from "@/components/settings/account-card";
+import { ApprovalWindowCard } from "@/components/settings/approval-window-card";
 import { ListeningCard } from "@/components/settings/listening-card";
+import { PauseCard } from "@/components/settings/pause-card";
 import { ResetDemo } from "@/components/settings/reset-demo";
 import { SpendingLimitsForm } from "@/components/settings/spending-limits-form";
 import { PageTitle } from "@/components/shell/page-title";
@@ -21,8 +23,12 @@ function Settings() {
     <>
       <PageTitle>Settings</PageTitle>
 
+      <SectionHeading>Pause</SectionHeading>
+      <PauseCard />
+
       <SectionHeading>Spending limits</SectionHeading>
       <SpendingLimitsForm limits={limits} />
+      <ApprovalWindowCard limits={limits} />
 
       <SectionHeading>This account</SectionHeading>
       <AccountCard />

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { FormError } from "@/components/auth/form-error";
-import { OrDivider } from "@/components/auth/or-divider";
 import { SignInOption } from "@/components/auth/sign-in-option";
 import { authClient } from "@/lib/auth/auth-client";
 import type { SignInMethod } from "@/lib/auth/types";
@@ -42,16 +41,6 @@ export function LogInOptions({
         onClick={onEmail}
       >
         Continue with email
-      </SignInOption>
-
-      <OrDivider />
-
-      {/* Drawn, not implemented: disabled and labelled so, rather than silently inert. */}
-      <SignInOption method="phone" tag="Soon" disabled>
-        Continue with phone
-      </SignInOption>
-      <SignInOption method="telegram" tag="Soon" disabled>
-        Continue with Telegram
       </SignInOption>
 
       <FormError message={error} />

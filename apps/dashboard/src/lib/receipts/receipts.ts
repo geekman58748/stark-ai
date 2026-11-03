@@ -23,7 +23,7 @@ export class Receipts {
   }
 
   static subtitle(r: Receipt): string {
-    if (r.status === "declined") return "Stark stopped this. Nothing was charged.";
+    if (r.status === "declined") return `${r.reason ?? "Stark stopped this."} Nothing was charged.`;
     if (r.status === "failed") return "Nothing was charged";
     if (r.status === "pending") return "Still going through. Not paid yet.";
     if (r.type === "withdrawal") return r.source ?? "To your bank";

@@ -24,10 +24,6 @@ export function MethodIcon({ method }: { method: Method }) {
           />
         </svg>
       );
-    case "phone":
-      return <Icons.Phone size={15} />;
-    case "telegram":
-      return <Icons.Telegram size={15} />;
     case "email":
       return <Icons.Mail size={15} />;
   }

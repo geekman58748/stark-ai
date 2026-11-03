@@ -6,15 +6,13 @@ import { FormError } from "@/components/auth/form-error";
 import { MethodIcon } from "@/components/auth/method-icon";
 import { MethodNote } from "@/components/auth/method-note";
 import { MethodPicker } from "@/components/auth/method-picker";
-import { METHODS, type Method } from "@/components/auth/methods";
+import type { Method } from "@/components/auth/methods";
 import { type SignUpDetails, SignUpEmailFields } from "@/components/auth/sign-up-email-fields";
 import { authClient } from "@/lib/auth/auth-client";
 
 const CTA: Record<Method, string> = {
   email: "Create account",
   google: "Continue with Google",
-  phone: "Continue with phone",
-  telegram: "Continue in Telegram",
 };
 
 export function SignUpForm() {
@@ -28,7 +26,6 @@ export function SignUpForm() {
   });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const current = METHODS.find((entry) => entry.id === method) ?? METHODS[0];
 
   const handleSignUp = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -45,7 +42,6 @@ export function SignUpForm() {
       return;
     }
 
-    if (method !== "email") return;
     setError(null);
     setPending(true);
     try {
@@ -82,7 +78,7 @@ export function SignUpForm() {
         variant="brand"
         size="lg"
         block
-        disabled={pending || (method !== "email" && method !== "google")}
+        disabled={pending}
         className="mt-5 h-12 gap-2.5 text-[15px] font-semibold"
       >
         <MethodIcon method={method} />
@@ -92,12 +88,6 @@ export function SignUpForm() {
             : "Creating your account…"
           : CTA[method]}
       </Button>
-
-      {method !== "email" && method !== "google" ? (
-        <p className="m-0 mt-2.5 text-[12px] text-faint">
-          {current.label} sign-in is not wired yet. Use email for now.
-        </p>
-      ) : null}
     </form>
   );
 }

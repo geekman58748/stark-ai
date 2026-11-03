@@ -11,7 +11,7 @@ export function MethodPicker({
   onChange: (method: Method) => void;
 }) {
   return (
-    <div role="group" aria-label={label} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div role="group" aria-label={label} className="grid grid-cols-2 gap-2">
       {METHODS.map((entry) => (
         <MethodPickerOption
           key={entry.id}

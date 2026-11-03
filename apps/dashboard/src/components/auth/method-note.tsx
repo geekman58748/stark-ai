@@ -3,8 +3,6 @@ import type { Method } from "@/components/auth/methods";
 
 const COPY: Record<Exclude<Method, "email">, string> = {
   google: "We'll hand you to Google, then straight back here.",
-  phone: "We'll text a six-digit code to confirm it's you.",
-  telegram: "Continue inside Telegram, where Stark already lives.",
 };
 
 export function MethodNote({ method }: { method: Exclude<Method, "email"> }) {

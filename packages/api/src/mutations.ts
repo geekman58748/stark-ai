@@ -1,7 +1,15 @@
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import { queryKeys } from "./queries";
-import type { BillPatch, LimitsPatch, NewBill, PaymentInput, TopUpInput } from "./types";
+import type {
+  ApprovedPayment,
+  BillPatch,
+  LimitsPatch,
+  NewBill,
+  PaymentInput,
+  PaymentRequest,
+  TopUpInput,
+} from "./types";
 
 // Money moved or a bill changed: balance, caps, units and history can all shift together.
 function invalidateMoney(qc: QueryClient) {
@@ -101,6 +109,31 @@ export function useVoiceAudio() {
 export function useLinkCode() {
   return useMutation({
     mutationFn: () => api.linkCode(),
+  });
+}
+
+/** An approval pays, so it moves money; a denial adds a declined row to activity. */
+export function useDecideRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      approve,
+    }: {
+      id: string;
+      approve: boolean;
+    }): Promise<ApprovedPayment | PaymentRequest> => (approve ? api.approve(id) : api.deny(id)),
+    onSettled: () =>
+      Promise.all([qc.invalidateQueries({ queryKey: queryKeys.approvals }), invalidateMoney(qc)]),
+  });
+}
+
+/** Pause and resume both change what State reports, so State is refetched. */
+export function useSetPaused() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (paused: boolean) => (paused ? api.pause() : api.resume()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.state }),
   });
 }
 
