@@ -3,16 +3,20 @@ import { api } from "./client";
 import { queryKeys } from "./queries";
 import type {
   ApprovedPayment,
+  BankAccount,
   BillPatch,
+  CryptoWithdrawInput,
   LimitsPatch,
   NewBill,
   PaymentInput,
   PaymentRequest,
+  StartDeposit,
   TopUpInput,
+  WithdrawInput,
 } from "./types";
 
 // Money moved or a bill changed: balance, caps, units and history can all shift together.
-function invalidateMoney(qc: QueryClient) {
+export function invalidateMoney(qc: QueryClient) {
   return Promise.all([
     qc.invalidateQueries({ queryKey: queryKeys.state }),
     qc.invalidateQueries({ queryKey: queryKeys.bills }),
@@ -74,6 +78,31 @@ export function useTopUp() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: TopUpInput) => api.topUp(input),
+    onSuccess: () => invalidateMoney(qc),
+  });
+}
+
+/** Nothing moves yet: the balance changes when the deposit reads `credited`. */
+export function useStartDeposit() {
+  return useMutation({ mutationFn: (input: StartDeposit) => api.startDeposit(input) });
+}
+
+export function useResolveBankAccount() {
+  return useMutation({ mutationFn: (input: BankAccount) => api.resolveBankAccount(input) });
+}
+
+export function useWithdraw() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: WithdrawInput) => api.withdraw(input),
+    onSuccess: () => invalidateMoney(qc),
+  });
+}
+
+export function useWithdrawCrypto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CryptoWithdrawInput) => api.withdrawCrypto(input),
     onSuccess: () => invalidateMoney(qc),
   });
 }

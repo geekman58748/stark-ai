@@ -32,7 +32,7 @@ from app.modules.voice import audio
 from app.modules.chain import near_tx
 from app.modules.voice import stt
 from app.modules.agent.agent import NEAR_AI_MODEL, NearAiModel
-from app.modules.chain.vault_signer import VaultSigner
+from app.modules.chain.vault_chain import VaultChain
 from app.modules.vending.vtpass import VtpassClient, VtpassError
 
 # --- harness ----------------------------------------------------------------
@@ -714,6 +714,19 @@ class Reader:
         return self.take(self.u32())
 
 
+# What `pay` returns, base64 of the contract's JSON, as `broadcast_tx_commit` reports it.
+PAY_OUTCOME = base64.b64encode(
+    b'{"payment_id":7,"meter":"04512345678","amount_ngn":"5000","remaining_cap_ngn":"25000"}'
+).decode()
+
+
+def chain(rpc, *, broadcast: bool) -> VaultChain:
+    """The agent key signs `pay` as the vault itself, so the signer is `VAULT`."""
+    return VaultChain(rpc=rpc, funder_id=SIGNER, funder_key=KEY, agent_key=KEY,
+                      treasury_id=SIGNER, code="global:stark-vault.testnet",
+                      storage_yocto=0, broadcast=broadcast)
+
+
 def rpc_responder():
     def respond(req: Recorded):
         method = req.json["method"]
@@ -738,7 +751,7 @@ def rpc_responder():
                 {
                     "jsonrpc": "2.0",
                     "id": "stark",
-                    "result": {"status": {"SuccessValue": "AQ=="}},
+                    "result": {"status": {"SuccessValue": PAY_OUTCOME}},
                 }
             )
         return json_response({"jsonrpc": "2.0", "id": "stark", "error": {"message": "?"}})
@@ -775,20 +788,11 @@ class TestNearRpcLive(ServerTest):
         )
 
     def test_broadcast_sends_base64_of_signed_transaction(self):
-        signer = VaultSigner(
-            key=KEY,
-            signer_id=SIGNER,
-            receiver_id=VAULT,
-            rpc=self.rpc(),
-            broadcast=True,
-        )
+        result = chain(self.rpc(), broadcast=True).pay(VAULT, "04512345678", 5000)
 
-        summary = signer.sign_pay("04512345678", 5000)
-
-        self.assertTrue(summary["signed"])
-        self.assertTrue(summary["broadcast"])
-        self.assertEqual(len(summary["tx_hash"]), 64)
-        self.assertEqual(summary["outcome"], "AQ==")
+        self.assertTrue(result.broadcast)
+        self.assertEqual(len(result.tx_hash), 64)
+        self.assertEqual(result.value["payment_id"], 7, "the contract's return is decoded")
 
         broadcast = [r for r in self.server.requests if r.json["method"] == "broadcast_tx_commit"]
         self.assertEqual(len(broadcast), 1)
@@ -806,9 +810,9 @@ class TestNearRpcLive(ServerTest):
         # Decode the exact envelope `near-primitives` expects and pin every field.
         # There is no version tag: V0 starts straight at the signer id length.
         r = Reader(tx_bytes)
-        self.assertEqual(r.u32(), len(SIGNER), "signer id length is the first field")
+        self.assertEqual(r.u32(), len(VAULT), "signer id length is the first field")
         r.i -= 4
-        self.assertEqual(r.string(), SIGNER)
+        self.assertEqual(r.string(), VAULT, "the agent key signs as the vault")
         self.assertEqual(r.u8(), 0, "PublicKey::ED25519 variant")
         self.assertEqual(r.take(32), KEY.public)
         self.assertEqual(r.u64(), 42)
@@ -823,22 +827,12 @@ class TestNearRpcLive(ServerTest):
         self.assertEqual(r.u128(), 0, "no attached deposit")
         self.assertEqual(r.i, len(tx_bytes), "no trailing bytes before the signature")
 
-    def test_dry_signer_never_broadcasts(self):
-        signer = VaultSigner(
-            key=KEY,
-            signer_id=SIGNER,
-            receiver_id=VAULT,
-            rpc=self.rpc(),
-            broadcast=False,
-        )
+    def test_dry_chain_never_touches_the_network(self):
+        result = chain(self.rpc(), broadcast=False).pay(VAULT, "04512345678", 5000)
 
-        summary = signer.sign_pay("04512345678", 5000)
-
-        self.assertTrue(summary["signed"])
-        self.assertFalse(summary["broadcast"])
-        self.assertNotIn("outcome", summary)
-        methods = [r.json["method"] for r in self.server.requests]
-        self.assertNotIn("broadcast_tx_commit", methods)
+        self.assertFalse(result.broadcast)
+        self.assertIsNone(result.value)
+        self.assertEqual(self.server.requests, [], "dry signing is offline")
 
     def test_rpc_error_is_raised_with_detail(self):
         self.restart(

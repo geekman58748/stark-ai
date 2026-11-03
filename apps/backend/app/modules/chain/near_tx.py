@@ -259,24 +259,83 @@ def pay_args(meter: str, amount_ngn: int) -> bytes:
     ).encode()
 
 
-def encode_pay_transaction(
-    *,
-    signer_id: str,
-    public_key: bytes,
-    nonce: int,
-    receiver_id: str,
-    block_hash: bytes,
-    meter: str,
-    amount_ngn: int,
-    function_name: str = "pay",
-    gas: int = 100_000_000_000_000,  # 100 Tgas
-    deposit: int = 0,  # ledger-only vault: no attached NEAR
-) -> bytes:
+# --- actions ----------------------------------------------------------------
+#
+# `Action` variants in `near-primitives`, in borsh order. Each helper returns the
+# variant tag followed by its payload, so a transaction is just a list of these.
+#
+#   0 CreateAccount  1 DeployContract  2 FunctionCall  3 Transfer  4 Stake
+#   5 AddKey  6 DeleteKey  7 DeleteAccount  8 Delegate
+#   9 DeployGlobalContract  10 UseGlobalContract
+#
+# 0-3 and 5 are long-standing. 9 and 10 (NEP-591 global contracts) are newer and,
+# like everything here, are pinned by tests but have not been round-tripped live.
+
+DEFAULT_GAS = 100_000_000_000_000  # 100 Tgas
+
+
+def json_args(args: dict) -> bytes:
+    """Compact JSON, as a contract method receives it.
+
+    U128 values must already be strings: near-sdk rejects a bare JSON number.
+    """
+    return json.dumps(args, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def create_account_action() -> bytes:
+    return b"\x00"
+
+
+def deploy_contract_action(code: bytes) -> bytes:
+    return b"\x01" + _byte_vec(code)
+
+
+def function_call_action(method: str, args: bytes, *, gas: int = DEFAULT_GAS,
+                         deposit: int = 0) -> bytes:
+    return b"\x02" + _string(method) + _byte_vec(args) + _u64(gas) + _u128(deposit)
+
+
+def transfer_action(yocto: int) -> bytes:
+    return b"\x03" + _u128(yocto)
+
+
+def add_function_call_key_action(public_key: bytes, *, receiver_id: str,
+                                 method_names: list[str],
+                                 allowance: int | None = None) -> bytes:
+    """`AddKey` with a `FunctionCall` permission: the key can call only these methods
+    on `receiver_id`, and burn at most `allowance` yocto of gas (None = unlimited).
+
+    AccessKey is `{ nonce: u64, permission }`; `AccessKeyPermission::FunctionCall` is
+    variant 0 and holds `{ allowance: Option<u128>, receiver_id, method_names }`.
+    """
+    allowance_bytes = b"\x00" if allowance is None else b"\x01" + _u128(allowance)
+    names = _u32(len(method_names)) + b"".join(_string(name) for name in method_names)
+    permission = b"\x00" + allowance_bytes + _string(receiver_id) + names
+    return b"\x05" + _public_key(public_key) + _u64(0) + permission
+
+
+def deploy_global_contract_action(code: bytes) -> bytes:
+    """Publish `code` as a global contract addressed by the signer's account id
+    (`GlobalContractDeployMode::AccountId` is variant 1), so later uploads replace it."""
+    return b"\x09" + _byte_vec(code) + b"\x01"
+
+
+def use_global_contract_action(code_account_id: str) -> bytes:
+    """Point an account at code another account published as a global contract.
+
+    `GlobalContractIdentifier::AccountId` is variant 1. This is what keeps a vault
+    per user affordable: the 277 KB wasm is stored once, not once per user.
+    """
+    return b"\x0a" + b"\x01" + _string(code_account_id)
+
+
+def encode_transaction(*, signer_id: str, public_key: bytes, nonce: int,
+                       receiver_id: str, block_hash: bytes,
+                       actions: list[bytes]) -> bytes:
     """Borsh-encode the inner `TransactionV0`.
 
     Field order is `TransactionV0` in `near-primitives`:
     signer_id, public_key, nonce, receiver_id, block_hash, actions.
-    `Action::FunctionCall` is variant 2.
 
     There is **no version tag**. A node tells V0 from V1 by peeking the first two
     bytes: V0 starts with the signer id's 4-byte length, whose second byte is 0 for
@@ -287,23 +346,41 @@ def encode_pay_transaction(
     """
     if len(block_hash) != 32:
         raise ValueError("block hash must be 32 bytes")
-
-    function_call = (
-        b"\x02"  # Action::FunctionCall
-        + _string(function_name)
-        + _byte_vec(pay_args(meter, amount_ngn))
-        + _u64(gas)
-        + _u128(deposit)
-    )
-
+    if not actions:
+        raise ValueError("a transaction needs at least one action")
     return (
         _string(signer_id)
         + _public_key(public_key)
         + _u64(nonce)
         + _string(receiver_id)
         + block_hash
-        + _u32(1)  # one action
-        + function_call
+        + _u32(len(actions))
+        + b"".join(actions)
+    )
+
+
+def encode_pay_transaction(
+    *,
+    signer_id: str,
+    public_key: bytes,
+    nonce: int,
+    receiver_id: str,
+    block_hash: bytes,
+    meter: str,
+    amount_ngn: int,
+    function_name: str = "pay",
+    gas: int = DEFAULT_GAS,
+    deposit: int = 0,  # ledger-only vault: no attached NEAR
+) -> bytes:
+    """`pay(meter, amount_ngn)` as a one-action transaction."""
+    return encode_transaction(
+        signer_id=signer_id,
+        public_key=public_key,
+        nonce=nonce,
+        receiver_id=receiver_id,
+        block_hash=block_hash,
+        actions=[function_call_action(function_name, pay_args(meter, amount_ngn),
+                                      gas=gas, deposit=deposit)],
     )
 
 
@@ -360,6 +437,23 @@ def sign_pay(
         amount_ngn=amount_ngn,
         gas=gas,
         deposit=deposit,
+    )
+    return SignedTransaction(
+        tx_bytes=tx,
+        signature=key.sign(transaction_hash(tx)),
+        tx_hash=transaction_hash(tx),
+    )
+
+
+def sign_transaction(*, key: KeyPair, signer_id: str, receiver_id: str, nonce: int,
+                     block_hash: bytes, actions: list[bytes]) -> SignedTransaction:
+    tx = encode_transaction(
+        signer_id=signer_id,
+        public_key=key.public,
+        nonce=nonce,
+        receiver_id=receiver_id,
+        block_hash=block_hash,
+        actions=actions,
     )
     return SignedTransaction(
         tx_bytes=tx,
@@ -443,7 +537,70 @@ class NearRpc:
         return {"nonce": int(result["nonce"]), "block_hash": result.get("block_hash")}
 
     def broadcast(self, signed: SignedTransaction) -> dict:
-        return self._call("broadcast_tx_commit", [signed.base64])
+        return self.broadcast_base64(signed.base64)
+
+    def broadcast_base64(self, encoded: str) -> dict:
+        """Send a transaction signed earlier. The same bytes can only land once."""
+        return self._call("broadcast_tx_commit", [encoded])
+
+    def tx_status(self, tx_hash_b58: str, sender_id: str) -> dict | None:
+        """The outcome of a sent transaction, or None if the chain has never seen it."""
+        try:
+            return self._call("tx", [tx_hash_b58, sender_id])
+        except NearRpcError as err:
+            if "UNKNOWN_TRANSACTION" in str(err.detail) or "doesn't exist" in str(err):
+                return None
+            raise
+
+    def view(self, account_id: str, method: str, args: dict) -> object:
+        """Call a view method and decode its JSON result."""
+        result = self._call(
+            "query",
+            {
+                "request_type": "call_function",
+                "finality": "final",
+                "account_id": account_id,
+                "method_name": method,
+                "args_base64": base64.b64encode(json_args(args)).decode(),
+            },
+        )
+        if "error" in result:
+            raise NearRpcError(str(result["error"]), result)
+        return json.loads(bytes(result.get("result") or []) or b"null")
+
+
+class ContractRefused(Exception):
+    """The transaction landed and the contract panicked. `message` is its sentence."""
+
+    def __init__(self, message: str, detail: dict | None = None):
+        super().__init__(message)
+        self.message = message
+        self.detail = detail or {}
+
+
+_PANIC_PREFIX = "Smart contract panicked: "
+
+
+def success_value(outcome: dict) -> object:
+    """The decoded return value of a committed transaction, or `ContractRefused`.
+
+    `broadcast_tx_commit` reports `status: {"SuccessValue": "<base64 json>"}` or
+    `status: {"Failure": {"ActionError": {"kind": {"FunctionCallError":
+    {"ExecutionError": "Smart contract panicked: <sentence>"}}}}}`. The sentence is
+    the contract's plain-English refusal, so it is lifted out intact.
+    """
+    status = outcome.get("status") or {}
+    if "SuccessValue" in status:
+        raw = base64.b64decode(status["SuccessValue"] or "")
+        return json.loads(raw) if raw else None
+    failure = status.get("Failure") or {}
+    kind = ((failure.get("ActionError") or {}).get("kind") or {})
+    execution = (kind.get("FunctionCallError") or {}).get("ExecutionError")
+    if isinstance(execution, str):
+        message = execution[len(_PANIC_PREFIX):] if execution.startswith(_PANIC_PREFIX) \
+            else execution
+        raise ContractRefused(message, failure)
+    raise ContractRefused("The transaction failed", failure or outcome)
 
 
 @dataclass(frozen=True)

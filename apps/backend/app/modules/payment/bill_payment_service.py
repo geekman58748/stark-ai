@@ -9,7 +9,7 @@ The purchase itself, and the charge that only follows a delivery, happen in
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from app.common.api_error import ApiError
 from app.common.clock import Clock
@@ -30,10 +30,11 @@ class BillPaymentService:
         self.wallet = wallet
         self.payments = payments
 
-    def pay(self, account_id: str, bill_id: str, amount: int,
-            tx_hash: Optional[str] = None, *, approved: bool = False) -> dict[str, Any]:
+    def pay(self, account_id: str, bill_id: str, amount: int, *,
+            approved: bool = False) -> dict[str, Any]:
         """`approved` is the owner lifting the caps for this one payment (see
-        `ApprovalService`); the pause and the balance still apply."""
+        `ApprovalService`); the pause and the balance still apply, and the vault
+        is signed through its owner-only `pay_approved`."""
         bill = self.bills.get(account_id, bill_id)
         state = self.accounts.state(account_id)
         if state.paused_at is not None:
@@ -60,7 +61,7 @@ class BillPaymentService:
                            {"balance_ngn": balance, "amount_ngn": amount})
 
         try:
-            receipt = self.payments.pay(account_id, bill, amount, tx_hash=tx_hash)
+            receipt = self.payments.pay(account_id, bill, amount, approved=approved)
         except payment_service.SpendError as err:
             status = 409 if err.code == payment_service.INSUFFICIENT_BALANCE else 502
             raise ApiError(status, err.code, err.message, err.detail) from err

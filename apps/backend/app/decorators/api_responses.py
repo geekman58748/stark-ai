@@ -41,6 +41,17 @@ class ApiResponses:
         "vendor_failed": 502,
         "no_voice": 503,
         "turnlog_off": 404,
+        "unknown_deposit": 404,
+        "bad_method": 400,
+        "bad_asset": 400,
+        "bad_tx": 400,
+        "bad_account": 400,
+        "bad_address": 400,
+        "over_limit": 400,
+        "daily_limit": 409,
+        "authorisation_failed": 502,
+        "provider_failed": 502,
+        "float_low": 503,
     }
 
     @staticmethod

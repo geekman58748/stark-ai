@@ -51,8 +51,9 @@ class AccountRepository:
             return None
         return int(row["monthly_cap_ngn"]), int(row["per_payment_cap_ngn"])
 
-    def set_limits(self, user_id: str, monthly_cap_ngn: int,
-                   per_payment_cap_ngn: int) -> None:
+    def set_limits(
+        self, user_id: str, monthly_cap_ngn: int, per_payment_cap_ngn: int
+    ) -> None:
         self.db.query(
             "INSERT INTO account_limits (user_id, monthly_cap_ngn, per_payment_cap_ngn)"
             " VALUES ($1, $2, $3)"
@@ -67,5 +68,6 @@ class AccountRepository:
         return row["paused_at"] if row else None
 
     def set_paused_at(self, user_id: str, paused_at: str | None) -> None:
-        self.db.query("UPDATE accounts SET paused_at = $1 WHERE id = $2",
-                      [paused_at, user_id])
+        self.db.query(
+            "UPDATE accounts SET paused_at = $1 WHERE id = $2", [paused_at, user_id]
+        )

@@ -38,8 +38,9 @@ class AuthGuard:
         row = module.auth.session_account(token, now=Clock.now_iso()) if token else None
         if row is None:
             raise ApiError(401, "unauthorized", "Sign in to use Stark.")
-        account = Account(id=row["id"], email=row["email"], name=row.get("name"),
-                          token=token)
+        account = Account(
+            id=row["id"], email=row["email"], name=row.get("name"), token=token
+        )
         state = module.accounts.state(account.id, opened=row["seeded_at"] is not None)
         state.first_name = account.first_name
         return account

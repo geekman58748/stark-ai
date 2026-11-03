@@ -323,12 +323,6 @@ class PaymentFlowTests(StoreCase):
         self.assertEqual(client.calls, [])  # the vendor was never called
         self.assertEqual(self.store.wallet()["balance_ngn"], SEED_BALANCE)
 
-    def test_payment_carries_the_signed_tx_hash(self):
-        receipt = self.service(self.gateway()).pay(
-            ELECTRICITY, 5_000, tx_hash="cd" * 32
-        )
-        self.assertEqual(receipt["tx_hash"], "cd" * 32)
-
     def test_settlement_refuses_when_the_balance_vanished(self):
         class Slow:
             def buy(self, bill, amount, request_id):

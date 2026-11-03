@@ -1,0 +1,47 @@
+"""The money settings, parsed once at boot. See `.env.example` for each variable."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import Mapping, Optional
+
+from app.modules.liquidity.float_service import FloatSettings
+from app.modules.wallet.crypto_withdrawal_service import CryptoPayoutSettings
+from app.modules.wallet.deposit_service import FundingSettings
+
+
+@dataclass(frozen=True)
+class MoneyConfig:
+    funding: FundingSettings
+    float_settings: FloatSettings
+    crypto_payouts: CryptoPayoutSettings
+    bachs_webhook_secret: Optional[str]
+    money_tick_seconds: int
+
+    @classmethod
+    def from_env(cls, env: Optional[Mapping[str, str]] = None) -> "MoneyConfig":
+        source = os.environ if env is None else env
+        rate = (source.get("STARK_USDC_NGN_RATE") or "").strip()
+        return cls(
+            funding=FundingSettings(
+                app_url=(source.get("STARK_APP_URL") or "").strip() or None,
+                treasury_account=(source.get("STARK_TREASURY_NEAR_ACCOUNT") or "").strip()
+                or None,
+                usdc_ngn_rate=Decimal(rate) if rate else None,
+            ),
+            float_settings=FloatSettings(
+                low_water_ngn=int(source.get("STARK_FLOAT_LOW_NGN") or 100_000),
+                target_ngn=int(source.get("STARK_FLOAT_TARGET_NGN") or 500_000),
+                funding_destination=(source.get("VTPASS_FUNDING_DESTINATION") or "").strip()
+                or None,
+            ),
+            crypto_payouts=CryptoPayoutSettings(
+                usdc_ngn_rate=Decimal(rate) if rate else None,
+                max_ngn=int(source.get("STARK_CRYPTO_WITHDRAW_MAX_NGN") or 200_000),
+                daily_ngn=int(source.get("STARK_CRYPTO_WITHDRAW_DAILY_NGN") or 1_000_000),
+            ),
+            bachs_webhook_secret=(source.get("BACHS_WEBHOOK_SECRET") or "").strip() or None,
+            money_tick_seconds=int(source.get("STARK_MONEY_TICK") or 30),
+        )

@@ -46,7 +46,9 @@ from urllib.parse import unquote, urlparse
 class DatabaseError(RuntimeError):
     """A query failed. Carries the SQLSTATE when Postgres gave us one."""
 
-    def __init__(self, message: str, code: str | None = None, *, query: str = "") -> None:
+    def __init__(
+        self, message: str, code: str | None = None, *, query: str = ""
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.query = query
@@ -56,8 +58,8 @@ class DatabaseError(RuntimeError):
 class Target:
     """Where the database is, parsed once from the connection string."""
 
-    url: str          # the whole DSN, sent to Neon as-is
-    host: str         # the pooled host the HTTPS endpoint lives on
+    url: str  # the whole DSN, sent to Neon as-is
+    host: str  # the pooled host the HTTPS endpoint lives on
     database: str
     user: str
 
@@ -165,7 +167,9 @@ class Database:
 
     # --- query ---------------------------------------------------------------
 
-    def query(self, sql: str, params: Sequence[Any] | None = None) -> list[dict[str, Any]]:
+    def query(
+        self, sql: str, params: Sequence[Any] | None = None
+    ) -> list[dict[str, Any]]:
         """Run one statement. Returns rows as dicts (empty for a write)."""
         started = time.perf_counter()
         body = json.dumps({"query": sql, "params": list(params or [])})
@@ -201,11 +205,14 @@ class Database:
             raise DatabaseError(f"database unreachable: {last}")
 
         if os.environ.get("STARK_DB_TRACE"):
-            print(f"  [db] {round((time.perf_counter() - started) * 1000)}ms "
-                  f"{sql.strip().splitlines()[0][:70]}")
+            print(
+                f"  [db] {round((time.perf_counter() - started) * 1000)}ms "
+                f"{sql.strip().splitlines()[0][:70]}"
+            )
         if response.status >= 400:
-            raise DatabaseError(_error_message(raw, response.status), _error_code(raw),
-                                query=sql)
+            raise DatabaseError(
+                _error_message(raw, response.status), _error_code(raw), query=sql
+            )
         try:
             payload = json.loads(raw or b"{}")
         except json.JSONDecodeError as err:
@@ -213,7 +220,9 @@ class Database:
         rows = payload.get("rows") or []
         return [dict(row) for row in rows]
 
-    def one(self, sql: str, params: Sequence[Any] | None = None) -> dict[str, Any] | None:
+    def one(
+        self, sql: str, params: Sequence[Any] | None = None
+    ) -> dict[str, Any] | None:
         rows = self.query(sql, params)
         return rows[0] if rows else None
 
@@ -389,6 +398,125 @@ CREATE TABLE IF NOT EXISTS processed_messages (
     message_id   TEXT NOT NULL,
     processed_at TEXT NOT NULL,
     PRIMARY KEY (channel, message_id)
+);
+
+-- Money. Each user owns one vault on NEAR (a sub-account of the funder). Every
+-- vault write that mirrors a Postgres money movement goes through chain_ops first,
+-- so a failed broadcast is retried rather than lost. vault_payments maps a receipt
+-- to the onchain payment id a refund needs.
+CREATE TABLE IF NOT EXISTS vaults (
+    user_id    TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL UNIQUE,
+    status     TEXT NOT NULL,
+    tx_hash    TEXT,
+    created_at TEXT NOT NULL,
+    last_error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS chain_ops (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    method     TEXT NOT NULL,
+    args       TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    tx_hash    TEXT,
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    seq        BIGSERIAL
+);
+
+CREATE INDEX IF NOT EXISTS chain_ops_pending ON chain_ops (status, user_id, seq);
+
+CREATE TABLE IF NOT EXISTS vault_payments (
+    user_id    TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    receipt_id TEXT NOT NULL,
+    payment_id BIGINT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, receipt_id)
+);
+
+-- A deposit is one attempt to add money: a Bachs checkout (method bank) or a
+-- NEAR Intents quote (method crypto). Its id is the request_id of the credit, so
+-- a deposit can only ever be credited once.
+CREATE TABLE IF NOT EXISTS deposits (
+    id                  TEXT PRIMARY KEY,
+    user_id             TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    method              TEXT NOT NULL,
+    amount_ngn          BIGINT NOT NULL,
+    credited_ngn        BIGINT,
+    status              TEXT NOT NULL,
+    note                TEXT,
+    provider_ref        TEXT NOT NULL,
+    checkout_url        TEXT,
+    deposit_address     TEXT,
+    deposit_memo        TEXT,
+    asset_id            TEXT,
+    asset_symbol        TEXT,
+    asset_chain         TEXT,
+    amount_in           TEXT,
+    amount_in_formatted TEXT,
+    usdc_out            TEXT,
+    rate_ngn_per_usdc   TEXT,
+    expires_at          TEXT,
+    credited_at         TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS deposits_open ON deposits (status, created_at);
+CREATE INDEX IF NOT EXISTS deposits_user ON deposits (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS payout_destinations (
+    user_id        TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    bank_code      TEXT NOT NULL,
+    account_number TEXT NOT NULL,
+    destination_id TEXT NOT NULL,
+    account_name   TEXT NOT NULL,
+    bank_name      TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    PRIMARY KEY (user_id, bank_code, account_number)
+);
+
+CREATE TABLE IF NOT EXISTS withdrawals (
+    id             TEXT PRIMARY KEY,
+    user_id        TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    amount_ngn     BIGINT NOT NULL,
+    destination_id TEXT NOT NULL,
+    receipt_id     TEXT NOT NULL,
+    payout_id      TEXT,
+    status         TEXT NOT NULL,
+    note           TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS withdrawals_reviewing ON withdrawals (status, created_at);
+
+-- A crypto withdrawal has no Bachs destination: it is a 1Click swap from
+-- treasury USDC to an address the user gave. `signed_tx` is stored before it is
+-- broadcast, so a retry resends the same transaction and can never pay twice.
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS method TEXT NOT NULL DEFAULT 'bank';
+ALTER TABLE withdrawals ALTER COLUMN destination_id DROP NOT NULL;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS asset_id TEXT;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS asset_symbol TEXT;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS asset_chain TEXT;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS deposit_address TEXT;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS usdc_in TEXT;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS amount_out_formatted TEXT;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS signed_tx TEXT;
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS tx_hash TEXT;
+
+-- Refills of the VTpass float: Stark-wide, not per account.
+CREATE TABLE IF NOT EXISTS float_refills (
+    id         TEXT PRIMARY KEY,
+    amount_ngn BIGINT NOT NULL,
+    status     TEXT NOT NULL,
+    payout_id  TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 """
 

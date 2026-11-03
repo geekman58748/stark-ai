@@ -28,6 +28,7 @@ import { Route as AppBillsBillIdRouteImport } from './routes/_app/bills/$billId'
 import { Route as AppBillsNewRouteImport } from './routes/_app/bills/new'
 import { Route as AppWalletIndexRouteImport } from './routes/_app/wallet/index'
 import { Route as AppWalletAddRouteImport } from './routes/_app/wallet/add'
+import { Route as AppWalletWithdrawRouteImport } from './routes/_app/wallet/withdraw'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -123,6 +124,11 @@ const AppWalletAddRoute = AppWalletAddRouteImport.update({
   path: '/wallet/add',
   getParentRoute: () => AppRoute,
 } as any)
+const AppWalletWithdrawRoute = AppWalletWithdrawRouteImport.update({
+  id: '/wallet/withdraw',
+  path: '/wallet/withdraw',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/bills/$billId': typeof AppBillsBillIdRoute
   '/bills/new': typeof AppBillsNewRoute
   '/wallet/add': typeof AppWalletAddRoute
+  '/wallet/withdraw': typeof AppWalletWithdrawRoute
   '/bills/': typeof AppBillsIndexRoute
   '/wallet/': typeof AppWalletIndexRoute
 }
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/bills/$billId': typeof AppBillsBillIdRoute
   '/bills/new': typeof AppBillsNewRoute
   '/wallet/add': typeof AppWalletAddRoute
+  '/wallet/withdraw': typeof AppWalletWithdrawRoute
   '/bills': typeof AppBillsIndexRoute
   '/wallet': typeof AppWalletIndexRoute
 }
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/_app/bills/$billId': typeof AppBillsBillIdRoute
   '/_app/bills/new': typeof AppBillsNewRoute
   '/_app/wallet/add': typeof AppWalletAddRoute
+  '/_app/wallet/withdraw': typeof AppWalletWithdrawRoute
   '/_app/bills/': typeof AppBillsIndexRoute
   '/_app/wallet/': typeof AppWalletIndexRoute
 }
@@ -205,6 +214,7 @@ export interface FileRouteTypes {
     | '/bills/$billId'
     | '/bills/new'
     | '/wallet/add'
+    | '/wallet/withdraw'
     | '/bills/'
     | '/wallet/'
   fileRoutesByTo: FileRoutesByTo
@@ -225,6 +235,7 @@ export interface FileRouteTypes {
     | '/bills/$billId'
     | '/bills/new'
     | '/wallet/add'
+    | '/wallet/withdraw'
     | '/bills'
     | '/wallet'
   id:
@@ -246,6 +257,7 @@ export interface FileRouteTypes {
     | '/_app/bills/$billId'
     | '/_app/bills/new'
     | '/_app/wallet/add'
+    | '/_app/wallet/withdraw'
     | '/_app/bills/'
     | '/_app/wallet/'
   fileRoutesById: FileRoutesById
@@ -396,6 +408,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWalletAddRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/wallet/withdraw': {
+      id: '/_app/wallet/withdraw'
+      path: '/wallet/withdraw'
+      fullPath: '/wallet/withdraw'
+      preLoaderRoute: typeof AppWalletWithdrawRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -409,6 +428,7 @@ interface AppRouteChildren {
   AppBillsBillIdRoute: typeof AppBillsBillIdRoute
   AppBillsNewRoute: typeof AppBillsNewRoute
   AppWalletAddRoute: typeof AppWalletAddRoute
+  AppWalletWithdrawRoute: typeof AppWalletWithdrawRoute
   AppBillsIndexRoute: typeof AppBillsIndexRoute
   AppWalletIndexRoute: typeof AppWalletIndexRoute
 }
@@ -423,6 +443,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppBillsBillIdRoute: AppBillsBillIdRoute,
   AppBillsNewRoute: AppBillsNewRoute,
   AppWalletAddRoute: AppWalletAddRoute,
+  AppWalletWithdrawRoute: AppWalletWithdrawRoute,
   AppBillsIndexRoute: AppBillsIndexRoute,
   AppWalletIndexRoute: AppWalletIndexRoute,
 }

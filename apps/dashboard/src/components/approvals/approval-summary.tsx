@@ -13,8 +13,8 @@ export function ApprovalSummary({ request }: { request: PaymentRequest }) {
         <span className="text-[14px]">to {request.bill_label}</span>
       </div>
       <p className="m-0 text-[13px] text-fg-2">
-        {Approvals.reason(request)}, so it asked first. Approving pays this one amount. Your
-        limits stay the same. {Approvals.timeLeft(request)}.
+        {Approvals.reason(request)}, so it asked first. Approving pays this one amount. Your limits
+        stay the same. {Approvals.timeLeft(request)}.
       </p>
     </>
   );

@@ -1,11 +1,43 @@
 # Stark — handoff
 
-**Written 2026-10-20, last resumed 2026-10-24 (reminders, computed suggestions, real
-audio in, streamed voice).** If you are an agent picking this
-up, read §0 and then §1–3 before touching anything. Sections 9–11 are the honest list of
-what is broken, guessed, or still unproven. Nothing in this repo is production code — it
-is a contract stub, a bill-API client, an agent that can sign but has never broadcast,
-and an undeployed vault contract, built to unblock a frontend developer working in parallel.
+**Written 2026-10-20, last resumed 2026-11-03 (money flow, crypto withdrawals, live
+rails).** If you are an agent picking this up, read §0 (newest first) and then §1–3
+before touching anything. Sections 9–11 are the honest list of what is broken, guessed,
+or still unproven — but where §0's 2026-11-03 notes contradict them, §0 is newer.
+
+---
+
+## 0. Resume here — state as of 2026-11-03
+
+Verified on 2026-11-03 against the live services, not assumed:
+
+| Thing | State |
+|---|---|
+| Vault contract | **Deployed** at `stark-vault.testnet`; a `pay()` signed by `near_tx` was accepted on chain (commit `f2e8c61`). `stark-vault.testnet` and `stark-agent.testnet` each hold ~10 testnet NEAR. Per-user vaults (`u-<hex>.stark-vault.testnet`) are code + tests only: `STARK_FUNDER_KEY` / `STARK_AGENT_KEY` are not on this machine, so none has been created live. |
+| Telegram | **Live.** `@hellostarkai_bot`, webhook `https://geddon.hellostark.xyz/v1/tg/webhook`, no delivery errors. §9's "never live" is stale. |
+| Bachs (NGN rail) | **Sandbox configured**: a scoped key (`balance:read`, `payments:*`, `payouts:*`) and a webhook to `/v1/bachs/webhook` for `collection.succeeded/failed`, `payout.paid/failed`, both in `apps/backend/.env`. Balance and bank list read live. No event has been delivered yet. Live mode is blocked on the owner's business details + liveness check in the Bachs dashboard. |
+| 1Click (Intents) | Token list and quotes read live. A withdrawal quote (USDC on NEAR → USDT on Tron) prices correctly once `refundTo` is a **real** mainnet account — `stark-treasury.near` is a placeholder and makes 1Click answer a bare 400. Small amounts are refused ("too low for bridge", ~1.9 USDC for Tron). Fees on a ₦20k payout were ~6.5% without a partner key. |
+| Privacy tier | From near.ai/models: **Whisper Large v3 is Private TEE** (voice-in is private). **Gemini 2.5 Flash Lite is Incognito** (runs at Google). Decision: keep Gemini for speed and do not claim the chat path is private. Measured alternative: DeepSeek V4.1 Flash (Private TEE) is 2.7s / 4.1s vs Gemini's 1.5s / 1.4s; GLM 5.3 Flash failed to call the tool. |
+| VTpass | Unchanged: purchases still `028` until VTpass whitelists the products. |
+
+**Bug found and fixed while doing this:** Bachs and 1Click sit behind Cloudflare, which
+answers Python's default `Python-urllib/x` User-Agent with **403 (error 1010)**. Every live
+call from both clients would have failed while all tests passed (they fake the HTTP
+client). Both now send `stark-backend/1.0`. VTpass does not block it.
+
+**Crypto withdrawals** (`wallet/crypto_withdrawal_service.py`, `chain/treasury_chain.py`,
+`POST /v1/wallet/withdraw/crypto`): the naira is held exactly like a bank withdrawal,
+converted to USDC at `STARK_USDC_NGN_RATE` (rounded down), and the treasury's
+**full-access hot key** (`STARK_TREASURY_KEY`; `ft_transfer` needs 1 yocto, which a
+function-call key cannot attach) sends it to a 1Click deposit address that swaps and
+delivers to the user. Capped per withdrawal and per rolling day; the signed transaction
+is stored before broadcast so a retry can never pay twice. Off until the key is set.
+
+**To finish, owner-only:** fund and name a real mainnet treasury account and set
+`STARK_TREASURY_NEAR_ACCOUNT` + `STARK_TREASURY_KEY`; put `STARK_FUNDER_*` /
+`STARK_AGENT_KEY` in `.env` (and Brimble) for per-user vaults; complete Bachs KYC for
+live; get VTpass to whitelist products; create Meta (WhatsApp) and Twilio (SMS)
+accounts — their adapters are built and fail closed.
 
 ---
 
@@ -811,9 +843,10 @@ Do not assume any of this exists:
   model + Whisper are live-verified (2026-10-22). Still not real: no transaction has
   ever been broadcast or landed onchain, no live VTpass purchase has run, and
   `/v1/voice` still accepts `transcript_hint` rather than audio.
-- **Token custody** — the vault's `balance_ngn` is an internal ledger. No NEP-141
-  USDC, no `ft_on_transfer`, no settlement to the treasury. Say so plainly; do not
-  imply money moves onchain today.
+- **Token custody** — each user's vault `balance_ngn` is a naira ledger that mirrors
+  money Stark holds (VTpass float, Bachs balance, treasury USDC). The vault does not
+  hold tokens: crypto deposits land as USDC in Stark's treasury and the funder credits
+  the vault. Say so plainly; the onchain guarantee is the **caps**, not custody.
 - **Auth** — Neon Auth sessions on every `/v1` route (401 `unauthorized` without one);
   the Telegram webhook authenticates with its own secret. Still missing: the
   channel-signature scheme for WhatsApp/SMS in §8A.
@@ -827,14 +860,15 @@ Do not assume any of this exists:
   seeded estimate.
 - **Water and internet** — no confirmed VTpass product. Asking for them fails with a
   plain message and charges nothing; there is no silent "recorded" fallback.
-- **Wallet funding has no payment rail.** `POST /v1/wallet/topup` writes a `deposit`
-  ledger row and moves the balance; no card, transfer or onchain deposit is involved,
-  and no money is real. `withdraw` is the same in reverse. Do not show a "Fund" flow as
-  if it took a payment until a processor is wired in.
+- **Wallet funding — built 2026-11-03, never run live.** Bachs checkout (bank,
+  card, USDT/USDC) and NEAR Intents (any chain → USDC on NEAR) credit Postgres and
+  the vault once each; Bachs payouts withdraw and refill the VTpass float. All of it
+  is tested against faked rails only (`tests/test_money.py`). Needs `BACHS_SECRET_KEY`,
+  `BACHS_WEBHOOK_SECRET`, `STARK_TREASURY_NEAR_ACCOUNT`, `STARK_USDC_NGN_RATE`.
 - **Bill edits do not rewrite history.** Renaming a bill leaves old receipts with the
   `bill_label` captured at payment time; deleting a bill keeps its activity rows.
   That is intended, but a UI that joins on `bill_id` must handle a missing bill.
-- **Intents funding** — nothing.
+- **Intents funding** — built (see wallet funding above); no swap has ever run.
 - **Telegram bot — built, never live.** The adapter, webhook auth, dedupe, linking
   and the wake gate exist and are tested (§0 M4), but no bot token or webhook
   secret has ever been set, so the server refuses every update in production
@@ -850,6 +884,37 @@ Do not assume any of this exists:
 - **Demo video, X post, submission** — none.
 
 ---
+
+## 9A. The money flow (2026-11-03)
+
+```
+FUND      Bachs checkout ──► collection.succeeded ─┐
+          1Click quote ──► /v0/status SUCCESS ─────┼─► wallet credit (one statement, keyed on the
+                                                   │   deposit id) + vault fund(amount, id) via outbox
+PAY       paused? caps? balance? ─► VTpass float covers it? ─► vault pay (agent key) or
+          pay_approved (owner key, approved over-cap) ─► record ─► VTpass buy ─► charge on
+          delivery │ vendor failed ─► vault refund(payment_id)
+WITHDRAW  resolve name ─► hold the money + vault debit ─► Bachs destination review ─► payout
+          ─► payout.paid │ payout.failed / rejected ─► credit back + vault fund(<id>-r)
+REFILL    float < STARK_FLOAT_LOW_NGN ─► Bachs payout to VTPASS_FUNDING_DESTINATION (or a logged
+          manual top-up) ─► payout.paid closes it
+LOOP      every 30s: flush vault ops, poll open deposits, send approved withdrawals, check float
+```
+
+Stark **fronts the naira**: a credited deposit is spendable immediately from the
+VTpass float; the rails settle afterwards and the FX risk on crypto is Stark's.
+`python -m app.modules.treasury.treasury_service` reports owed vs held.
+
+Decisions taken, and why:
+
+| Decision | Why |
+|---|---|
+| One vault per user, a sub-account `u-<id>.<funder>` created in one tx | user's choice; the agent key is added per vault and can only `pay` there |
+| Vault code as a **global contract** by default | a 277 KB wasm per user is ~2.8 NEAR of storage; a global contract is stored once |
+| Bachs **checkout per deposit**, not a virtual account | a Bachs virtual account is one per merchant with no reference; checkout carries our `reference` back |
+| Crypto credited at a **locked env rate** (`STARK_USDC_NGN_RATE`) | Bachs does not convert USDC→NGN or support NEAR; the treasury sells USDC off-platform |
+| Policy synced **lazily before each pay** | caps only bind at payment time; no chain call on every settings change |
+| `pay_approved` is owner-only | an approved over-cap payment cannot be reached with the agent key |
 
 ## 10. Uncovered and unverified (do not let these get laundered into facts)
 
@@ -1009,6 +1074,18 @@ Do not assume any of this exists:
     `output_format=pcm_24000` is inside the free tier while 44.1 kHz needs Pro. The
     free tier is 10,000 credits/month, non-commercial — fine for the demo, worth
     knowing before a launch claim.
+
+21. **The whole money flow is fixture-tested only (2026-11-03).** Nothing below has run live:
+   - Bachs checkout, webhooks and payouts. The shapes come from Bachs's OpenAPI spec
+     (`docs.bachs.io/docs/openapi/openapi.json`), not from captured responses.
+   - Bachs says payout destinations "must belong to you" and go through review. Ask
+     Bachs whether a user's own bank account and VTpass's funding account will pass
+     that review before promising withdrawals or automatic refills.
+   - The VTpass funding account details are undocumented.
+   - 1Click quotes and status: mainnet only, and there is no testnet.
+   - Global-contract actions 9 and 10 (`DeployGlobalContract`, `UseGlobalContract`)
+     are encoded from near-primitives' enum order and have not been round-tripped.
+   - Per-user vault creation has never been broadcast.
 
 ---
 

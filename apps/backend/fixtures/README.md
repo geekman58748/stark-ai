@@ -69,6 +69,7 @@ are still blocked by the 028 above, so they have never been seen from the live A
 | `pay_ok.json` | Token vended, `status: delivered` |
 | `pay_pending.json` | `code: 099`, `status: pending`, no token yet |
 | `pay_low_balance.json` | `code: 018`, VTpass wallet too low |
+| `balance.json` | `GET /api/balance`, shape from VTpass's docs (`code` is the integer `1`); ₦500,000 is an arbitrary dry-run float |
 | `pay_duplicate.json` | `code: 019`, same `request_id` reused |
 
 Once `/pay` is provisioned, run `python3 vtpass.py --live buy --meter 1111111111111
