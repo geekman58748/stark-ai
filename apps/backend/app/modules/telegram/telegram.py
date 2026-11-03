@@ -71,7 +71,7 @@ VOICE_ASLEEP = "I'm here — say 'stark' first, then your question."
 HELP_TEXT = (
     "Stark pays your household bills inside your limits.\n"
     "Try: 'hello stark how much is left' or 'hello stark pay 5000 for electricity'.\n"
-    "Commands: /whoami, /unlink, /help"
+    "Commands: /pause, /resume, /whoami, /unlink, /help"
 )
 
 
@@ -86,6 +86,11 @@ class TelegramError(Exception):
 
 class AgentLike(Protocol):
     def respond(self, transcript: str, thread: str | None = None) -> Any: ...
+
+
+class ControlsLike(Protocol):
+    def pause(self, account_id: str) -> dict[str, Any]: ...
+    def resume(self, account_id: str) -> dict[str, Any]: ...
 
 
 class IdentityLike(Protocol):
@@ -193,6 +198,8 @@ def send_voice_note(chat_id: int, ogg: bytes, *, bot_token: str,
 class TelegramAdapter:
     agent: AgentLike
     identities: IdentityLike
+    # The off switch, so a linked chat can stop payments without opening the app.
+    controls: ControlsLike | None = None
     bot_token: str | None = None
     secret: str | None = None
     # The account this bot serves. A callable is resolved per use, so the account
@@ -465,6 +472,19 @@ class TelegramAdapter:
         if verb == "/whoami":
             user_id = self.identities.resolve(CHANNEL, channel_user_id)
             return f"Linked to {user_id}." if user_id else "Not linked."
+
+        if verb in ("/pause", "/resume"):
+            user_id = self.identities.resolve(CHANNEL, channel_user_id)
+            if user_id is None:
+                return NOT_LINKED_REPLY
+            if self.controls is None:
+                return "Pausing from chat is not set up. Use the app for now."
+            if verb == "/pause":
+                self.controls.pause(user_id)
+                return ("Paused. I will not pay anything until you send /resume. "
+                        "You can still ask me questions.")
+            self.controls.resume(user_id)
+            return "Resumed. I can pay your bills again, inside your limits."
 
         if verb == "/unlink":
             if self.identities.unlink(CHANNEL, channel_user_id):

@@ -1,4 +1,4 @@
-import type { Bill, State } from "@stark/api";
+import type { Bill, State } from "@stark/api/types";
 import { Card } from "@stark/ui/components/card";
 import { Eyebrow } from "@stark/ui/components/eyebrow";
 import { BalanceActions } from "@/components/home/balance-actions";

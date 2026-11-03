@@ -1,4 +1,4 @@
-import type { Receipt } from "@stark/api";
+import type { Receipt } from "@stark/api/types";
 import { listRowClass, RowText } from "@stark/ui/components/list-row";
 import { cn } from "@stark/ui/utils/cn";
 import { formatActivityTime, formatNaira } from "@stark/utils/format";

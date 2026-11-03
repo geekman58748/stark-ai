@@ -1,4 +1,4 @@
-import { stateQuery } from "@stark/api";
+import { stateQuery } from "@stark/api/queries";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { QueryError } from "@/components/query-error";
 import { AppShell } from "@/components/shell/app-shell";

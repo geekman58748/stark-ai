@@ -1,4 +1,6 @@
-import { errorCopy, type Limits, useUpdateLimits } from "@stark/api";
+import { errorCopy } from "@stark/api/errors";
+import { useUpdateLimits } from "@stark/api/mutations";
+import type { Limits } from "@stark/api/types";
 import { AmountField } from "@stark/ui/components/amount-field";
 import { Card } from "@stark/ui/components/card";
 import { FieldError, FieldGroup } from "@stark/ui/components/field";

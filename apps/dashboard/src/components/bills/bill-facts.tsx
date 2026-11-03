@@ -1,4 +1,4 @@
-import type { Bill } from "@stark/api";
+import type { Bill } from "@stark/api/types";
 import { formatLongDate, maskReference } from "@stark/utils/format";
 import { BillKinds } from "@/lib/bills/bill-kinds";
 

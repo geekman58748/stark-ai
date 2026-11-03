@@ -11,6 +11,9 @@ export const queryKeys = {
   limits: ["limits"] as const,
   wallet: ["wallet"] as const,
   suggestions: ["suggestions"] as const,
+  approvals: ["approvals"] as const,
+  demo: ["demo"] as const,
+  payees: ["payees"] as const,
 };
 
 /** Everything Home needs. There is no websocket, so poll gently and refetch after payments. */
@@ -38,3 +41,11 @@ export const walletQuery = () => queryOptions({ queryKey: queryKeys.wallet, quer
 
 export const suggestionsQuery = () =>
   queryOptions({ queryKey: queryKeys.suggestions, queryFn: api.suggestions });
+
+/** A request expires in minutes, so poll it like State. */
+export const approvalsQuery = () =>
+  queryOptions({ queryKey: queryKeys.approvals, queryFn: api.approvals, refetchInterval: 30_000 });
+
+export const demoQuery = () => queryOptions({ queryKey: queryKeys.demo, queryFn: api.demo });
+
+export const payeesQuery = () => queryOptions({ queryKey: queryKeys.payees, queryFn: api.payees });

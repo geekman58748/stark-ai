@@ -1,4 +1,4 @@
-import { stateQuery } from "@stark/api";
+import { stateQuery } from "@stark/api/queries";
 import { Avatar, AvatarFallback } from "@stark/ui/components/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";

@@ -1,4 +1,5 @@
-import { limitsQuery, stateQuery, usePayBill } from "@stark/api";
+import { usePayBill } from "@stark/api/mutations";
+import { limitsQuery, stateQuery } from "@stark/api/queries";
 import { AmountField } from "@stark/ui/components/amount-field";
 import { Card } from "@stark/ui/components/card";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -41,7 +42,7 @@ function Pay() {
   const pay = usePayBill();
 
   const presets = PaymentLimits.presets(limits);
-  const hint = PaymentLimits.hint(amount, limits, state.balance_ngn);
+  const hint = PaymentLimits.hint(amount, limits, state);
 
   if (!payable.length) {
     return (
@@ -88,8 +89,11 @@ function Pay() {
       ) : (
         <Card>
           <PayStats remaining={limits.remaining_cap_ngn} amount={amount} />
-          <LimitHint hint={hint} />
-          {pay.error ? <Refused error={pay.error} onPay={handlePayOffer} /> : null}
+          {pay.error ? (
+            <Refused error={pay.error} onPay={handlePayOffer} />
+          ) : (
+            <LimitHint hint={hint} />
+          )}
           <PayButton
             amount={amount}
             pending={pay.isPending}

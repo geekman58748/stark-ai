@@ -1,4 +1,4 @@
-import type { Bill } from "@stark/api";
+import type { Bill } from "@stark/api/types";
 import { pillTabClass } from "@stark/ui/components/pill-tabs";
 import { Link } from "@tanstack/react-router";
 

@@ -27,3 +27,8 @@ class ReceiptDto(BaseModel):
     type: str = Field(description="bill | autotopup | deposit | withdrawal",
                       examples=["bill"])
     source: Optional[str] = Field(examples=["Telegram voice note"])
+    reason: Optional[str] = Field(
+        default=None,
+        description="Why a declined entry was stopped, in plain words; null otherwise.",
+        examples=["That's over the most you allow in one go."],
+    )

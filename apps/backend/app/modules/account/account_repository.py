@@ -61,3 +61,11 @@ class AccountRepository:
             "   per_payment_cap_ngn = EXCLUDED.per_payment_cap_ngn",
             [user_id, monthly_cap_ngn, per_payment_cap_ngn],
         )
+
+    def paused_at(self, user_id: str) -> str | None:
+        row = self.db.one("SELECT paused_at FROM accounts WHERE id = $1", [user_id])
+        return row["paused_at"] if row else None
+
+    def set_paused_at(self, user_id: str, paused_at: str | None) -> None:
+        self.db.query("UPDATE accounts SET paused_at = $1 WHERE id = $2",
+                      [paused_at, user_id])

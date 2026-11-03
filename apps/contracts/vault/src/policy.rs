@@ -7,6 +7,7 @@
 /// Why a payment was refused. `as_str()` is what the user hears — no jargon.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Rejection {
+    Paused,
     ZeroAmount,
     ExceedsPerPayment { amount_ngn: u128, cap_ngn: u128 },
     ExceedsMonthly { amount_ngn: u128, remaining_ngn: u128 },
@@ -18,6 +19,7 @@ impl Rejection {
     /// Plain-English line the agent can say out loud.
     pub fn as_str(&self) -> &'static str {
         match self {
+            Rejection::Paused => "Stark is paused right now, so nothing was paid.",
             Rejection::ZeroAmount => "That amount needs to be above zero.",
             Rejection::ExceedsPerPayment { .. } => {
                 "That's over the most you allow in one go."
@@ -37,6 +39,7 @@ impl Rejection {
     /// Stable machine code. The frontend branches on this, never on `as_str`.
     pub fn code(&self) -> &'static str {
         match self {
+            Rejection::Paused => "paused",
             Rejection::ZeroAmount => "bad_amount",
             Rejection::ExceedsPerPayment { .. } => "over_per_payment_cap",
             Rejection::ExceedsMonthly { .. } => "over_cap",
@@ -48,11 +51,13 @@ impl Rejection {
 
 /// Decide whether a payment is allowed. The order is deliberate:
 ///
+/// 0. pause — the owner's off switch beats every other answer
 /// 1. per-payment cap — cheapest, most specific refusal
 /// 2. monthly cap — the headline safety guarantee
 /// 3. allowlist — never pay a meter the owner didn't name
 /// 4. balance — checked last, so a policy problem is reported as policy, not money
 pub fn check_payment(
+    paused: bool,
     monthly_cap_ngn: u128,
     per_payment_cap_ngn: u128,
     spent_this_period_ngn: u128,
@@ -60,6 +65,9 @@ pub fn check_payment(
     amount_ngn: u128,
     meter_allowed: bool,
 ) -> Result<(), Rejection> {
+    if paused {
+        return Err(Rejection::Paused);
+    }
     if amount_ngn == 0 {
         return Err(Rejection::ZeroAmount);
     }
@@ -129,12 +137,21 @@ mod tests {
     const PER_PAY: u128 = 10_000;
 
     fn ok(spent: u128, balance: u128, amount: u128, allowed: bool) -> Result<(), Rejection> {
-        check_payment(MONTHLY, PER_PAY, spent, balance, amount, allowed)
+        check_payment(false, MONTHLY, PER_PAY, spent, balance, amount, allowed)
     }
 
     #[test]
     fn allows_a_payment_within_every_limit() {
         assert_eq!(ok(0, 64_200, 5_000, true), Ok(()));
+    }
+
+    #[test]
+    fn a_paused_vault_refuses_before_any_other_rule() {
+        // Over every limit too: the owner should hear that Stark is paused.
+        assert_eq!(
+            check_payment(true, MONTHLY, PER_PAY, 29_000, 0, 50_000, false),
+            Err(Rejection::Paused)
+        );
     }
 
     #[test]
@@ -189,7 +206,7 @@ mod tests {
 
     #[test]
     fn allowlist_checked_before_balance() {
-        let err = check_payment(MONTHLY, PER_PAY, 0, 100, 1_000, false).unwrap_err();
+        let err = check_payment(false, MONTHLY, PER_PAY, 0, 100, 1_000, false).unwrap_err();
         assert_eq!(err.code(), "meter_not_allowed");
     }
 
@@ -209,7 +226,7 @@ mod tests {
         // Regression: a wrapping add here would let a huge payment slip past the
         // cap, so the overflow must be treated as "over the cap".
         let spent = u128::MAX - 10;
-        let err = check_payment(u128::MAX, u128::MAX, spent, u128::MAX, 1_000, true)
+        let err = check_payment(false, u128::MAX, u128::MAX, spent, u128::MAX, 1_000, true)
             .unwrap_err();
         assert_eq!(
             err,
@@ -223,7 +240,7 @@ mod tests {
     #[test]
     fn a_sum_that_fits_exactly_at_the_cap_is_allowed() {
         assert_eq!(
-            check_payment(30_000, 30_000, 29_000, 99_999, 1_000, true),
+            check_payment(false, 30_000, 30_000, 29_000, 99_999, 1_000, true),
             Ok(())
         );
     }
@@ -238,6 +255,7 @@ mod tests {
     fn messages_have_no_crypto_jargon() {
         // Ground rule: no "vault", no "USDC", no wallet addresses in user copy.
         for rej in [
+            Rejection::Paused,
             Rejection::ZeroAmount,
             Rejection::ExceedsPerPayment { amount_ngn: 1, cap_ngn: 2 },
             Rejection::ExceedsMonthly { amount_ngn: 1, remaining_ngn: 2 },
@@ -294,6 +312,7 @@ mod tests {
     #[test]
     fn unique_error_codes_for_the_frontend() {
         let codes = [
+            Rejection::Paused.code(),
             Rejection::ZeroAmount.code(),
             Rejection::ExceedsPerPayment { amount_ngn: 1, cap_ngn: 2 }.code(),
             Rejection::ExceedsMonthly { amount_ngn: 1, remaining_ngn: 2 }.code(),

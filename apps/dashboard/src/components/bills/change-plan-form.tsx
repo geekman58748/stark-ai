@@ -1,4 +1,6 @@
-import { type Bill, plansQuery, useUpdateBill } from "@stark/api";
+import { useUpdateBill } from "@stark/api/mutations";
+import { plansQuery } from "@stark/api/queries";
+import type { Bill } from "@stark/api/types";
 import { DialogDescription, DialogHeader, DialogTitle } from "@stark/ui/components/dialog";
 import { Field, FieldLabel } from "@stark/ui/components/field";
 import { useQuery } from "@tanstack/react-query";

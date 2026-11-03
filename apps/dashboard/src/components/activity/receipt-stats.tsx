@@ -1,4 +1,4 @@
-import type { Receipt } from "@stark/api";
+import type { Receipt } from "@stark/api/types";
 import { Stat, StatGrid } from "@stark/ui/components/stat";
 
 export function ReceiptStats({ receipt }: { receipt: Receipt }) {

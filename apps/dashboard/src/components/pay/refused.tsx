@@ -1,4 +1,5 @@
-import { errorCopy, isApiError, limitsQuery } from "@stark/api";
+import { errorCopy, isApiError } from "@stark/api/errors";
+import { limitsQuery } from "@stark/api/queries";
 import { Button } from "@stark/ui/components/button";
 import { Icons } from "@stark/ui/components/icons";
 import { Notice } from "@stark/ui/components/notice";

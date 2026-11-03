@@ -50,7 +50,7 @@ balance, bills and activity keys so every screen stays in step.
 
 These come from [`docs/FRONTEND.md`](../../docs/FRONTEND.md) and are enforced in code:
 
-- Branch on the error `code`, never on `message`. Copy lives in `errorCopy()` in `@stark/api`.
+- Branch on the error `code`, never on `message`. Copy lives in `errorCopy()` in `@stark/api/errors`.
 - A payment is done only when its status is `delivered`. `pending` never shows as success;
   `declined` reads "Stark stopped this".
 - Never render `tx_hash` or `actions`. No "vault", "USDC" or addresses in the UI.

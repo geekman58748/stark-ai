@@ -28,6 +28,7 @@
         "@tanstack/react-query": "catalog:",
         "@tanstack/react-router": "^1.170.45",
         "@tanstack/react-start": "^1.169.3",
+        "date-fns": "^4.4.0",
         "react": "catalog:",
         "react-dom": "catalog:",
         "zod": "^4.3.6",
@@ -129,6 +130,9 @@
     "packages/utils": {
       "name": "@stark/utils",
       "version": "0.1.0",
+      "dependencies": {
+        "date-fns": "^4.4.0",
+      },
       "devDependencies": {
         "@stark/tsconfig": "workspace:*",
         "typescript": "catalog:",

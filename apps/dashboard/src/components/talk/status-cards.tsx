@@ -1,4 +1,4 @@
-import type { State } from "@stark/api";
+import type { State } from "@stark/api/types";
 import { formatNaira } from "@stark/utils/format";
 import { RenewalCard } from "@/components/talk/renewal-card";
 import { StatusCard } from "@/components/talk/status-card";

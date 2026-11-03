@@ -1,4 +1,5 @@
-import { errorCopy, useResetDemo } from "@stark/api";
+import { errorCopy } from "@stark/api/errors";
+import { useResetDemo } from "@stark/api/mutations";
 import {
   AlertDialog,
   AlertDialogCancel,

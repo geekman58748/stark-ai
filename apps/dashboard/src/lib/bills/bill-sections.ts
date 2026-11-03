@@ -1,4 +1,4 @@
-import type { Bill } from "@stark/api";
+import type { Bill } from "@stark/api/types";
 
 export type BillSection = keyof typeof BillSections.all;
 

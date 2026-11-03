@@ -1,13 +1,18 @@
 import { ApiError } from "./errors";
 import type {
+  ApprovedPayment,
   Bill,
   BillKind,
   BillPatch,
+  Controls,
+  DemoSnapshot,
   Limits,
   LimitsPatch,
   LinkCode,
   NewBill,
+  Payee,
   PaymentInput,
+  PaymentRequest,
   Plan,
   Receipt,
   SpeakReply,
@@ -100,6 +105,15 @@ export const api = {
   wallet: () => request<Wallet>("GET", "/v1/wallet"),
   topUp: (input: TopUpInput) => request<WalletMovement>("POST", "/v1/wallet/topup", input),
   suggestions: () => request<Suggestion[]>("GET", "/v1/suggestions"),
+  approvals: () => request<PaymentRequest[]>("GET", "/v1/approvals"),
+  demo: () => request<DemoSnapshot>("GET", "/v1/demo"),
+  payees: () => request<Payee[]>("GET", "/v1/payees"),
+  approve: (id: string) =>
+    request<ApprovedPayment>("POST", `/v1/approvals/${encodeURIComponent(id)}/approve`, {}),
+  deny: (id: string) =>
+    request<PaymentRequest>("POST", `/v1/approvals/${encodeURIComponent(id)}/deny`, {}),
+  pause: () => request<Controls>("POST", "/v1/controls/pause", {}),
+  resume: () => request<Controls>("POST", "/v1/controls/resume", {}),
   /**
    * Ends the session server-side as well as locally: the provider's session row
    * is deleted, so the token this tab was holding cannot be replayed.

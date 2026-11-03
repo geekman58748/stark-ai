@@ -14,6 +14,9 @@ export type ApiErrorCode =
   | "bill_in_flight"
   | "bad_limits"
   | "vendor_failed"
+  | "paused"
+  | "request_closed"
+  | "unknown_request"
   | "no_route"
   | "network";
 
@@ -46,6 +49,10 @@ export function errorCopy(error: unknown): string {
       return "There isn’t enough in your wallet for that.";
     case "unknown_bill":
       return "That bill no longer exists.";
+    case "paused":
+      return "Stark is paused. Resume it to pay.";
+    case "request_closed":
+      return "That request was already decided or has expired.";
     case "bad_amount":
       return "Enter an amount in whole naira.";
     case "vendor_failed":

@@ -5,6 +5,7 @@ import { Hero, Intro } from "~/components/hero";
 import { Safety } from "~/components/safety";
 import { SiteHeader } from "~/components/site-header";
 import { Statement } from "~/components/statement";
+import { Stories } from "~/components/stories";
 import { WaysToAsk } from "~/components/ways-to-ask";
 import type { Route } from "./+types/home";
 
@@ -32,6 +33,7 @@ export default function Home() {
         <Intro />
         <Statement />
         <WaysToAsk />
+        <Stories />
         <Safety />
         <Funding />
         <Faq />

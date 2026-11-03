@@ -1,4 +1,4 @@
-import { errorCopy } from "@stark/api";
+import { errorCopy } from "@stark/api/errors";
 import { Button } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
 import { useQueryErrorResetBoundary } from "@tanstack/react-query";

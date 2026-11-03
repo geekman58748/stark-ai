@@ -1,4 +1,4 @@
-import type { Suggestion } from "@stark/api";
+import type { Suggestion } from "@stark/api/types";
 import { cn } from "@stark/ui/utils/cn";
 
 export function NoticedItem({ suggestion }: { suggestion: Suggestion }) {

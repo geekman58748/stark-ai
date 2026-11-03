@@ -53,6 +53,8 @@ class FakeToolbox:
         self.bills = list(BILLS if bills is None else bills)
         self.pay_calls: list[tuple[str, int]] = []
         self.receipts: list[dict] = []
+        self.requests: list[tuple[str, int, str]] = []
+        self.refusals: list[tuple[str, int, str]] = []
 
     def get_state(self):
         return {
@@ -68,6 +70,13 @@ class FakeToolbox:
 
     def recent_activity(self):
         return list(self.receipts)
+
+    def request_approval(self, bill_id, amount_ngn, reason):
+        self.requests.append((bill_id, amount_ngn, reason))
+        return {"id": f"req_{len(self.requests)}", "window_minutes": 60}
+
+    def record_refusal(self, bill_id, amount_ngn, reason):
+        self.refusals.append((bill_id, amount_ngn, reason))
 
     def pay(self, bill_id, amount_ngn):
         self.pay_calls.append((bill_id, amount_ngn))
@@ -157,11 +166,15 @@ def _snapshot(system_message: dict) -> dict:
 class PolicyTests(unittest.TestCase):
     def ok(self, spent, balance, amount, allowed=True):
         return policy_rules.check_payment(
-            MONTHLY, PER_PAYMENT, spent, balance, amount, allowed
+            False, MONTHLY, PER_PAYMENT, spent, balance, amount, allowed
         )
 
     def test_allows_a_payment_within_every_limit(self):
         self.assertIsNone(self.ok(0, 64_200, 5_000))
+
+    def test_a_pause_beats_every_other_rule(self):
+        rejection = policy_rules.check_payment(True, 30_000, 10_000, 29_000, 0, 50_000, False)
+        self.assertEqual(rejection.code, policy_rules.PAUSED)
 
     def test_rejects_zero_amount(self):
         rejection = self.ok(0, 64_200, 0)
@@ -180,13 +193,13 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(rejection.code, policy_rules.OVER_PER_PAYMENT_CAP)
 
     def test_rejects_over_monthly_cap_within_per_payment(self):
-        rejection = policy_rules.check_payment(30_000, 30_000, 28_000, 64_200, 5_000, True)
+        rejection = policy_rules.check_payment(False, 30_000, 30_000, 28_000, 64_200, 5_000, True)
         self.assertEqual(rejection.code, policy_rules.OVER_CAP)
         self.assertEqual(rejection.detail["remaining_ngn"], 2_000)
 
     def test_allows_exactly_the_monthly_cap(self):
         self.assertIsNone(
-            policy_rules.check_payment(30_000, 30_000, 25_000, 64_200, 5_000, True)
+            policy_rules.check_payment(False, 30_000, 30_000, 25_000, 64_200, 5_000, True)
         )
 
     def test_rejects_an_unlisted_meter(self):
@@ -194,11 +207,11 @@ class PolicyTests(unittest.TestCase):
                          policy_rules.METER_NOT_ALLOWED)
 
     def test_policy_violation_beats_balance(self):
-        rejection = policy_rules.check_payment(30_000, 300_000, 29_000, 100, 9_000, False)
+        rejection = policy_rules.check_payment(False, 30_000, 300_000, 29_000, 100, 9_000, False)
         self.assertEqual(rejection.code, policy_rules.OVER_CAP)
 
     def test_allowlist_beats_balance(self):
-        rejection = policy_rules.check_payment(30_000, 30_000, 0, 100, 1_000, False)
+        rejection = policy_rules.check_payment(False, 30_000, 30_000, 0, 100, 1_000, False)
         self.assertEqual(rejection.code, policy_rules.METER_NOT_ALLOWED)
 
     def test_rejects_when_balance_is_short(self):
@@ -208,7 +221,7 @@ class PolicyTests(unittest.TestCase):
 
     def test_huge_spent_is_refused_not_clamped(self):
         rejection = policy_rules.check_payment(
-            10**30, 10**30, 10**30, 10**30, 1_000, True
+            False, 10**30, 10**30, 10**30, 10**30, 1_000, True
         )
         self.assertEqual(rejection.code, policy_rules.OVER_CAP)
 
@@ -610,12 +623,57 @@ class AgentTests(unittest.TestCase):
         make_agent(toolbox).respond("stark top it up with two thousand five hundred")
         self.assertEqual(toolbox.pay_calls, [("bill_home_meter", 2_500)])
 
-    def test_over_per_payment_cap_is_refused_and_never_charged(self):
+    def test_over_per_payment_cap_is_sent_for_approval_and_never_charged(self):
         toolbox = FakeToolbox()
         reply = make_agent(toolbox).respond("stark pay six thousand for the light")
         self.assertEqual(toolbox.pay_calls, [])
         self.assertEqual(reply.code, policy_rules.OVER_PER_PAYMENT_CAP)
-        self.assertEqual(reply.reply, policy_rules.MESSAGES[policy_rules.OVER_PER_PAYMENT_CAP])
+        self.assertTrue(reply.reply.startswith(
+            policy_rules.MESSAGES[policy_rules.OVER_PER_PAYMENT_CAP]))
+        self.assertIn("approve it within an hour", reply.reply)
+        self.assertEqual(toolbox.requests,
+                         [("bill_home_meter", 6_000, policy_rules.OVER_PER_PAYMENT_CAP)])
+        self.assertEqual(toolbox.refusals, [])
+
+    def test_splitting_one_request_to_dodge_the_per_payment_cap_goes_for_approval(self):
+        # The model obeys the cap on each call but splits ₦8,000 into ₦5,000 + ₦3,000
+        # for the same bill. The second call must not be paid.
+        toolbox = FakeToolbox()
+        model = ScriptedModel([
+            agent_mod.ToolCall(id="1", name="pay_bill",
+                               arguments={"bill_id": "bill_home_meter", "amount_ngn": 5_000}),
+            agent_mod.ToolCall(id="2", name="pay_bill",
+                               arguments={"bill_id": "bill_home_meter", "amount_ngn": 3_000}),
+        ])
+        reply = make_agent(toolbox, model=model).respond("stark pay eight thousand for the light")
+        self.assertEqual(toolbox.pay_calls, [("bill_home_meter", 5_000)])
+        self.assertEqual(reply.code, policy_rules.OVER_PER_PAYMENT_CAP)
+        self.assertEqual(toolbox.requests,
+                         [("bill_home_meter", 3_000, policy_rules.OVER_PER_PAYMENT_CAP)])
+
+    def test_two_bills_in_one_request_each_get_their_own_cap(self):
+        office = {**ELECTRICITY, "id": "bill_office_meter", "label": "Office meter"}
+        toolbox = FakeToolbox(bills=[ELECTRICITY, office])
+        model = ScriptedModel([
+            agent_mod.ToolCall(id="1", name="pay_bill",
+                               arguments={"bill_id": "bill_home_meter", "amount_ngn": 5_000}),
+            agent_mod.ToolCall(id="2", name="pay_bill",
+                               arguments={"bill_id": "bill_office_meter", "amount_ngn": 3_000}),
+        ])
+        make_agent(toolbox, model=model).respond("stark top up home with 5000 and office with 3000")
+        self.assertEqual(toolbox.pay_calls,
+                         [("bill_home_meter", 5_000), ("bill_office_meter", 3_000)])
+        self.assertEqual(toolbox.requests, [])
+
+    def test_a_refusal_that_is_not_a_limit_is_logged_not_sent_for_approval(self):
+        toolbox = FakeToolbox(balance=1_000)
+        reply = make_agent(toolbox).respond("stark top it up with two thousand")
+        self.assertEqual(reply.code, policy_rules.INSUFFICIENT_BALANCE)
+        self.assertEqual(toolbox.requests, [])
+        self.assertEqual(toolbox.refusals, [(
+            "bill_home_meter", 2_000,
+            policy_rules.MESSAGES[policy_rules.INSUFFICIENT_BALANCE],
+        )])
 
     def test_over_monthly_cap_is_refused(self):
         toolbox = FakeToolbox(spent=28_000)
@@ -914,10 +972,11 @@ class LimitReasoningTests(unittest.TestCase):
         self.assertIn("You are Stark", system["content"])
 
     def test_the_prompt_says_name_the_limit_not_the_balance(self):
-        # The wording the demo relies on: refuse before proposing, and say
-        # which limit did it.
+        # The wording the demo relies on: say which limit decided it, and send an
+        # over-limit request on to pay_bill so it reaches the owner for approval
+        # instead of the model refusing it from the limits it can see.
         self.assertIn("per payment limit", agent_mod.SYSTEM_PROMPT)
-        self.assertIn("do not ask them to proceed", agent_mod.SYSTEM_PROMPT)
+        self.assertIn("still call pay_bill", agent_mod.SYSTEM_PROMPT)
 
 
 class ModelFailureTests(unittest.TestCase):

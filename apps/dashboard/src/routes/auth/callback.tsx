@@ -1,4 +1,4 @@
-import { setAuthToken } from "@stark/api";
+import { setAuthToken } from "@stark/api/client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { CallbackBrand } from "@/components/auth/callback-brand";

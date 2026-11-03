@@ -14,6 +14,7 @@ from typing import Any, Optional
 from app.common.api_error import ApiError
 from app.database import neon
 from app.modules.account.account_service import AccountService
+from app.modules.control.control_service import ControlService
 from app.modules.telegram import telegram
 from app.modules.telegram.identity_repository import IdentityRepository
 from app.modules.turnlog.turn_logger import TurnLogger
@@ -23,7 +24,8 @@ from app.shared.services.api_config_service import ApiConfigService
 
 class TelegramService:
     def __init__(self, config: ApiConfigService, db: neon.Database,
-                 identities: IdentityRepository, accounts: AccountService) -> None:
+                 identities: IdentityRepository, accounts: AccountService,
+                 controls: ControlService) -> None:
         self.config = config
         self.db = db
         self.accounts = accounts
@@ -31,6 +33,7 @@ class TelegramService:
         self.adapter = telegram.TelegramAdapter(
             agent=self,
             identities=identities,
+            controls=controls,
             bot_token=config.telegram_bot_token,
             secret=config.telegram_webhook_secret,
             owner_user_id=self.owner_account_id,

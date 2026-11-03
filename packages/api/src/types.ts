@@ -42,6 +42,8 @@ export type State = {
   cap_ngn: number;
   spent_ngn: number;
   remaining_cap_ngn: number;
+  /** True while the owner has paused Stark: every payment is refused. */
+  paused: boolean;
   /** null when the user has no electricity bill: hide the block, don't show 0. */
   units_left: number | null;
   /** An estimate from purchase history, not a precise number. */
@@ -71,6 +73,8 @@ export type Receipt = {
   request_id?: string;
   type: ReceiptType;
   source: string | null;
+  /** Why a `declined` entry was stopped, in plain words; null otherwise. */
+  reason: string | null;
 };
 
 export type Plan = {
@@ -88,7 +92,11 @@ export type Limits = {
   per_payment_cap_ngn: number;
   spent_ngn: number;
   remaining_cap_ngn: number;
+  /** How long a payment over a limit waits for approval. */
+  approval_window_minutes: ApprovalWindow;
 };
+
+export type ApprovalWindow = 15 | 30 | 60 | 360 | 1440;
 
 export type Wallet = {
   currency: "NGN";
@@ -165,7 +173,55 @@ export type LinkCode = {
   user_id?: string;
 };
 
-export type LimitsPatch = { monthly_cap_ngn?: number; per_payment_cap_ngn?: number };
+export type LimitsPatch = {
+  monthly_cap_ngn?: number;
+  per_payment_cap_ngn?: number;
+  approval_window_minutes?: ApprovalWindow;
+};
 export type PaymentInput = { bill_id: string; amount_ngn: number };
 /** Test money: there is no payment provider yet, so nothing is collected. */
 export type TopUpInput = { amount_ngn: number; request_id?: string };
+
+export type Controls = {
+  paused: boolean;
+  /** When Stark was paused; null while it may pay. */
+  paused_at: string | null;
+};
+
+/** A payment over a limit, waiting for the owner. Only `pending` can be decided. */
+export type PaymentRequest = {
+  id: string;
+  bill_id: string;
+  bill_label: string;
+  amount_ngn: number;
+  reason: "over_per_payment_cap" | "over_cap";
+  status: "pending" | "approved" | "denied" | "expired";
+  created_at: string;
+  expires_at: string;
+  decided_at: string | null;
+  /** The payment an approval became. */
+  receipt_id: string | null;
+};
+
+export type ApprovedPayment = { request: PaymentRequest; receipt: Receipt };
+
+/** The public sample account. Made up, read-only, and served without a session. */
+export type DemoSnapshot = {
+  state: State;
+  activity: Receipt[];
+  approvals: PaymentRequest[];
+  limits: Pick<Limits, "monthly_cap_ngn" | "per_payment_cap_ngn">;
+};
+
+/** A saved bill seen as somewhere Stark may pay. Only delivered payments count. */
+export type Payee = {
+  bill_id: string;
+  label: string;
+  kind: BillKind;
+  provider: string;
+  reference: string;
+  paid_this_month_ngn: number;
+  paid_total_ngn: number;
+  payments: number;
+  last_paid_at: string | null;
+};

@@ -28,7 +28,11 @@ class ReminderService:
         a test) can still read what *would* go out. With one, each renewal is
         claimed before it is sent, so a chat is never nudged twice for one date.
         """
-        bills = self.accounts.state(account_id).bills.values()
+        state = self.accounts.state(account_id)
+        # A paused Stark offering to pay would only be refused; stay quiet instead.
+        if state.paused_at is not None:
+            return []
+        bills = state.bills.values()
         adapter = self.telegram.adapter
         if not adapter.bot_token:
             return [reminders.push_text(item) for item in reminders.due_soon(bills)]

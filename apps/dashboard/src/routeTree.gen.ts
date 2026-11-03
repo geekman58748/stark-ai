@@ -10,10 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as TalkRouteImport } from './routes/talk'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppActivityRouteImport } from './routes/_app/activity'
+import { Route as AppApprovalsRouteImport } from './routes/_app/approvals'
 import { Route as AppConnectRouteImport } from './routes/_app/connect'
 import { Route as AppPayRouteImport } from './routes/_app/pay'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
@@ -29,6 +31,11 @@ import { Route as AppWalletAddRouteImport } from './routes/_app/wallet/add'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -49,6 +56,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppActivityRoute = AppActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppApprovalsRoute = AppApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
   getParentRoute: () => AppRoute,
 } as any)
 const AppConnectRoute = AppConnectRouteImport.update({
@@ -114,9 +126,11 @@ const AppWalletAddRoute = AppWalletAddRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/demo': typeof DemoRoute
   '/login': typeof LoginRoute
   '/talk': typeof TalkRoute
   '/activity': typeof AppActivityRoute
+  '/approvals': typeof AppApprovalsRoute
   '/connect': typeof AppConnectRoute
   '/pay': typeof AppPayRoute
   '/settings': typeof AppSettingsRoute
@@ -131,9 +145,11 @@ export interface FileRoutesByFullPath {
   '/wallet/': typeof AppWalletIndexRoute
 }
 export interface FileRoutesByTo {
+  '/demo': typeof DemoRoute
   '/login': typeof LoginRoute
   '/talk': typeof TalkRoute
   '/activity': typeof AppActivityRoute
+  '/approvals': typeof AppApprovalsRoute
   '/connect': typeof AppConnectRoute
   '/pay': typeof AppPayRoute
   '/settings': typeof AppSettingsRoute
@@ -151,9 +167,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
+  '/demo': typeof DemoRoute
   '/login': typeof LoginRoute
   '/talk': typeof TalkRoute
   '/_app/activity': typeof AppActivityRoute
+  '/_app/approvals': typeof AppApprovalsRoute
   '/_app/connect': typeof AppConnectRoute
   '/_app/pay': typeof AppPayRoute
   '/_app/settings': typeof AppSettingsRoute
@@ -172,9 +190,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/demo'
     | '/login'
     | '/talk'
     | '/activity'
+    | '/approvals'
     | '/connect'
     | '/pay'
     | '/settings'
@@ -189,9 +209,11 @@ export interface FileRouteTypes {
     | '/wallet/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/demo'
     | '/login'
     | '/talk'
     | '/activity'
+    | '/approvals'
     | '/connect'
     | '/pay'
     | '/settings'
@@ -208,9 +230,11 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_app'
+    | '/demo'
     | '/login'
     | '/talk'
     | '/_app/activity'
+    | '/_app/approvals'
     | '/_app/connect'
     | '/_app/pay'
     | '/_app/settings'
@@ -228,6 +252,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
+  DemoRoute: typeof DemoRoute
   LoginRoute: typeof LoginRoute
   TalkRoute: typeof TalkRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -243,6 +268,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -271,6 +303,13 @@ declare module '@tanstack/react-router' {
       path: '/activity'
       fullPath: '/activity'
       preLoaderRoute: typeof AppActivityRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/approvals': {
+      id: '/_app/approvals'
+      path: '/approvals'
+      fullPath: '/approvals'
+      preLoaderRoute: typeof AppApprovalsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/connect': {
@@ -362,6 +401,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppActivityRoute: typeof AppActivityRoute
+  AppApprovalsRoute: typeof AppApprovalsRoute
   AppConnectRoute: typeof AppConnectRoute
   AppPayRoute: typeof AppPayRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -375,6 +415,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppActivityRoute: AppActivityRoute,
+  AppApprovalsRoute: AppApprovalsRoute,
   AppConnectRoute: AppConnectRoute,
   AppPayRoute: AppPayRoute,
   AppSettingsRoute: AppSettingsRoute,
@@ -390,6 +431,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
+  DemoRoute: DemoRoute,
   LoginRoute: LoginRoute,
   TalkRoute: TalkRoute,
   AuthCallbackRoute: AuthCallbackRoute,

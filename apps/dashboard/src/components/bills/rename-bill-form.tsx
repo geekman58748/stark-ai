@@ -1,4 +1,5 @@
-import { type Bill, useUpdateBill } from "@stark/api";
+import { useUpdateBill } from "@stark/api/mutations";
+import type { Bill } from "@stark/api/types";
 import { DialogDescription, DialogHeader, DialogTitle } from "@stark/ui/components/dialog";
 import { Field, FieldLabel } from "@stark/ui/components/field";
 import { Input } from "@stark/ui/components/input";

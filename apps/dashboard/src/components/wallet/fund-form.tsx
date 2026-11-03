@@ -1,4 +1,5 @@
-import { errorCopy, useTopUp } from "@stark/api";
+import { errorCopy } from "@stark/api/errors";
+import { useTopUp } from "@stark/api/mutations";
 import { AmountField } from "@stark/ui/components/amount-field";
 import { Button } from "@stark/ui/components/button";
 import { FieldError } from "@stark/ui/components/field";

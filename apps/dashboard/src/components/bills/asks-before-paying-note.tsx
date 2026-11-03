@@ -1,4 +1,4 @@
-import { limitsQuery } from "@stark/api";
+import { limitsQuery } from "@stark/api/queries";
 import { Icons } from "@stark/ui/components/icons";
 import { formatNaira } from "@stark/utils/format";
 import { useQuery } from "@tanstack/react-query";

@@ -1,4 +1,4 @@
-import type { Bill } from "@stark/api";
+import type { Bill } from "@stark/api/types";
 import { StatusPill } from "@stark/ui/components/status-pill";
 import { BillIcon } from "@/components/bills/bill-icon";
 

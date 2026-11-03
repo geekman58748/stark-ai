@@ -1,4 +1,4 @@
-import type { Bill } from "@stark/api";
+import type { Bill } from "@stark/api/types";
 import { BillFacts } from "@/components/bills/bill-facts";
 import { BillTitle } from "@/components/bills/bill-title";
 

@@ -1,4 +1,4 @@
-import type { DueBill } from "@stark/api";
+import type { DueBill } from "@stark/api/types";
 import { Card } from "@stark/ui/components/card";
 import { cn } from "@stark/ui/utils/cn";
 import { Link } from "@tanstack/react-router";

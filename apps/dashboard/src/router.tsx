@@ -1,4 +1,4 @@
-import { setApiBaseUrl, setAuthToken } from "@stark/api";
+import { setApiBaseUrl, setAuthToken } from "@stark/api/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { sessionStore } from "./lib/auth/session-store";
