@@ -12,9 +12,12 @@ from app.modules.account.account_repository import AccountRepository
 from app.modules.account.account_service import AccountService
 from app.modules.agent import agent as agent_layer
 from app.modules.agent.account_toolbox import AccountToolbox
+from app.modules.approval.approval_repository import ApprovalRepository
+from app.modules.approval.approval_service import ApprovalService
 from app.modules.auth.auth_service import AuthService
 from app.modules.bill.bill_service import BillService
 from app.modules.chain import vault_signer
+from app.modules.control.control_service import ControlService
 from app.modules.limit.limit_service import LimitService
 from app.modules.payment.bill_payment_service import BillPaymentService
 from app.modules.payment.payment_service import PaymentService
@@ -47,20 +50,23 @@ class AppModule:
         self.auth = AuthService(db)
         self.accounts = AccountService(self.auth, self.account_repository, self.receipts,
                                        self._build_agent)
+        self.controls = ControlService(self.accounts, self.account_repository)
         self.bills = BillService(self.accounts, self.account_repository, self.receipts)
         self.plans = PlanService()
         self.wallet = WalletService(self.accounts, self.receipts)
-        self.limits = LimitService(self.accounts, self.wallet)
         self.telemetry = TelemetryService(self.readings, self.receipts)
         self.bill_payments = BillPaymentService(
             self.accounts, self.bills, self.wallet,
             PaymentService(self.receipts, vending.gateway_from_env()),
         )
+        self.approvals = ApprovalService(ApprovalRepository(db), self.bill_payments)
+        self.limits = LimitService(self.accounts, self.wallet, self.approvals)
         self.state = StateService(self.accounts, self.wallet, self.telemetry)
         self.suggestions = SuggestionService(self.accounts, self.wallet, self.telemetry,
                                              self.bill_payments)
         self.voice = VoiceService(self.accounts)
-        self.telegram = TelegramService(config, db, self.identities, self.accounts)
+        self.telegram = TelegramService(config, db, self.identities, self.accounts,
+                                        self.controls)
         self.reminders = ReminderService(self.accounts, self.telegram)
         self.stub = StubService(config, self.accounts, self.account_repository,
                                 self.receipts, self.readings, self.identities,

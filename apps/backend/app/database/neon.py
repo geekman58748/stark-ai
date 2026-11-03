@@ -267,6 +267,33 @@ CREATE TABLE IF NOT EXISTS accounts (
     seeded_at    TEXT
 );
 
+-- Set while the owner has paused Stark: every payment is refused until it clears.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS paused_at TEXT;
+
+-- How long a payment over a limit waits for the owner before it lapses.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS approval_window_minutes INTEGER;
+
+-- A payment Stark was asked for but may not make alone, because it is over a limit.
+-- It waits here for the owner to approve or deny it in the app, until it expires.
+-- An approved one points at the receipt it became.
+CREATE TABLE IF NOT EXISTS payment_requests (
+    id          TEXT NOT NULL,
+    user_id     TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    bill_id     TEXT NOT NULL,
+    bill_label  TEXT NOT NULL,
+    amount_ngn  BIGINT NOT NULL,
+    reason      TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    decided_at  TEXT,
+    receipt_id  TEXT,
+    seq         BIGSERIAL,
+    PRIMARY KEY (user_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS payment_requests_open ON payment_requests (user_id, status);
+
 CREATE TABLE IF NOT EXISTS wallets (
     user_id     TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
     balance_ngn BIGINT NOT NULL,

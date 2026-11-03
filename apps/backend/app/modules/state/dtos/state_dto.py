@@ -16,6 +16,8 @@ class StateDto(BaseModel):
     cap_ngn: int = Field(examples=[30000])
     spent_ngn: int = Field(examples=[23000])
     remaining_cap_ngn: int = Field(examples=[7000])
+    paused: bool = Field(description="True while the owner has paused every payment.",
+                         examples=[False])
     units_left: Optional[float] = Field(
         description="Units delivered minus energy measured; null without data.",
         examples=[11.4],

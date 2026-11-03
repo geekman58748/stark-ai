@@ -31,6 +31,7 @@ class StateService:
             "cap_ngn": cap,
             "spent_ngn": wallet["spent_ngn"],
             "remaining_cap_ngn": max(cap - wallet["spent_ngn"], 0),
+            "paused": state.paused_at is not None,
             "units_left": units_left,
             "days_left": days_left,
             "bills": list(state.bills.values()),

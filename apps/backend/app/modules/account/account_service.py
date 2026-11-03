@@ -47,7 +47,8 @@ class AccountService:
             return loaded
 
         bills = self.accounts.bills(account_id)
-        state = AccountState(bills=bills, limits=self._limits_for(account_id, bills))
+        state = AccountState(bills=bills, limits=self._limits_for(account_id, bills),
+                             paused_at=self.accounts.paused_at(account_id))
         with self._lock:
             # Two first requests can race here; the first one in wins.
             state = self._states.setdefault(account_id, state)

@@ -13,8 +13,11 @@ class UpdateLimitsDto(BaseModel):
 
     monthly_cap_ngn: Optional[int] = Field(default=None, examples=[40000])
     per_payment_cap_ngn: Optional[int] = Field(default=None, examples=[5000])
+    approval_window_minutes: Optional[int] = Field(
+        default=None, description="15, 30, 60, 360 or 1440.", examples=[60])
 
-    @field_validator("monthly_cap_ngn", "per_payment_cap_ngn", mode="before")
+    @field_validator("monthly_cap_ngn", "per_payment_cap_ngn", "approval_window_minutes",
+                     mode="before")
     @classmethod
     def cap(cls, value: Any, info: ValidationInfo) -> Optional[int]:
         return ContractField.optional_integer(

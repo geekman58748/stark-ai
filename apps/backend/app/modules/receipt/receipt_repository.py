@@ -294,4 +294,6 @@ def api_shape(receipt: dict[str, Any]) -> dict[str, Any]:
         # Live payments predate this column, so they default to `bill`.
         "type": receipt.get("entry_type") or "bill",
         "source": receipt.get("source"),
+        # Additive (2026-11-03): why a `declined` entry was stopped, in plain words.
+        "reason": receipt.get("vendor_message") if receipt["status"] == "declined" else None,
     }

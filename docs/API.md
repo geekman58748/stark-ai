@@ -40,6 +40,9 @@ Every non-2xx response has this body:
 | `code` | HTTP | When |
 |---|---|---|
 | `unauthorized` | 401 | Missing, malformed or expired bearer token — sign in first |
+| `paused` | 423 | The owner paused Stark; no payment is made until it is resumed (additive, 2026-11-03) |
+| `unknown_request` | 404 | No payment request with that id (additive, 2026-11-03) |
+| `request_closed` | 409 | The request was already approved, denied or has expired (additive, 2026-11-03) |
 | `unknown_bill` | 404 | No bill with that id |
 | `bad_amount` | 400 | `amount_ngn` missing, zero, or not an integer |
 | `bad_watts` | 400 | Telemetry `watts` not a number |
@@ -62,7 +65,7 @@ Every non-2xx response has this body:
 | `bad_request` | 400 | The body is not valid JSON, or a field has the wrong type (additive, 2026-10-27) |
 | `not_configured` | 409 | `POST /v1/link/code` while `STARK_TG_OWNER_EMAIL` names no account (additive, 2026-10-27) |
 
-> Ordering note: the **per-payment** cap is checked first, then the **monthly** cap,
+> Ordering note: a **pause** beats everything. Otherwise the **per-payment** cap is checked first, then the **monthly** cap,
 > then the balance. An amount that breaches all three returns `over_per_payment_cap`.
 > Ordering matters when the caps differ: a ₦20,000 payment with a ₦10,000
 > per-payment limit returns `over_per_payment_cap`, not `over_cap`.
@@ -84,6 +87,7 @@ Everything the dashboard needs in one call. Poll or refetch after any payment.
   "cap_ngn": 30000,
   "spent_ngn": 23000,
   "remaining_cap_ngn": 7000,
+  "paused": false,
   "units_left": 11.4,
   "days_left": 4,
   "bills": [ /* Bill objects, see below */ ],
@@ -360,6 +364,59 @@ Send either or both fields; returns the full object above.
   voice turn is refused at the new limit, with no restart.
 - Stored per account (2026-10-27), so a restart keeps it. An account that never
   set one starts at `₦30,000` / `₦10,000`.
+
+### `GET /v1/controls`, `POST /v1/controls/pause`, `POST /v1/controls/resume`
+
+The owner's off switch (additive, 2026-11-03). All three return:
+
+```json
+{ "paused": true, "paused_at": "2026-11-03T09:12:00Z" }
+```
+
+- While paused, every payment is refused with **423 `paused`**: `POST /v1/payments`,
+  the agent (voice, Telegram, the wall phone) and reminder nudges, which stay quiet.
+  Questions are still answered.
+- Pausing twice keeps the first `paused_at`; resuming an active account is a no-op.
+- Stored per account, so a restart keeps it. `/v1/state` mirrors it as `paused`.
+- A linked Telegram chat can send `/pause` and `/resume`.
+
+### `GET /v1/approvals`, `POST /v1/approvals/{id}/approve`, `POST /v1/approvals/{id}/deny`
+
+Payments over a limit wait for the owner (additive, 2026-11-03). When the agent is
+asked for a payment that breaks the per-payment or monthly cap, it files a request
+instead of only refusing, and says so: "…I've sent it to the Stark app for you to
+approve. Nothing is paid unless you approve it within an hour."
+
+```json
+{
+  "id": "req_3f9a1c2b4d",
+  "bill_id": "bill_home_meter",
+  "bill_label": "Home electricity",
+  "amount_ngn": 15000,
+  "reason": "over_per_payment_cap",
+  "status": "pending",
+  "created_at": "2026-11-03T09:12:00Z",
+  "expires_at": "2026-11-03T10:12:00Z",
+  "decided_at": null,
+  "receipt_id": null
+}
+```
+
+- `GET` lists the latest 20, newest first; lapsed ones read `expired`. `status` is
+  `pending | approved | denied | expired`; only `pending` can be decided.
+- **Only the signed-in app decides.** No chat command approves a request, so a voice
+  in the room can ask but never also say yes.
+- `approve` pays that one amount past the cap it broke and returns
+  `{ "request": …, "receipt": Receipt }`. The pause, the balance and the vendor still
+  apply: if the payment cannot go through nothing is charged, the error is returned
+  (`paused`, `insufficient_balance`, `vendor_failed`, `unknown_bill`) and the request
+  stays `pending` until it expires.
+- `deny` returns the request and adds a `declined` entry to `/v1/activity`.
+- Asking again for the same bill and amount while one is pending returns that one.
+- Other refusals (paused, unlisted meter, short balance) never become requests; the
+  agent logs them to `/v1/activity` as `declined`, with `reason` set.
+- The wait is `approval_window_minutes` on `/v1/limits`: one of 15, 30, 60 (default),
+  360 or 1440, set with `PATCH /v1/limits` (`bad_limits` otherwise).
 
 ### `GET /v1/wallet`
 
@@ -778,3 +835,5 @@ Shapes will not change as these land. Only the values become real.
 | 2026-10-26 | **Auth enforced + storage moved.** Every `/v1` route except the Telegram webhook needs `Authorization: Bearer <token>` from Neon Auth, else **401 `unauthorized`** (`GET /v1/speak/stream` also takes `?token=`); `POST /v1/auth/logout` added. Receipts, wallets, accounts and channel identities now live in Neon Postgres instead of SQLite, scoped per account — two sign-ins no longer share a wallet. New code `unauthorized`. No response shape changed. |
 | 2026-10-27 | No mock data for real accounts. New accounts open empty (no bills, ₦0, no activity). Bills, limits and readings are stored per account. `units_left`/`days_left` computed from top-ups and readings; `/v1/telemetry` ignores a client `ts`. Top-ups are labelled test money; `POST /v1/wallet/withdraw` answers 501 `not_available`. `POST /v1/_stub/reset` is off unless `STARK_STUB_RESET=1`. No shape changed. |
 | 2026-10-27 | **Backend on FastAPI**, organised per feature module (controller, service, DTOs); Swagger UI at `/docs`. Every shape and code is unchanged. Request bodies are JSON (as every client already sends) except `/v1/voice`, which still takes multipart; a body that is not JSON is `400 bad_request`. `PATCH /v1/bills` `renews_on: null` now clears the date as documented. `POST /v1/link/code` answers `409 not_configured` instead of a 500 when the bot has no owner account. |
+| 2026-11-03 | Pause: `GET /v1/controls`, `POST /v1/controls/pause`, `POST /v1/controls/resume`; `/v1/state` gains `paused`; new code `paused` (423), checked before every other payment rule. Telegram gains `/pause` and `/resume`. Additive only. |
+| 2026-11-03 | Approvals: `GET /v1/approvals`, `POST /v1/approvals/{id}/approve`, `POST /v1/approvals/{id}/deny`; `/v1/limits` gains `approval_window_minutes` (also patchable); `Receipt` gains `reason` for `declined` entries, which the agent now writes for refusals. New codes `unknown_request`, `request_closed`. Additive only. |

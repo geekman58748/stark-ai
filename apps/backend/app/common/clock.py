@@ -21,6 +21,10 @@ class Clock:
         )
 
     @staticmethod
+    def in_minutes(minutes: int) -> str:
+        return Clock._iso(datetime.now(timezone.utc) + timedelta(minutes=minutes))
+
+    @staticmethod
     def in_days(days: int) -> str:
         """A calendar date `days` from now, as `renews_on` wants it (YYYY-MM-DD)."""
         return (datetime.now(timezone.utc) + timedelta(days=days)).date().isoformat()

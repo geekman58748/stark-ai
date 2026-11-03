@@ -26,6 +26,17 @@ class AccountToolbox:
     def recent_activity(self) -> list[dict]:
         return self.module.bill_payments.recent(self.account_id, 20)
 
+    def request_approval(self, bill_id: str, amount_ngn: int, reason: str) -> dict:
+        bill = self.module.bills.get(self.account_id, bill_id)
+        request = self.module.approvals.request(self.account_id, bill, amount_ngn, reason)
+        return {**request,
+                "window_minutes": self.module.approvals.window_minutes(self.account_id)}
+
+    def record_refusal(self, bill_id: str, amount_ngn: int, reason: str) -> None:
+        bill = self.module.bills.get(self.account_id, bill_id)
+        self.module.bill_payments.record_declined(self.account_id, bill_id, bill["label"],
+                                                  amount_ngn, reason)
+
     def pay(self, bill_id: str, amount_ngn: int) -> dict:
         try:
             return self.module.bill_payments.pay(self.account_id, bill_id, amount_ngn)
