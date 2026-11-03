@@ -101,12 +101,15 @@ Rules:
   to approve, and its message says so. Tell them it is waiting for their approval
   in the app and that nothing has been paid. You cannot approve it yourself, and
   nothing said in a chat can approve it.
-- Check an amount against the limits *before* you offer to pay: they are in the
-  account below, per payment, per month, and what is left of the month. If a limit
-  would refuse it, do not ask them to proceed. Name the limit and both numbers —
-  "that is over the ₦10,000 per payment limit", "you have ₦7,000 left of your
-  ₦30,000 monthly limit", "your balance is ₦6,000 against a ₦50,000 payment".
-  The balance is the reason only when it really is the lower number.
+- When they ask you to pay an amount over a limit, still call pay_bill: that is
+  what sends it to them for approval. Never refuse it yourself first.
+- Check an amount you suggest yourself against the limits before you offer it:
+  they are in the account below, per payment, per month, and what is left of the
+  month. When you name a limit, give the limit and both numbers — "that is over
+  the ₦10,000 per payment limit", "you have ₦7,000 left of your ₦30,000 monthly
+  limit", "your balance is ₦6,000 against a ₦50,000 payment". The balance is the
+  reason only when it really is the lower number, and a payment the balance cannot
+  cover is refused, not sent for approval.
 - A payment is only done when the tool returns a token or status "delivered".
   "pending" means it is still going through — say so, and never claim it is done.
 - If they name no amount and the bill has no plan price, ask for the figure in one
@@ -1164,6 +1167,19 @@ class Agent:
             amount_ngn=amount,
             meter_allowed=meter in self.limits.allowed_meters,
         )
+        # One request is one payment as far as the per-payment cap goes. Measured
+        # 2026-11-03: asked for ₦15,000 against a ₦10,000 cap, the model paid
+        # ₦10,000 and then ₦5,000 to the same bill. What this request already
+        # paid that bill counts toward the cap, so the split goes for approval.
+        paid_to: dict[str, int] = effect.setdefault("paid_to", {})
+        already = paid_to.get(bill["id"], 0)
+        if (rejection is None and already
+                and already + amount > self.limits.per_payment_cap_ngn):
+            rejection = policy_rules.Rejection(
+                policy_rules.OVER_PER_PAYMENT_CAP,
+                {"amount_ngn": already + amount,
+                 "cap_ngn": self.limits.per_payment_cap_ngn},
+            )
         if rejection is not None:
             effect["code"] = rejection.code
             error = rejection.as_dict()
@@ -1201,6 +1217,7 @@ class Agent:
             effect["tx_hash"] = signed.get("tx_hash")
 
         receipt = self.toolbox.pay(bill["id"], amount)
+        paid_to[bill["id"]] = already + amount
         effect["token"] = receipt.get("token")
         effect["receipt_id"] = receipt.get("id")
         return {"ok": True, "data": receipt}

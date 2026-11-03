@@ -635,6 +635,36 @@ class AgentTests(unittest.TestCase):
                          [("bill_home_meter", 6_000, policy_rules.OVER_PER_PAYMENT_CAP)])
         self.assertEqual(toolbox.refusals, [])
 
+    def test_splitting_one_request_to_dodge_the_per_payment_cap_goes_for_approval(self):
+        # The model obeys the cap on each call but splits ₦8,000 into ₦5,000 + ₦3,000
+        # for the same bill. The second call must not be paid.
+        toolbox = FakeToolbox()
+        model = ScriptedModel([
+            agent_mod.ToolCall(id="1", name="pay_bill",
+                               arguments={"bill_id": "bill_home_meter", "amount_ngn": 5_000}),
+            agent_mod.ToolCall(id="2", name="pay_bill",
+                               arguments={"bill_id": "bill_home_meter", "amount_ngn": 3_000}),
+        ])
+        reply = make_agent(toolbox, model=model).respond("stark pay eight thousand for the light")
+        self.assertEqual(toolbox.pay_calls, [("bill_home_meter", 5_000)])
+        self.assertEqual(reply.code, policy_rules.OVER_PER_PAYMENT_CAP)
+        self.assertEqual(toolbox.requests,
+                         [("bill_home_meter", 3_000, policy_rules.OVER_PER_PAYMENT_CAP)])
+
+    def test_two_bills_in_one_request_each_get_their_own_cap(self):
+        office = {**ELECTRICITY, "id": "bill_office_meter", "label": "Office meter"}
+        toolbox = FakeToolbox(bills=[ELECTRICITY, office])
+        model = ScriptedModel([
+            agent_mod.ToolCall(id="1", name="pay_bill",
+                               arguments={"bill_id": "bill_home_meter", "amount_ngn": 5_000}),
+            agent_mod.ToolCall(id="2", name="pay_bill",
+                               arguments={"bill_id": "bill_office_meter", "amount_ngn": 3_000}),
+        ])
+        make_agent(toolbox, model=model).respond("stark top up home with 5000 and office with 3000")
+        self.assertEqual(toolbox.pay_calls,
+                         [("bill_home_meter", 5_000), ("bill_office_meter", 3_000)])
+        self.assertEqual(toolbox.requests, [])
+
     def test_a_refusal_that_is_not_a_limit_is_logged_not_sent_for_approval(self):
         toolbox = FakeToolbox(balance=1_000)
         reply = make_agent(toolbox).respond("stark top it up with two thousand")
@@ -942,10 +972,11 @@ class LimitReasoningTests(unittest.TestCase):
         self.assertIn("You are Stark", system["content"])
 
     def test_the_prompt_says_name_the_limit_not_the_balance(self):
-        # The wording the demo relies on: refuse before proposing, and say
-        # which limit did it.
+        # The wording the demo relies on: say which limit decided it, and send an
+        # over-limit request on to pay_bill so it reaches the owner for approval
+        # instead of the model refusing it from the limits it can see.
         self.assertIn("per payment limit", agent_mod.SYSTEM_PROMPT)
-        self.assertIn("do not ask them to proceed", agent_mod.SYSTEM_PROMPT)
+        self.assertIn("still call pay_bill", agent_mod.SYSTEM_PROMPT)
 
 
 class ModelFailureTests(unittest.TestCase):
