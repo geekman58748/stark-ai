@@ -9,6 +9,7 @@ import { links } from "~/lib/links";
 const nav = [
   { href: "#how", label: "How it works" },
   { href: "#bills", label: "Bills" },
+  { href: "#stories", label: "Stories" },
   { href: "#safety", label: "Safety" },
   { href: "#fund", label: "Funding" },
   { href: "#faq", label: "FAQ" },

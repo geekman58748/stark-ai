@@ -15,7 +15,7 @@ const panel =
 const rules: { title: string; body: string; bg: string; demo: ReactNode }[] = [
   {
     title: "A limit it can’t cross",
-    body: "You set how much Stark may spend in a month and at once. Anything over is refused, and Stark offers what it can pay instead.",
+    body: "You set how much Stark may spend in a month and at once. Anything over waits in the app for your yes, and lapses if you never give it.",
     bg: "bg-[radial-gradient(60%_50%_at_20%_15%,#E9B98E_0%,rgba(233,185,142,0)_70%),radial-gradient(50%_60%_at_85%_80%,#6B2E12_0%,rgba(107,46,18,0)_70%),linear-gradient(160deg,#C9875A_0%,#8E4421_55%,#4A1F0D_100%)]",
     demo: (
       <div className={`${panel} flex flex-col gap-3.5 p-[18px]`}>
@@ -30,13 +30,14 @@ const rules: { title: string; body: string; bg: string; demo: ReactNode }[] = [
           Top up ₦15,000
         </div>
         <div className="max-w-[85%] self-start rounded-[14px_14px_14px_4px] bg-[#24262B] px-3 py-2.5">
-          That’s over your ₦10,000 limit for one payment. Pay ₦10,000 instead?
+          That’s over your ₦10,000 limit for one payment, so I’ve sent it to the app for you to
+          approve. Nothing is paid until you do.
         </div>
         <div className="flex gap-2 text-[13px]">
           <span className="rounded-full bg-fg px-3 py-1.5 font-medium text-[#141414]">
-            Pay ₦10,000
+            Approve ₦15,000
           </span>
-          <span className="rounded-full border border-white/18 px-3 py-1.5">Cancel</span>
+          <span className="rounded-full border border-white/18 px-3 py-1.5">Decline</span>
         </div>
       </div>
     ),
