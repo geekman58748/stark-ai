@@ -212,3 +212,16 @@ export type DemoSnapshot = {
   approvals: PaymentRequest[];
   limits: Pick<Limits, "monthly_cap_ngn" | "per_payment_cap_ngn">;
 };
+
+/** A saved bill seen as somewhere Stark may pay. Only delivered payments count. */
+export type Payee = {
+  bill_id: string;
+  label: string;
+  kind: BillKind;
+  provider: string;
+  reference: string;
+  paid_this_month_ngn: number;
+  paid_total_ngn: number;
+  payments: number;
+  last_paid_at: string | null;
+};

@@ -17,6 +17,7 @@ function invalidateMoney(qc: QueryClient) {
     qc.invalidateQueries({ queryKey: queryKeys.state }),
     qc.invalidateQueries({ queryKey: queryKeys.bills }),
     qc.invalidateQueries({ queryKey: queryKeys.activity }),
+    qc.invalidateQueries({ queryKey: queryKeys.payees }),
     qc.invalidateQueries({ queryKey: queryKeys.wallet }),
     qc.invalidateQueries({ queryKey: queryKeys.limits }),
     qc.invalidateQueries({ queryKey: queryKeys.suggestions }),

@@ -144,6 +144,20 @@ class ReceiptRepository:
             )
         ]
 
+    def paid_by_bill(self, user_id: str, month_start: str) -> dict[str, dict[str, int]]:
+        """Delivered bill payments per bill: all-time total, this month, and count."""
+        rows = self.db.query(
+            "SELECT bill_id, COALESCE(SUM(amount_ngn), 0) AS total,"
+            " COALESCE(SUM(amount_ngn) FILTER (WHERE created_at >= $2), 0) AS month,"
+            " COUNT(*) AS payments"
+            " FROM receipts WHERE user_id = $1 AND status = 'delivered'"
+            # Bill payments predate `entry_type`, so an unset one is a bill.
+            " AND COALESCE(entry_type, 'bill') IN ('bill', 'autotopup') GROUP BY bill_id",
+            [user_id, month_start],
+        )
+        return {row["bill_id"]: {"total": int(row["total"]), "month": int(row["month"]),
+                                 "payments": int(row["payments"])} for row in rows}
+
     def count(self, user_id: str) -> int:
         return int(self.db.value(
             "SELECT COUNT(*) FROM receipts WHERE user_id = $1", [user_id]

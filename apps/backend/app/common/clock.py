@@ -21,6 +21,12 @@ class Clock:
         )
 
     @staticmethod
+    def month_start() -> str:
+        """Midnight UTC on the first of this month: where the monthly cap resets."""
+        return Clock._iso(datetime.now(timezone.utc).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0))
+
+    @staticmethod
     def in_minutes(minutes: int) -> str:
         return Clock._iso(datetime.now(timezone.utc) + timedelta(minutes=minutes))
 

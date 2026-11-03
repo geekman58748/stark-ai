@@ -1,4 +1,4 @@
-import { activityQuery, billQuery, stateQuery } from "@stark/api/queries";
+import { activityQuery, billQuery, payeesQuery, stateQuery } from "@stark/api/queries";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
@@ -23,6 +23,7 @@ export const Route = createFileRoute("/_app/bills/$billId")({
         staleTime: "static",
       }),
       context.queryClient.query({ ...activityQuery(), staleTime: "static" }),
+      context.queryClient.query({ ...payeesQuery(), staleTime: "static" }),
     ]),
   head: () => ({ meta: [{ title: "Bill · Stark" }] }),
   component: BillDetail,
@@ -33,6 +34,7 @@ function BillDetail() {
   const { data: bill } = useSuspenseQuery(billQuery(billId));
   const { data: state } = useSuspenseQuery(stateQuery());
   const { data: activity } = useSuspenseQuery(activityQuery());
+  const { data: payees } = useSuspenseQuery(payeesQuery());
   const [editing, setEditing] = useState<BillEdit | null>(null);
 
   const history = activity.filter((r) => r.bill_id === bill.id);
@@ -60,7 +62,7 @@ function BillDetail() {
 
       <BillOverview
         bill={bill}
-        history={history}
+        payee={payees.find((p) => p.bill_id === bill.id)}
         isMeter={Bills.meter(state)?.id === bill.id}
         daysLeft={state.days_left}
       />

@@ -10,6 +10,7 @@ import type {
   LimitsPatch,
   LinkCode,
   NewBill,
+  Payee,
   PaymentInput,
   PaymentRequest,
   Plan,
@@ -106,6 +107,7 @@ export const api = {
   suggestions: () => request<Suggestion[]>("GET", "/v1/suggestions"),
   approvals: () => request<PaymentRequest[]>("GET", "/v1/approvals"),
   demo: () => request<DemoSnapshot>("GET", "/v1/demo"),
+  payees: () => request<Payee[]>("GET", "/v1/payees"),
   approve: (id: string) =>
     request<ApprovedPayment>("POST", `/v1/approvals/${encodeURIComponent(id)}/approve`, {}),
   deny: (id: string) =>

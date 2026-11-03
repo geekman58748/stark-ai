@@ -1,4 +1,4 @@
-import type { Bill, Receipt } from "@stark/api/types";
+import type { Bill, Payee } from "@stark/api/types";
 import { Card } from "@stark/ui/components/card";
 import { BillStats } from "@/components/bills/bill-stats";
 import { MeterHeadline } from "@/components/bills/meter-headline";
@@ -6,12 +6,12 @@ import { PaymentHeadline } from "@/components/bills/payment-headline";
 
 export function BillOverview({
   bill,
-  history,
+  payee,
   isMeter,
   daysLeft,
 }: {
   bill: Bill;
-  history: Receipt[];
+  payee: Payee | undefined;
   isMeter: boolean;
   daysLeft: number | null;
 }) {
@@ -22,7 +22,7 @@ export function BillOverview({
       ) : (
         <PaymentHeadline bill={bill} />
       )}
-      <BillStats bill={bill} history={history} />
+      <BillStats bill={bill} payee={payee} />
     </Card>
   );
 }

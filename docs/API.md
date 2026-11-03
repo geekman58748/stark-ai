@@ -418,6 +418,21 @@ approve. Nothing is paid unless you approve it within an hour."
 - The wait is `approval_window_minutes` on `/v1/limits`: one of 15, 30, 60 (default),
   360 or 1440, set with `PATCH /v1/limits` (`bad_limits` otherwise).
 
+### `GET /v1/payees`
+
+Where Stark may pay, and what each has been paid (additive, 2026-11-03). One row per
+saved bill, in the order they were added; Stark can pay nowhere else.
+
+```json
+[{ "bill_id": "bill_home_meter", "label": "Home", "kind": "electricity",
+   "provider": "Ikeja Electric", "reference": "04512345678",
+   "paid_this_month_ngn": 15000, "paid_total_ngn": 23000, "payments": 3,
+   "last_paid_at": "2026-11-02T19:33:13Z" }]
+```
+
+Only delivered bill and automatic payments count, the same rule as the monthly spend.
+"This month" starts at midnight UTC on the 1st, where the monthly cap resets.
+
 ### `GET /v1/demo`
 
 A made-up sample account for the public demo page (additive, 2026-11-03). **No
@@ -851,3 +866,4 @@ Shapes will not change as these land. Only the values become real.
 | 2026-11-03 | Pause: `GET /v1/controls`, `POST /v1/controls/pause`, `POST /v1/controls/resume`; `/v1/state` gains `paused`; new code `paused` (423), checked before every other payment rule. Telegram gains `/pause` and `/resume`. Additive only. |
 | 2026-11-03 | Approvals: `GET /v1/approvals`, `POST /v1/approvals/{id}/approve`, `POST /v1/approvals/{id}/deny`; `/v1/limits` gains `approval_window_minutes` (also patchable); `Receipt` gains `reason` for `declined` entries, which the agent now writes for refusals. New codes `unknown_request`, `request_closed`. Additive only. |
 | 2026-11-03 | `GET /v1/demo`: a public, read-only sample account (no auth). Additive only. |
+| 2026-11-03 | `GET /v1/payees`: each saved bill with its delivered totals (this month, all time, count). Additive only. |

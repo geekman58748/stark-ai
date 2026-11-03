@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 from app.common.api_error import ApiError
+from app.common.clock import Clock
 from app.modules.account.account_repository import AccountRepository
 from app.modules.account.account_service import AccountService
 from app.modules.bill.bill_kind import PLAN_KINDS, BillKind
@@ -31,6 +32,25 @@ class BillService:
 
     def bills(self, account_id: str) -> dict[str, dict[str, Any]]:
         return self.accounts.state(account_id).bills
+
+    def payees(self, account_id: str) -> list[dict[str, Any]]:
+        """Everyone Stark may pay — the saved bills — and what each has been paid.
+
+        Only delivered payments count, the same rule as the monthly spend.
+        """
+        paid = self.receipts.paid_by_bill(account_id, Clock.month_start())
+        none = {"total": 0, "month": 0, "payments": 0}
+        return [{
+            "bill_id": bill["id"],
+            "label": bill["label"],
+            "kind": bill["kind"],
+            "provider": bill["provider"],
+            "reference": bill["reference"],
+            "paid_this_month_ngn": paid.get(bill["id"], none)["month"],
+            "paid_total_ngn": paid.get(bill["id"], none)["total"],
+            "payments": paid.get(bill["id"], none)["payments"],
+            "last_paid_at": bill["last_paid_at"],
+        } for bill in self.bills(account_id).values()]
 
     def get(self, account_id: str, bill_id: str) -> dict[str, Any]:
         bill = self.bills(account_id).get(bill_id)
