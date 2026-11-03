@@ -181,20 +181,27 @@ voice note. Voice notes need the word "stark" first — the same rule `/v1/voice
 uses. Without `NEAR_AI_API_KEY` the bot says it cannot hear voice notes rather than
 guessing what you said.
 
-To sign `pay()` for real, add a function-call key scoped to the vault and set:
+Each account gets its **own vault** on NEAR, a sub-account of Stark's funder
+(`u-<id>.stark-vault.testnet`), created on its first money movement. To turn the
+chain on:
 
 ```sh
-STARK_SIGNER_KEY=ed25519:<base58 secret>   # the function-call key
-STARK_SIGNER_ACCOUNT=agent.testnet
-STARK_VAULT_ACCOUNT=vault.testnet
+STARK_FUNDER_ACCOUNT=stark-vault.testnet   # parent of every vault; creates, funds, refunds
+STARK_FUNDER_KEY=ed25519:<base58 secret>   # its full-access key
+STARK_AGENT_KEY=ed25519:<base58 secret>    # added to each vault, may only call `pay`
 STARK_NETWORK=testnet                      # or mainnet
 STARK_BROADCAST=0                          # 1 to actually send
+# once per contract change, publish the code every vault points at:
+.venv/bin/python -m app.modules.chain.vault_chain publish \
+  ../contracts/vault/target/wasm32-unknown-unknown/release/stark_vault.wasm
 ```
 
-With no key the payment is booked without a chain authorisation — the stub's
-behaviour. With a key, a signature that cannot be produced **refuses the payment**
-rather than charging unaccountably. Broadcasting is off by default, the same way
-`vtpass.py` is dry-run by default.
+With no funder configured, payments book off-chain — the offline behaviour. With
+one, every payment path signs `pay` on the user's vault before buying, and a
+signature that cannot be produced **refuses the payment**. Deposits, withdrawals
+and refunds reach the vault through an outbox (`chain_ops`) the money loop retries.
+`python -m app.modules.treasury.treasury_service` prints what Stark owes against
+what it holds (VTpass float, Bachs, treasury USDC).
 
 **Honest limits:** the borsh layout has never been round-tripped against a live RPC.
 The NEAR AI model and Whisper *have* run live (2026-10-22). `/v1/voice` now takes real

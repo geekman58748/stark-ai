@@ -78,10 +78,22 @@ class AccountDataTest(unittest.TestCase):
 
     def test_withdraw_refuses_and_takes_nothing(self):
         self.account.store.set_wallet(5_000, 0)
-        response = self.client.post("/v1/wallet/withdraw", json={"amount_ngn": 1_000})
+        # No payout rail configured in tests: refused, and nothing leaves the balance.
+        response = self.client.post("/v1/wallet/withdraw", json={
+            "amount_ngn": 1_000, "bank_code": "058", "account_number": "0123456789"})
         self.assertEqual(response.status_code, 501)
         self.assertEqual(response.json()["code"], "not_available")
         self.assertEqual(self.account.store.wallet()["balance_ngn"], 5_000)
+
+    def test_crypto_withdraw_refuses_without_a_treasury_key(self):
+        self.account.store.set_wallet(5_000, 0)
+        response = self.client.post("/v1/wallet/withdraw/crypto", json={
+            "amount_ngn": 2_000, "asset_id": "nep141:tron-usdt", "address": "TQn9Y2kh"})
+        self.assertEqual(response.status_code, 501)
+        self.assertEqual(response.json()["code"], "not_available")
+        self.assertEqual(self.account.store.wallet()["balance_ngn"], 5_000)
+        methods = self.client.get("/v1/wallet/methods").json()
+        self.assertEqual(methods["withdraw"], {"bank": False, "crypto": False})
 
     def test_top_up_is_labelled_test_money(self):
         self.account.store.set_wallet(0, 0)

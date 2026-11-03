@@ -764,12 +764,6 @@ class ToolBox(Protocol):
     def record_refusal(self, bill_id: str, amount_ngn: int, reason: str) -> None: ...
 
 
-class PaySigner(Protocol):
-    """Signs `pay(meter, amount_ngn)` with a capped function-call key."""
-
-    def sign_pay(self, meter: str, amount_ngn: int) -> dict: ...
-
-
 @dataclass(frozen=True)
 class Limits:
     """The owner's policy, mirrored from the vault's `get_policy()`."""
@@ -821,14 +815,12 @@ class Agent:
         model: Model,
         toolbox: ToolBox,
         limits: Limits,
-        signer: PaySigner | None = None,
         max_turns: int = 5,
         threads: memory.Threads | None = None,
     ):
         self.model = model
         self.toolbox = toolbox
         self.limits = limits
-        self.signer = signer
         self.max_turns = max_turns
         # What the last few turns of a chat said, when the caller names one. A
         # caller that passes no thread gets exactly the old one-shot behaviour.
@@ -1195,31 +1187,13 @@ class Agent:
                 self.toolbox.record_refusal(bill["id"], amount, rejection.message)
             return {"ok": False, "error": error}
 
-        # Authorise first, then buy. A signed transaction that is never broadcast
-        # costs nothing, but a purchase with no authorisation is a real problem.
-        # Fail closed: if the key cannot sign, nothing is charged.
-        if self.signer is not None:
-            try:
-                signed = self.signer.sign_pay(meter=meter, amount_ngn=amount)
-            except Exception:
-                effect["code"] = "authorisation_failed"
-                return {
-                    "ok": False,
-                    "error": {
-                        "code": "authorisation_failed",
-                        "message": (
-                            "I couldn't authorise that payment just now. "
-                            "Nothing was charged."
-                        ),
-                        "detail": {},
-                    },
-                }
-            effect["tx_hash"] = signed.get("tx_hash")
-
+        # The vault is signed inside the payment path, so the app's own
+        # `POST /v1/payments` is held to the same onchain caps as the agent.
         receipt = self.toolbox.pay(bill["id"], amount)
         paid_to[bill["id"]] = already + amount
         effect["token"] = receipt.get("token")
         effect["receipt_id"] = receipt.get("id")
+        effect["tx_hash"] = receipt.get("tx_hash")
         return {"ok": True, "data": receipt}
 
     def _just_paid(self, bill_id: Any, amount: int) -> int | None:
@@ -1256,12 +1230,12 @@ class Agent:
         return None
 
 
-def build_agent(toolbox: ToolBox, limits: Limits, signer: PaySigner | None = None) -> Agent:
+def build_agent(toolbox: ToolBox, limits: Limits) -> Agent:
     """Real model when a key is configured, deterministic model otherwise.
 
     The server calls this, so the key stays a config value and a checkout with no
     key still runs — the same way `vtpass.py` is dry-run by default.
     """
     if os.environ.get("NEAR_AI_API_KEY"):
-        return Agent(model=NearAiModel(), toolbox=toolbox, limits=limits, signer=signer)
-    return Agent(model=FakeModel(), toolbox=toolbox, limits=limits, signer=signer)
+        return Agent(model=NearAiModel(), toolbox=toolbox, limits=limits)
+    return Agent(model=FakeModel(), toolbox=toolbox, limits=limits)

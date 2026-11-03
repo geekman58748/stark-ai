@@ -317,6 +317,17 @@ delivery).
 
 `units` is `amount_ngn / tariff`, tariff ≈ ₦209/kWh, so ₦5,000 ≈ 23.9 units.
 
+Two more refusals happen before anything is recorded or bought (2026-11-03):
+
+- `float_low` (**503**): Stark's VTpass float cannot cover the purchase right now. A
+  refill has started; show `message` and offer to try again in a few minutes.
+- `authorisation_failed` (**502**): the user's vault did not sign the payment — its
+  onchain caps refused it, or the chain could not be reached. `message` is plain
+  English and ends "Nothing was charged."
+
+`tx_hash` is the vault's `pay` transaction whenever a chain is configured, on every
+path (the app's own `POST /v1/payments` included), not only on agent payments.
+
 ### `GET /v1/activity`
 
 Returns up to 20 entries, newest first. Same `Receipt` shape as above.
@@ -459,33 +470,162 @@ the clock, so it always has a renewal due and one request waiting.
 }
 ```
 
+### `GET /v1/wallet/methods`
+
+```json
+{ "bank": true, "crypto": true, "test_money": false,
+  "withdraw": { "bank": true, "crypto": false } }
+```
+
+Which ways of adding money are switched on. `test_money` is true only while no
+payment rail is configured. `withdraw` says which ways of taking it out are on.
+
 ### `POST /v1/wallet/topup`
 
 ```json
 { "amount_ngn": 20000, "request_id": "dep_7f3c1a9b2d4e" }
 ```
 
-**Test money** (2026-10-27): there is no payment provider yet, so nothing is
-collected. The entry's `source` is always `"Test money"` — a `source` in the body is
-ignored — and the app labels it the same way.
+**Test money**: nothing is collected. The entry's `source` is always `"Test money"`.
+Refused with **501** `not_available` once Bachs is configured, so a deployed app
+cannot mint balance.
 
 Returns **201** with `{ "wallet": { /* GET /v1/wallet */ }, "entry": { /* Receipt */ } }`.
 `entry.type` is `deposit`, `entry.status` is `received`, `entry.bill_id` is `"wallet"`.
+Repeating `request_id` returns **200** with the original entry and credits nothing.
+Top-ups never count towards the monthly cap.
 
-- `request_id` is optional; without it the server generates one. **Send your own** for
-the same reason as payments: repeating the id returns **200** with the original entry
-and does not credit twice.
-- Top-ups never count towards the monthly cap.
-
-### `POST /v1/wallet/withdraw`
+### `POST /v1/wallet/deposits` → `Deposit`
 
 ```json
-{ "amount_ngn": 10000, "request_id": "wd_9c2b7e4f1a6d" }
+{ "method": "bank", "amount_ngn": 20000 }
+{ "method": "crypto", "amount_ngn": 20000,
+  "asset_id": "nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near" }
 ```
 
-**Not available** (2026-10-27): returns **501** `not_available` and takes nothing.
-It used to lower the balance and send nothing anywhere. It comes back, with the
-same envelope as top-up, when a payout provider exists.
+Returns **201**. Nothing moves yet: the balance changes when the deposit reads
+`credited`, and from that moment it can be spent.
+
+```json
+{
+  "id": "dep_1a2b3c4d5e6f7a8b",
+  "method": "crypto",
+  "amount_ngn": 20000,
+  "credited_ngn": null,
+  "status": "open",
+  "note": null,
+  "pay": { "asset": "USDT", "chain": "tron", "amount": "13.46",
+           "address": "TQ…", "memo": null },
+  "expires_at": "2026-11-03T13:00:00Z",
+  "created_at": "2026-11-03T12:00:00Z",
+  "credited_at": null
+}
+```
+
+| `method` | `pay` | What the user does |
+|---|---|---|
+| `bank` | `{ "checkout_url" }` | open it: bank transfer, card, or USDT/USDC on Bachs's page; it returns to `/wallet/add?deposit=<id>` |
+| `crypto` | `{ asset, chain, amount, address, memo }` | send exactly `amount` of `asset` on `chain` to `address`, with `memo` when set |
+
+`status`: `open` → `confirming` (bank only) → `credited`, or `expired`, `failed`,
+`refunded` (crypto: the swap could not complete and what was sent goes back; `note`
+says why). `credited_ngn` is what landed: a crypto deposit is credited at the rate
+locked when it was quoted, and never above `amount_ngn`.
+
+Errors: `bad_amount` (₦100–₦5,000,000), `bad_method`, `bad_asset` (400),
+`not_available` (501, rail not configured), `provider_failed` (502).
+
+### `GET /v1/wallet/deposits/{id}` → `Deposit`, `GET /v1/wallet/deposits` → `Deposit[]`
+
+Reading an open deposit checks it with its rail first, so polling every few
+seconds is how the app sees it settle. `404 unknown_deposit` for another account's id.
+
+### `POST /v1/wallet/deposits/{id}/tx`
+
+```json
+{ "tx_hash": "0x…" }
+```
+
+Optional, crypto only: tells the rail about the user's transfer so it is noticed
+sooner. Errors `bad_method`, `bad_tx`.
+
+### `GET /v1/wallet/crypto-assets`
+
+```json
+[{ "asset_id": "nep141:tron-d28a…omft.near", "symbol": "USDT", "chain": "tron" }]
+```
+
+Empty while crypto deposits are not configured.
+
+### `GET /v1/wallet/banks`, `POST /v1/wallet/bank-accounts/resolve`
+
+```json
+[{ "name": "Guaranty Trust Bank", "code": "058" }]
+```
+
+```json
+{ "bank_code": "058", "account_number": "0123456789" }
+→ { "account_name": "ADA OKAFOR", "bank_code": "058", "account_number": "0123456789" }
+```
+
+Show the resolved name before sending. `bad_account` (400) when the number does not
+match the bank or is not 10 digits.
+
+### `POST /v1/wallet/withdraw` → `Withdrawal`
+
+```json
+{ "amount_ngn": 10000, "bank_code": "058", "account_number": "0123456789" }
+```
+
+Returns **201**. The money leaves the balance at once (an activity entry with
+`type: "withdrawal"`, `status: "processing"`), so it cannot be spent twice.
+
+```json
+{ "id": "wd_…", "method": "bank", "amount_ngn": 10000, "status": "reviewing",
+  "note": null, "crypto": null, "created_at": "…", "updated_at": "…" }
+```
+
+`status`: `reviewing` (the payout provider is checking a new bank account) →
+`processing` → `paid`, or `returned` — the money is back in the balance and `note`
+says why. The activity entry becomes `sent` or `failed` to match.
+
+Errors: `bad_amount` (below ₦100), `bad_account`, `insufficient_balance` (409),
+`not_available` (501), `provider_failed` (502). `GET /v1/wallet/withdrawals` lists recent ones,
+bank and crypto together.
+
+### `POST /v1/wallet/withdraw/crypto` → `Withdrawal`
+
+```json
+{ "amount_ngn": 20000, "asset_id": "nep141:tron-…omft.near", "address": "TQn9Y2kh…" }
+```
+
+`asset_id` is one from `GET /v1/wallet/crypto-assets`; `address` is the user's, on that
+asset's chain. Returns **201**. The naira leaves the balance at once, becomes USDC at
+Stark's rate (rounded down), and NEAR Intents swaps it into the asset and delivers it.
+
+```json
+{ "id": "wd_…", "method": "crypto", "amount_ngn": 20000, "status": "processing",
+  "note": null,
+  "crypto": { "asset": "USDT", "chain": "tron", "address": "TQn9Y2kh…",
+              "amount": "13.21", "tx_hash": "8xK…" },
+  "created_at": "…", "updated_at": "…" }
+```
+
+`status`: `sending` (the transfer is going out) → `processing` (the swap is running) →
+`paid`, or `returned` with the money back in the balance and `note` saying why.
+`crypto.amount` is what arrives: the quote, then the settled amount once `paid`.
+
+Errors: `bad_amount` (below ₦1,000, or too little for that asset), `over_limit` (400,
+over the per-withdrawal cap), `daily_limit` (409, Stark's daily crypto total is used up),
+`bad_asset`, `bad_address` (400, 1Click refused it for that chain),
+`insufficient_balance` (409), `not_available` (501, no treasury key),
+`provider_failed` (502). Nothing is taken on any refusal.
+
+### `POST /v1/bachs/webhook`
+
+Bachs calls this, not the app. No bearer token: `X-Bachs-Signature-V2` (HMAC-SHA256
+of `"<t>.<raw body>"`) is checked before the body is parsed; **401**
+`webhook_unverified` otherwise, `webhook_unconfigured` while no secret is set.
 
 ### `GET /v1/suggestions`
 
@@ -836,8 +976,9 @@ artboard seed so smoke runs are repeatable: the three seed bills, limits
 | Piece | Stub today | Real in |
 |---|---|---|
 | Auth | none | M4 |
-| Balances | per account, starts at ₦0; top-ups are labelled test money | M1 (vault read) + a payment provider |
-| Payments | agent policy-checked; `tx_hash` stays `null` unless a signing key is configured | M2 — **signed and signed-only; nothing is broadcast yet** |
+| Balances | per account, starts at ₦0. **Bachs** (bank, card, stablecoins) and **NEAR Intents** (any chain) deposits credit it; test money only while neither is configured | live once `BACHS_SECRET_KEY` / `STARK_USDC_NGN_RATE` are set — **no real deposit has run yet** |
+| Withdrawals | Bachs payouts, money held at request | live once Bachs is keyed — **never run against Bachs** |
+| Payments | every path checks the VTpass float, then signs `pay` on the user's own vault (`tx_hash`); a vendor failure refunds the vault | dry-signed by default; broadcast with `STARK_BROADCAST=1` — **per-user vaults have never been created on testnet** |
 | Token | **vended through VTpass**, fixtures in dry-run, real when `STARK_VENDING=live` | M3 — **live credentials still missing, so no real token has ever been bought** |
 | Voice | **real** — Whisper hears the clip; `transcript_hint` remains a probe | M4a done. Voice notes in Telegram and the browser both work |
 | Suggestions | **computed** from meter, telemetry, delivered receipts and renewals; empty when the data is not there | M6 (the AC sensor makes `load_imbalance` routine rather than demo data) |
@@ -867,3 +1008,5 @@ Shapes will not change as these land. Only the values become real.
 | 2026-11-03 | Approvals: `GET /v1/approvals`, `POST /v1/approvals/{id}/approve`, `POST /v1/approvals/{id}/deny`; `/v1/limits` gains `approval_window_minutes` (also patchable); `Receipt` gains `reason` for `declined` entries, which the agent now writes for refusals. New codes `unknown_request`, `request_closed`. Additive only. |
 | 2026-11-03 | `GET /v1/demo`: a public, read-only sample account (no auth). Additive only. |
 | 2026-11-03 | `GET /v1/payees`: each saved bill with its delivered totals (this month, all time, count). Additive only. |
+| 2026-11-03 | **Money flow.** Deposits: `GET /v1/wallet/methods`, `POST`/`GET /v1/wallet/deposits`, `GET /v1/wallet/deposits/{id}`, `POST /v1/wallet/deposits/{id}/tx`, `GET /v1/wallet/crypto-assets`. Withdrawals: `GET /v1/wallet/banks`, `POST /v1/wallet/bank-accounts/resolve`, `GET /v1/wallet/withdrawals`; `POST /v1/wallet/withdraw` now takes `bank_code` + `account_number` and returns a `Withdrawal` instead of 501. `POST /v1/bachs/webhook`. `POST /v1/wallet/topup` answers 501 once Bachs is configured. Payments gain `float_low` (503) and `authorisation_failed` (502); `tx_hash` is set on every path when a chain is configured. New codes `unknown_deposit`, `bad_method`, `bad_asset`, `bad_tx`, `bad_account`, `provider_failed`. |
+| 2026-11-03 | Crypto withdrawals: `POST /v1/wallet/withdraw/crypto`. `Withdrawal` gains `method` and `crypto` (null for bank), and `status` gains `sending`; `/v1/wallet/methods` gains `withdraw`. New codes `bad_address`, `over_limit`, `daily_limit`. Additive only. |

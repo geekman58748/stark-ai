@@ -16,7 +16,7 @@ router = APIRouter(tags=["Payments"], responses=ApiResponses.errors("unauthorize
              summary="Pay a saved bill",
              responses=ApiResponses.errors(
                  "paused", "unknown_bill", "bad_amount", "over_per_payment_cap", "over_cap",
-                 "insufficient_balance", "vendor_failed",
+                 "insufficient_balance", "vendor_failed", "authorisation_failed", "float_low",
              ))
 def pay(dto: CreatePaymentDto, account: AuthUser, module: Module) -> JSONResponse:
     """Refused with `paused` while the owner has paused Stark. Otherwise the

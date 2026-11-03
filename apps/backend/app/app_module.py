@@ -15,16 +15,22 @@ from app.modules.agent.account_toolbox import AccountToolbox
 from app.modules.approval.approval_repository import ApprovalRepository
 from app.modules.approval.approval_service import ApprovalService
 from app.modules.auth.auth_service import AuthService
+from app.modules.bachs import bachs
+from app.modules.bachs.bachs_webhook_service import BachsWebhookService
 from app.modules.bill.bill_service import BillService
-from app.modules.chain import vault_signer
+from app.modules.chain import near_tx, treasury_chain, vault_chain
 from app.modules.control.control_service import ControlService
 from app.modules.demo.demo_service import DemoService
+from app.modules.intents import one_click
 from app.modules.limit.limit_service import LimitService
+from app.modules.liquidity.float_service import FloatService
 from app.modules.payment.bill_payment_service import BillPaymentService
 from app.modules.payment.payment_service import PaymentService
 from app.modules.plan.plan_service import PlanService
 from app.modules.receipt.receipt_repository import ReceiptRepository
 from app.modules.reminder.reminder_service import ReminderService
+from app.modules.sms.sms_config import SmsConfig
+from app.modules.sms.sms_service import SmsService
 from app.modules.state.state_service import StateService
 from app.modules.stub.stub_service import StubService
 from app.modules.suggestion.suggestion_service import SuggestionService
@@ -32,9 +38,16 @@ from app.modules.telegram.identity_repository import IdentityRepository
 from app.modules.telegram.telegram_service import TelegramService
 from app.modules.telemetry.telemetry_repository import TelemetryRepository
 from app.modules.telemetry.telemetry_service import TelemetryService
+from app.modules.treasury.treasury_service import TreasuryService
+from app.modules.vault.vault_service import VaultService
 from app.modules.vending import vending
 from app.modules.voice.voice_service import VoiceService
+from app.modules.wallet.deposit_service import DepositService
 from app.modules.wallet.wallet_service import WalletService
+from app.modules.wallet.crypto_withdrawal_service import CryptoWithdrawalService
+from app.modules.wallet.withdrawal_service import WithdrawalService
+from app.modules.whatsapp.whatsapp_config import WhatsAppConfig
+from app.modules.whatsapp.whatsapp_service import WhatsAppService
 from app.shared.services.api_config_service import ApiConfigService
 
 
@@ -49,38 +62,103 @@ class AppModule:
         self.identities = IdentityRepository(db)
 
         self.auth = AuthService(db)
-        self.accounts = AccountService(self.auth, self.account_repository, self.receipts,
-                                       self._build_agent)
+        self.accounts = AccountService(
+            self.auth, self.account_repository, self.receipts, self._build_agent
+        )
         self.demo = DemoService()
-        self.controls = ControlService(self.accounts, self.account_repository)
+
+        # Money: each user's vault, the rails that fill and empty it, the float.
+        money = config.money
+        self.bachs = bachs.client_from_env()
+        self.vaults = VaultService(db, vault_chain.chain_from_env(), self.accounts)
+        gateway = vending.gateway_from_env()
+        self.floats = FloatService(db, gateway.client, self.bachs, money.float_settings)
+        one_click_client = one_click.client_from_env()
+        self.deposits = DepositService(
+            db,
+            self.receipts,
+            self.vaults,
+            self.bachs,
+            one_click_client,
+            money.funding,
+        )
+        self.withdrawals = WithdrawalService(db, self.receipts, self.vaults, self.bachs)
+        self.crypto_withdrawals = CryptoWithdrawalService(
+            db,
+            self.withdrawals,
+            self.vaults,
+            self.deposits,
+            one_click_client,
+            treasury_chain.treasury_from_env(),
+            money.crypto_payouts,
+        )
+        self.bachs_webhooks = BachsWebhookService(
+            db, money.bachs_webhook_secret, self.deposits, self.withdrawals, self.floats
+        )
+        self.treasury = TreasuryService(
+            db,
+            self.vaults,
+            self.deposits,
+            self.withdrawals,
+            self.crypto_withdrawals,
+            self.floats,
+            self.bachs,
+            money.funding.treasury_account,
+            money.funding.usdc_ngn_rate,
+            near_tx.NearRpc(near_tx.MAINNET_RPC),
+        )
+
+        self.controls = ControlService(
+            self.accounts, self.account_repository, self.vaults
+        )
         self.bills = BillService(self.accounts, self.account_repository, self.receipts)
         self.plans = PlanService()
-        self.wallet = WalletService(self.accounts, self.receipts)
+        self.wallet = WalletService(
+            self.accounts, self.receipts, self.vaults, test_money=self.bachs is None
+        )
         self.telemetry = TelemetryService(self.readings, self.receipts)
         self.bill_payments = BillPaymentService(
-            self.accounts, self.bills, self.wallet,
-            PaymentService(self.receipts, vending.gateway_from_env()),
+            self.accounts,
+            self.bills,
+            self.wallet,
+            PaymentService(
+                self.receipts, gateway, vaults=self.vaults, floats=self.floats
+            ),
         )
         self.approvals = ApprovalService(ApprovalRepository(db), self.bill_payments)
         self.limits = LimitService(self.accounts, self.wallet, self.approvals)
         self.state = StateService(self.accounts, self.wallet, self.telemetry)
-        self.suggestions = SuggestionService(self.accounts, self.wallet, self.telemetry,
-                                             self.bill_payments)
+        self.suggestions = SuggestionService(
+            self.accounts, self.wallet, self.telemetry, self.bill_payments
+        )
         self.voice = VoiceService(self.accounts)
-        self.telegram = TelegramService(config, db, self.identities, self.accounts,
-                                        self.controls)
+        self.telegram = TelegramService(
+            config, db, self.identities, self.accounts, self.controls
+        )
+        self.whatsapp = WhatsAppService(
+            WhatsAppConfig.from_env(), self.identities, self.accounts, self.controls
+        )
+        self.sms = SmsService(
+            SmsConfig.from_env(), self.identities, self.accounts, self.controls
+        )
         self.reminders = ReminderService(self.accounts, self.telegram)
-        self.stub = StubService(config, self.accounts, self.account_repository,
-                                self.receipts, self.readings, self.identities,
-                                self.reminders)
+        self.stub = StubService(
+            config,
+            self.accounts,
+            self.account_repository,
+            self.receipts,
+            self.readings,
+            self.identities,
+            self.reminders,
+        )
 
     @classmethod
     def from_env(cls) -> "AppModule":
         """`DATABASE_URL` is required: accounts, wallets and receipts live there."""
         return cls(ApiConfigService.from_env(), neon.open_database())
 
-    def _build_agent(self, account_id: str, limits: agent_layer.Limits) -> agent_layer.Agent:
+    def _build_agent(
+        self, account_id: str, limits: agent_layer.Limits
+    ) -> agent_layer.Agent:
         """An agent bound to one account's toolbox and caps."""
-        return agent_layer.build_agent(AccountToolbox(account_id, self), limits,
-                                       signer=vault_signer.signer_from_env())
-
+        return agent_layer.build_agent(AccountToolbox(account_id, self), limits)

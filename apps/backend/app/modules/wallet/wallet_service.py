@@ -1,4 +1,11 @@
-"""The wallet: what the balance is, and test-money top-ups."""
+"""The wallet: what the balance is, and test-money top-ups.
+
+Real money arrives through `DepositService` and leaves through `WithdrawalService`.
+Test money exists for local runs and demos, and only while no payment rail is
+configured: with Bachs keyed, `POST /v1/wallet/topup` refuses, so a deployed app
+cannot mint balance. A test top-up still credits the vault, so the two ledgers
+agree even in a demo.
+"""
 
 from __future__ import annotations
 
@@ -10,13 +17,17 @@ from app.common.clock import Clock
 from app.modules.account.account_service import AccountService
 from app.modules.receipt import receipt_repository
 from app.modules.receipt.receipt_repository import ReceiptRepository
+from app.modules.vault.vault_service import VaultService
 from app.modules.wallet.dtos.top_up_dto import TopUpDto
 
 
 class WalletService:
-    def __init__(self, accounts: AccountService, receipts: ReceiptRepository) -> None:
+    def __init__(self, accounts: AccountService, receipts: ReceiptRepository,
+                 vaults: VaultService, *, test_money: bool) -> None:
         self.accounts = accounts
         self.receipts = receipts
+        self.vaults = vaults
+        self.test_money = test_money
 
     def balance(self, account_id: str) -> dict[str, int]:
         """A missing wallet reads ₦0: the account has simply not been opened yet."""
@@ -38,6 +49,9 @@ class WalletService:
         """Add test money. There is no payment provider yet, so nothing is collected:
         the entry says so in its source (a `source` in the body is ignored), and the
         app labels it as test money. Returns 200 for a repeated `request_id`."""
+        if not self.test_money:
+            raise ApiError(501, "not_available",
+                           "Test money is off here. Add money by bank, card or crypto.")
         if dto.amount_ngn <= 0:
             raise ApiError(400, "bad_amount", "amount_ngn must be positive")
         request_id = dto.request_id or f"dep_{uuid.uuid4().hex[:12]}"
@@ -63,15 +77,6 @@ class WalletService:
             "vendor_message": "deposit",
             "created_at": Clock.now_iso(),
         }, dto.amount_ngn)
+        self.vaults.credit(account_id, dto.amount_ngn, request_id)
         return 201, {"wallet": self.summary(account_id),
                      "entry": receipt_repository.api_shape(entry)}
-
-    @staticmethod
-    def withdraw() -> None:
-        """Refused until a payout provider exists.
-
-        It used to take the money off the balance and send nothing anywhere, which
-        reads as a completed withdrawal to someone who expects it in their bank.
-        """
-        raise ApiError(501, "not_available",
-                       "Withdrawing to a bank isn't available yet. Nothing was taken.")

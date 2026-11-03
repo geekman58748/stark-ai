@@ -13,12 +13,15 @@ from typing import Any
 from app.common.clock import Clock
 from app.modules.account.account_repository import AccountRepository
 from app.modules.account.account_service import AccountService
+from app.modules.vault.vault_service import VaultService
 
 
 class ControlService:
-    def __init__(self, accounts: AccountService, repository: AccountRepository) -> None:
+    def __init__(self, accounts: AccountService, repository: AccountRepository,
+                 vaults: VaultService) -> None:
         self.accounts = accounts
         self.repository = repository
+        self.vaults = vaults
 
     def status(self, account_id: str) -> dict[str, Any]:
         paused_at = self.accounts.state(account_id).paused_at
@@ -30,6 +33,7 @@ class ControlService:
         if state.paused_at is None:
             state.paused_at = Clock.now_iso()
             self.repository.set_paused_at(account_id, state.paused_at)
+            self.vaults.set_paused(account_id, True)
         return self.status(account_id)
 
     def resume(self, account_id: str) -> dict[str, Any]:
@@ -37,4 +41,5 @@ class ControlService:
         if state.paused_at is not None:
             state.paused_at = None
             self.repository.set_paused_at(account_id, None)
+            self.vaults.set_paused(account_id, False)
         return self.status(account_id)

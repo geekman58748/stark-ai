@@ -96,15 +96,6 @@ class FakeToolbox:
         return receipt
 
 
-class RecordingSigner:
-    def __init__(self):
-        self.calls: list[tuple[str, int]] = []
-
-    def sign_pay(self, meter, amount_ngn):
-        self.calls.append((meter, amount_ngn))
-        return {"tx_hash": "cd" * 32}
-
-
 class RecordingModel:
     """Answers every turn and keeps the messages it was shown."""
 
@@ -140,7 +131,7 @@ class ScriptedModel:
         return agent_mod.ModelTurn(content="Understood.")
 
 
-def make_agent(toolbox=None, signer=None, limits=None, model=None, threads=None):
+def make_agent(toolbox=None, limits=None, model=None, threads=None):
     return agent_mod.Agent(
         model=model or agent_mod.FakeModel(),
         toolbox=toolbox or FakeToolbox(),
@@ -150,7 +141,6 @@ def make_agent(toolbox=None, signer=None, limits=None, model=None, threads=None)
             per_payment_cap_ngn=PER_PAYMENT,
             allowed_meters=ALLOWED,
         ),
-        signer=signer,
         threads=threads,
     )
 
@@ -712,18 +702,6 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(toolbox.pay_calls, [])
         self.assertEqual(reply.code, policy_rules.OVER_PER_PAYMENT_CAP)
 
-    def test_signer_is_called_with_meter_and_amount(self):
-        signer = RecordingSigner()
-        reply = make_agent(signer=signer).respond(
-            "stark top it up with five thousand")
-        self.assertEqual(signer.calls, [("04512345678", 5_000)])
-        self.assertEqual(reply.tx_hash, "cd" * 32)
-
-    def test_signer_is_not_called_when_the_gate_refuses(self):
-        signer = RecordingSigner()
-        make_agent(signer=signer).respond("stark pay six thousand")
-        self.assertEqual(signer.calls, [])
-
     def test_pending_payment_is_never_reported_as_paid(self):
         class PendingToolbox(FakeToolbox):
             def pay(self, bill_id, amount_ngn):
@@ -839,75 +817,6 @@ class AgentTests(unittest.TestCase):
         limits = agent_mod.Limits(MONTHLY, PER_PAYMENT, ALLOWED)
         agent_ = agent_mod.build_agent(FakeToolbox(), limits)
         self.assertEqual(agent_.model.name, "fake")
-
-
-class SignerTests(unittest.TestCase):
-    def test_a_failed_signature_refuses_the_payment(self):
-        class BrokenSigner:
-            def sign_pay(self, meter, amount_ngn):
-                raise RuntimeError("rpc unreachable")
-
-        toolbox = FakeToolbox()
-        reply = make_agent(toolbox, signer=BrokenSigner()).respond(
-            "stark top it up with five thousand")
-        self.assertEqual(toolbox.pay_calls, [])
-        self.assertEqual(reply.code, "authorisation_failed")
-        self.assertIn("Nothing was charged", reply.reply)
-
-    def test_vault_signer_builds_and_does_not_broadcast_by_default(self):
-        from app.modules.chain import vault_signer
-
-        class FakeRpc:
-            def __init__(self):
-                self.broadcasts = 0
-
-            def access_key(self, account_id, public_key_b58):
-                return {"nonce": 9, "block_hash": near_tx.b58encode(b"\x33" * 32)}
-
-            def broadcast(self, signed):
-                self.broadcasts += 1
-                return {"status": {"SuccessValue": ""}}
-
-        rpc = FakeRpc()
-        signer = vault_signer.VaultSigner(
-            key=near_tx.KeyPair.from_secret(bytes(range(32))),
-            signer_id="agent.testnet",
-            receiver_id="vault.testnet",
-            rpc=rpc,
-        )
-        result = signer.sign_pay("04512345678", 5_000)
-        self.assertTrue(result["signed"])
-        self.assertFalse(result["broadcast"])
-        self.assertEqual(rpc.broadcasts, 0)
-        self.assertEqual(len(result["tx_hash"]), 64)
-
-    def test_signer_is_none_without_config(self):
-        from app.modules.chain import vault_signer
-
-        self.assertIsNone(vault_signer.signer_from_env({}))
-        self.assertIsNone(
-            vault_signer.signer_from_env({"STARK_SIGNER_KEY": "ed25519:abc"})
-        )
-
-    def test_signer_config_is_wired_from_env(self):
-        from app.modules.chain import vault_signer
-
-        env = {
-            # The env var must carry a secret, not a public key.
-            "STARK_SIGNER_KEY": "ed25519:"
-            + near_tx.b58encode(
-                bytes(range(32)) + near_tx.ed25519_public(bytes(range(32)))
-            ),
-            "STARK_SIGNER_ACCOUNT": "agent.testnet",
-            "STARK_VAULT_ACCOUNT": "vault.testnet",
-            "STARK_NETWORK": "mainnet",
-            "STARK_BROADCAST": "1",
-        }
-        signer = vault_signer.signer_from_env(env)
-        self.assertEqual(signer.signer_id, "agent.testnet")
-        self.assertEqual(signer.receiver_id, "vault.testnet")
-        self.assertTrue(signer.broadcast)
-        self.assertEqual(signer.rpc.base_url, near_tx.MAINNET_RPC)
 
 
 class AmountParsingTests(unittest.TestCase):

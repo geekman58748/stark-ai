@@ -253,6 +253,19 @@ class VtpassClient:
 
     # --- endpoints ---------------------------------------------------------
 
+    def balance(self) -> int:
+        """The merchant wallet every purchase is paid from, in whole naira.
+
+        `GET /balance` answers `{"code": 1, "contents": {"balance": 1081.82}}` —
+        `code` is the integer 1 here, not the `"000"` the purchase endpoints use.
+        Kobo are dropped: the float check must never count money that isn't there.
+        """
+        data = self._fixture("balance.json") if self.dry_run else self._http("GET", "/balance")
+        if data.get("code") != 1:
+            raise VtpassError("invalid_response",
+                              f"VTpass balance answered code {data.get('code')!r}", raw=data)
+        return int(float(data["contents"]["balance"]))
+
     def list_variations(self, service_id: str = "ikeja-electric") -> list[dict]:
         """Meter types for a DISCO. Public endpoint — no credentials needed."""
         data = (self._fixture("service-variations_ikeja-electric.json") if self.dry_run
