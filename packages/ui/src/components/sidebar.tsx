@@ -11,7 +11,7 @@ import {
   SheetTitle,
 } from "@stark/ui/components/sheet";
 import { Skeleton } from "@stark/ui/components/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@stark/ui/components/tooltip";
+import { TooltipTrigger } from "@stark/ui/components/tooltip";
 import { useIsMobile } from "@stark/ui/hooks/use-mobile";
 import { cn } from "@stark/ui/utils/cn";
 import { cva, type VariantProps } from "class-variance-authority";
@@ -484,10 +484,10 @@ function SidebarMenuButton({
 }: useRender.ComponentProps<"button"> &
   React.ComponentProps<"button"> & {
     isActive?: boolean;
-    tooltip?: string | React.ComponentProps<typeof TooltipContent>;
+    tooltip?: string;
   } & VariantProps<typeof sidebarMenuButtonVariants>) {
   const { isMobile, state } = useSidebar();
-  const comp = useRender({
+  return useRender({
     defaultTagName: "button",
     props: mergeProps<"button">(
       {
@@ -495,7 +495,16 @@ function SidebarMenuButton({
       },
       props,
     ),
-    render: !tooltip ? render : <TooltipTrigger render={render} />,
+    render: !tooltip ? (
+      render
+    ) : (
+      <TooltipTrigger
+        content={tooltip}
+        side="right"
+        disabled={state !== "collapsed" || isMobile}
+        render={render}
+      />
+    ),
     state: {
       slot: "sidebar-menu-button",
       sidebar: "menu-button",
@@ -503,28 +512,6 @@ function SidebarMenuButton({
       active: isActive,
     },
   });
-
-  if (!tooltip) {
-    return comp;
-  }
-
-  if (typeof tooltip === "string") {
-    tooltip = {
-      children: tooltip,
-    };
-  }
-
-  return (
-    <Tooltip>
-      {comp}
-      <TooltipContent
-        side="right"
-        align="center"
-        hidden={state !== "collapsed" || isMobile}
-        {...tooltip}
-      />
-    </Tooltip>
-  );
 }
 
 function SidebarMenuAction({
