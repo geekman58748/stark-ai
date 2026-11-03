@@ -18,6 +18,15 @@ export type ApiErrorCode =
   | "request_closed"
   | "unknown_request"
   | "no_route"
+  | "not_available"
+  | "provider_failed"
+  | "bad_asset"
+  | "bad_account"
+  | "bad_address"
+  | "over_limit"
+  | "daily_limit"
+  | "float_low"
+  | "authorisation_failed"
   | "network";
 
 /** Every non-2xx response. Branch on `code`; `message` is copy and may change. */
@@ -70,6 +79,17 @@ export function errorCopy(error: unknown): string {
     case "plan_required":
     case "unknown_plan":
       return "Pick a plan first.";
+    case "not_available":
+    case "provider_failed":
+    case "bad_account":
+    case "bad_address":
+    case "over_limit":
+    case "daily_limit":
+    case "float_low":
+    case "authorisation_failed":
+      return error.message;
+    case "bad_asset":
+      return "Pick what you’re paying with.";
     case "network":
       return "Can’t reach Stark right now. Check your connection.";
     default:
