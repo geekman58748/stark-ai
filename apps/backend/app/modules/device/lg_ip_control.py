@@ -84,7 +84,7 @@ class LgTvPlug:
     def __init__(self, host: str, key_code: str, mac: Optional[str] = None,
                  broadcast: Optional[str] = None, port: int = PORT, timeout: float = 4.0,
                  wake_seconds: float = 40.0, settle_seconds: float = 6.0,
-                 poll_seconds: float = 0.5) -> None:
+                 poll_seconds: float = 0.2) -> None:
         self.host = host.strip()
         self.port = port
         self.timeout = timeout
@@ -102,26 +102,55 @@ class LgTvPlug:
         body = _pad(command.encode("utf-8") + b"\r")
         return ecb_encrypt(self._key, iv) + cbc_encrypt(self._key, iv, body)
 
-    def unframe(self, data: bytes) -> str:
+    def _unframe_raw(self, data: bytes) -> str:
+        """The reply's text with its padding removed and its CR kept."""
         if len(data) <= BLOCK:
             return ""
         iv = ecb_decrypt(self._key, data[:BLOCK])
-        text = _unpad(cbc_decrypt(self._key, iv, data[BLOCK:]))
-        return text.decode("utf-8", "replace").strip()
+        return _unpad(cbc_decrypt(self._key, iv, data[BLOCK:])).decode("utf-8", "replace")
+
+    def unframe(self, data: bytes) -> str:
+        return self._unframe_raw(data).strip()
+
+    def _is_complete_frame(self, data: bytes) -> bool:
+        """True once what is on the wire is a whole reply.
+
+        The set sends its frame and then **leaves the socket open**, so a read
+        loop that waits for EOF waits out the entire timeout — measured 4.5s per
+        command on 2026-11-03, which is the whole reason Stark went quiet for
+        seconds after the screen was already black. Every reply unpads to
+        printable text ending in the protocol's CR, so the first block that does
+        is the end of it; anything else is a partial frame and keeps reading.
+        """
+        if len(data) <= BLOCK or len(data) % BLOCK:
+            return False
+        try:
+            raw = self._unframe_raw(data)
+        except Exception:
+            return False
+        # The real set terminates with LF, not CR (measured 2026-11-04 against
+        # 43UT73006LA): it answers ``Power Status: activeStandby\n``. Checking for
+        # CR alone made every reply look partial, which is the same 4s wait by
+        # another route — accept either line ending.
+        if not raw.endswith(("\r", "\n")):
+            return False
+        return bool(raw[:-1]) and all(32 <= ord(ch) < 127 for ch in raw[:-1])
 
     def _exchange(self, payload: bytes) -> bytes:
         """Send one frame and read the reply. Split out so tests need no socket."""
+        data = b""
         try:
             with socket.create_connection((self.host, self.port), timeout=self.timeout) as conn:
                 conn.sendall(payload)
                 conn.settimeout(self.timeout)
-                data = b""
                 try:
                     while True:
                         chunk = conn.recv(1024)
                         if not chunk:
                             break
                         data += chunk
+                        if self._is_complete_frame(data):
+                            break
                 except socket.timeout:
                     pass
                 return data

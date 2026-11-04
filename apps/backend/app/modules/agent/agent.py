@@ -1173,6 +1173,11 @@ class Agent:
         if asks_instead_of_switching(transcript):
             return None
         said = _WAKE.sub("", transcript or "")
+        # A sentence that also names money is not a bare switch: "turn it off and
+        # pay my DStv" has to reach the model with both halves intact, or the
+        # payment silently disappears behind a switch that did happen.
+        if _PAY_RE.search(said) or _BILLS_RE.search(said) or _ACTIVITY_RE.search(said):
+            return None
         direction = _PUT_ON.search(said) or _SWITCH_IMPERATIVE.search(said)
         if direction is None:
             return None
@@ -1212,9 +1217,27 @@ class Agent:
         reply.reply = _switch_sentence(result.get("data") or {})
         return reply
 
+    def _is_plain_switch(self, transcript: str) -> bool:
+        """An order that names a switch and nothing else.
+
+        One saved device, an imperative, and no payment, bill or activity words
+        (all of that lives in `_unacted_switch`) — then there is nothing for a
+        model to route and nothing for it to word, so the turn is the plug's
+        read-back and nothing more.
+        """
+        return self._unacted_switch(transcript) is not None
+
     def _drive(self, messages: list[dict], reply: AgentReply, effect: dict,
                has_snapshot: bool, transcript: str) -> AgentReply:
         """The model loop. Kept separate so one failure can be caught above it."""
+        # The order is unambiguous, so the switch runs first and the model is
+        # never asked: on the demo box a model turn costs 1.3-1.5s of silence
+        # that comes *after* the seconds spent waiting for the set to report
+        # itself dark, and it can only re-say what the plug already reported.
+        if self._is_plain_switch(transcript):
+            applied = self._do_the_obvious_switch(reply, transcript)
+            messages.append({"role": "assistant", "content": applied.reply})
+            return applied
         for _ in range(self.max_turns):
             turn = self.model.turn(
                 messages, self._tools_for(has_snapshot, transcript))
@@ -1237,9 +1260,11 @@ class Agent:
                     reply.reply = (again.content or "").strip() or reply.reply
                 return self._apply_effects(reply, effect)
 
+            results = []
             for call in turn.tool_calls:
                 reply.actions.append(call.name)
                 result = self._run_tool(call, effect, transcript)
+                results.append(result)
                 messages.append(
                     {
                         "role": "tool",
@@ -1248,6 +1273,17 @@ class Agent:
                         "content": json.dumps(result),
                     }
                 )
+            # A switch the plug has already answered is a finished answer, so it
+            # is not sent back to the model to be put into words: that costs a
+            # round trip of silence (1.1-2.2s measured on the demo box, and a
+            # second one when the model replies empty) after a switch that just
+            # spent seconds waiting for the set to admit it went dark. The
+            # sentence below comes from the same read-back the model would quote.
+            if (len(turn.tool_calls) == 1
+                    and turn.tool_calls[0].name == "switch_appliance"
+                    and results and results[0].get("ok")):
+                reply.reply = _switch_sentence(results[0].get("data") or {})
+                return self._apply_effects(reply, effect)
             # The tools may have moved money; the next turn must not read a
             # snapshot from before the payment it just made.
             messages[0], has_snapshot = self._system_message()

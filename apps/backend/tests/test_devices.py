@@ -90,6 +90,23 @@ class RefusingModel:
         return agent_mod.ModelTurn(content="Which device did you want to switch on?")
 
 
+class SwitchingModel:
+    """Calls the switch once, then would put it into words — and counts turns."""
+
+    name = "switching"
+
+    def __init__(self) -> None:
+        self.turns = 0
+
+    def turn(self, messages, tools):
+        self.turns += 1
+        if self.turns == 1:
+            return agent_mod.ModelTurn(tool_calls=[
+                agent_mod.ToolCall("switch_appliance",
+                                   {"device_id": "tv-plug-1", "on": False})])
+        return agent_mod.ModelTurn(content="The Living room TV is now off.")
+
+
 def agent_for(toolbox) -> agent_mod.Agent:
     return agent_mod.Agent(
         model=agent_mod.FakeModel(),
@@ -180,6 +197,61 @@ class GateTests(unittest.TestCase):
             limits=agent_mod.Limits(monthly_cap_ngn=30_000, per_payment_cap_ngn=10_000,
                                     allowed_meters=frozenset()),
         )
+
+    def test_a_plain_order_never_waits_on_the_model(self):
+        # Off costs seconds of honest waiting for the set to report itself dark;
+        # a model round trip on top of that buys words the plug already gave us.
+        class Explode:
+            name = "explode"
+
+            def turn(self, messages, tools):
+                raise AssertionError("the model must not run for a plain switch order")
+
+        toolbox = DevicelessToolbox()
+        reply = agent_mod.Agent(
+            model=Explode(), toolbox=toolbox,
+            limits=agent_mod.Limits(monthly_cap_ngn=30_000, per_payment_cap_ngn=10_000,
+                                    allowed_meters=frozenset()),
+        ).respond("turn it off")
+        self.assertEqual(toolbox.switch_calls, [("tv-plug-1", False)])
+        self.assertEqual(reply.reply, "Living room TV is off.")
+
+    def test_a_bill_order_that_mentions_a_switch_still_reaches_the_model(self):
+        # "turn it off and pay my dstv" names money too, so the fast path stays
+        # out of the way and the model sees the whole sentence.
+        seen: list[str] = []
+
+        class Watcher:
+            name = "watcher"
+
+            def turn(self, messages, tools):
+                seen.append(messages[-1].get("content", ""))
+                return agent_mod.ModelTurn(content="Which bill did you want to pay?")
+
+        toolbox = DevicelessToolbox()
+        reply = agent_mod.Agent(
+            model=Watcher(), toolbox=toolbox,
+            limits=agent_mod.Limits(monthly_cap_ngn=30_000, per_payment_cap_ngn=10_000,
+                                    allowed_meters=frozenset()),
+        ).respond("turn it off and pay my dstv")
+        self.assertEqual(toolbox.switch_calls, [])
+        self.assertTrue(seen, "the model should still have been asked")
+        self.assertIn("Which bill", reply.reply)
+
+    def test_a_switch_is_answered_without_a_second_model_call(self):
+        # The plug already said off; asking the model to phrase it costs a round
+        # trip after a switch that waited seconds on the set's own status lag.
+        second = {"id": "plug-2", "label": "Bedroom plug", "kind": "plug"}
+        toolbox = DevicelessToolbox(devices=[TV, second])
+        model = SwitchingModel()
+        reply = agent_mod.Agent(
+            model=model, toolbox=toolbox,
+            limits=agent_mod.Limits(monthly_cap_ngn=30_000, per_payment_cap_ngn=10_000,
+                                    allowed_meters=frozenset()),
+        ).respond("turn off the TV")
+        self.assertEqual(model.turns, 1)
+        self.assertEqual(toolbox.switch_calls, [("tv-plug-1", False)])
+        self.assertEqual(reply.reply, "Living room TV is off.")
 
     def test_a_model_that_only_talks_still_turns_the_tv_back_on(self):
         # Measured live 2026-11-04: with only tv-plug-1 saved, "put it back on"

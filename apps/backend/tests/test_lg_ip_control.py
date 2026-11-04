@@ -114,6 +114,56 @@ class FramingTests(unittest.TestCase):
     def test_the_broadcast_defaults_to_the_tvs_slash_24(self):
         self.assertEqual(lg.broadcast_for("192.168.100.28"), "192.168.100.255")
 
+    def test_a_complete_reply_is_recognised_while_the_socket_stays_open(self):
+        # The real set answers and then holds the connection, so the read has to
+        # stop on the frame, not on EOF: measured 4.5s per command on 2026-11-03.
+        tv = FakeTv()
+        wire = tv._exchange(tv.frame("POWER_STATUS"))
+        self.assertTrue(tv._is_complete_frame(wire))
+
+    def test_a_reply_ending_in_a_newline_counts_as_whole(self):
+        # Measured against the real set 2026-11-04: it terminates with LF, not CR.
+        # A check for CR alone left every command waiting out its 4s timeout.
+        tv = FakeTv()
+        iv = os.urandom(16)
+        wire = aes.ecb_encrypt(tv._key, iv) + aes.cbc_encrypt(
+            tv._key, iv, lg._pad(b"Power Status: active\n"))
+        self.assertTrue(tv._is_complete_frame(wire))
+
+    def test_a_partial_reply_is_not_mistaken_for_a_whole_one(self):
+        tv = FakeTv()
+        wire = tv._exchange(tv.frame("POWER_STATUS"))
+        self.assertFalse(tv._is_complete_frame(wire[:16]))
+        self.assertFalse(tv._is_complete_frame(wire[:-16]))
+        self.assertFalse(tv._is_complete_frame(b""))
+
+    def test_reading_stops_at_the_reply_instead_of_waiting_for_the_socket(self):
+        # A socket that hands over one frame and then stays open: any second read
+        # is the four seconds Stark used to spend saying nothing.
+        tv = FakeTv()
+        served = [tv._exchange(tv.frame("POWER_STATUS"))]
+
+        class HeldOpen:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def sendall(self, payload):
+                self.sent = payload
+
+            def settimeout(self, seconds):
+                self.timeout = seconds
+
+            def recv(self, size):
+                if served:
+                    return served.pop(0)
+                raise AssertionError("read past the reply — that is the old 4s wait")
+
+        with mock.patch.object(lg.socket, "create_connection", return_value=HeldOpen()):
+            self.assertEqual(tv.ask("POWER_STATUS"), "Power Status: active")
+
 
 class SwitchTests(unittest.TestCase):
     def test_off_is_confirmed_by_a_state_read(self):
