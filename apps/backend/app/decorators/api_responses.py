@@ -11,6 +11,8 @@ class ApiResponses:
     STATUS = {
         "unauthorized": 401,
         "unknown_bill": 404,
+        "unknown_device": 404,
+        "device_unreachable": 503,
         "no_route": 404,
         "bad_amount": 400,
         "bad_watts": 400,
@@ -26,6 +28,9 @@ class ApiResponses:
         "plan_required": 400,
         "unknown_plan": 400,
         "audio_too_large": 413,
+        "paused": 423,
+        "unknown_request": 404,
+        "request_closed": 409,
         "over_per_payment_cap": 409,
         "over_cap": 409,
         "insufficient_balance": 409,
@@ -38,6 +43,17 @@ class ApiResponses:
         "vendor_failed": 502,
         "no_voice": 503,
         "turnlog_off": 404,
+        "unknown_deposit": 404,
+        "bad_method": 400,
+        "bad_asset": 400,
+        "bad_tx": 400,
+        "bad_account": 400,
+        "bad_address": 400,
+        "over_limit": 400,
+        "daily_limit": 409,
+        "authorisation_failed": 502,
+        "provider_failed": 502,
+        "float_low": 503,
     }
 
     @staticmethod

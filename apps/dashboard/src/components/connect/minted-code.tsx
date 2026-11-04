@@ -1,4 +1,4 @@
-import type { LinkCode } from "@stark/api";
+import type { LinkCode } from "@stark/api/types";
 import { TelegramDeepLink } from "@/components/connect/telegram-deep-link";
 
 export function MintedCode({ minted }: { minted: LinkCode }) {

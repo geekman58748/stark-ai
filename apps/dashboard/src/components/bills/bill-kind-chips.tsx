@@ -1,4 +1,4 @@
-import type { BillKind } from "@stark/api";
+import type { BillKind } from "@stark/api/types";
 import { ChipGroup, ChoiceChip } from "@stark/ui/components/choice-chip";
 import { BillKinds } from "@/lib/bills/bill-kinds";
 

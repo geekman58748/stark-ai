@@ -1,9 +1,10 @@
-"""The Telegram door, wired to this server: one bot, speaking for one account.
+"""The Telegram door, wired to this server: one bot, speaking for any linked chat.
 
-The bot is the one single-tenant surface left: it acts for exactly the account
-named by `STARK_TG_OWNER_EMAIL`, resolved at use rather than at boot (the account
-usually does not exist yet when the server starts). It refuses every update until
-both Telegram secrets are set (fail closed).
+Like WhatsApp and SMS, a chat speaks for the account whose link code it spent,
+so every read and payment is scoped to that account. `STARK_TG_OWNER_EMAIL` is
+only a fallback for a code minted without an account (the reminder loop's own
+nudges); it is no longer what decides whose money a chat can move. It refuses
+every update until both Telegram secrets are set (fail closed).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any, Optional
 from app.common.api_error import ApiError
 from app.database import neon
 from app.modules.account.account_service import AccountService
+from app.modules.control.control_service import ControlService
 from app.modules.telegram import telegram
 from app.modules.telegram.identity_repository import IdentityRepository
 from app.modules.turnlog.turn_logger import TurnLogger
@@ -23,7 +25,8 @@ from app.shared.services.api_config_service import ApiConfigService
 
 class TelegramService:
     def __init__(self, config: ApiConfigService, db: neon.Database,
-                 identities: IdentityRepository, accounts: AccountService) -> None:
+                 identities: IdentityRepository, accounts: AccountService,
+                 controls: ControlService) -> None:
         self.config = config
         self.db = db
         self.accounts = accounts
@@ -31,6 +34,7 @@ class TelegramService:
         self.adapter = telegram.TelegramAdapter(
             agent=self,
             identities=identities,
+            controls=controls,
             bot_token=config.telegram_bot_token,
             secret=config.telegram_webhook_secret,
             owner_user_id=self.owner_account_id,
@@ -50,16 +54,13 @@ class TelegramService:
             self._owner_id = row["id"] if row else None
         return self._owner_id or ""
 
-    def respond(self, transcript: str, thread: Optional[str] = None) -> Any:
-        """The adapter's agent: run the owner's agent, never a web request's."""
-        owner = self.owner_account_id()
-        if not owner:
-            raise RuntimeError("STARK_TG_OWNER_EMAIL does not name an account")
-        return self.accounts.state(owner).agent.respond(transcript, thread=thread)
+    def respond(self, user_id: str, said: str, thread: str) -> Any:
+        """The linked account's agent — the same `Agent.respond` every door uses."""
+        return self.accounts.state(user_id).agent.respond(said, thread=thread)
 
     def link_code(self, account_id: str) -> dict[str, Any]:
         try:
-            payload = self.adapter.link_code()
+            payload = self.adapter.link_code(account_id)
         except telegram.TelegramError as err:
             raise ApiError(err.status, err.code, err.message) from err
         payload["user_id"] = account_id
@@ -81,7 +82,7 @@ class TelegramService:
         """Write one Telegram exchange to the same log `/v1/voice` writes to, plus
         `channel`, so both doors read back the same way."""
         result = turn.get("result")
-        owner = self.owner_account_id()
+        owner = turn.get("account_id") or self.owner_account_id()
         TurnLogger.turn(
             agent=self.accounts.state(owner).agent if owner else None,
             outcome=turn.get("outcome") or "answered",

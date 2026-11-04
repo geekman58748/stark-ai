@@ -43,9 +43,12 @@ class FakeAgent:
     def __init__(self):
         self.transcripts: list[str] = []
         self.threads: list[str | None] = []
+        # Which account each turn was scoped to — the multi-tenant contract.
+        self.users: list[str] = []
 
-    def respond(self, transcript: str, thread: str | None = None):
-        self.transcripts.append(transcript)
+    def respond(self, user_id: str, said: str, thread: str):
+        self.users.append(user_id)
+        self.transcripts.append(said)
         self.threads.append(thread)
 
         class Reply:
@@ -54,7 +57,7 @@ class FakeAgent:
             code = None
             receipt_id = "rcpt_1"
             token = None
-            conversation = [{"role": "user", "content": transcript}]
+            conversation = [{"role": "user", "content": said}]
         return Reply()
 
 
@@ -230,6 +233,40 @@ class TestLinkCode(AdapterCase):
         self.linked()
         code = self.adapter.link_code()["code"]
         self.assertIn("already linked", self._say(f"/start {code}"))
+
+
+class TestPerAccountRouting(AdapterCase):
+    """One bot, many accounts: a chat speaks for the account whose code it spent."""
+
+    def test_each_chat_acts_on_its_own_account(self):
+        # Before this, every linked chat ran on the owner's account: a second
+        # sign-up could read and move the owner's money. Measured 2026-11-04.
+        other = test_support.TempAccount()
+        self.addCleanup(other.close)
+        for chat, account in ((42, self.account.id), (99, other.id)):
+            code = self.ids.issue_code(account)
+            self.ids.consume_code(code, telegram.CHANNEL, str(chat), "Tunde")
+
+        self.adapter.handle_update(_update(chat_id=42, text="hello stark what's left"))
+        self.adapter.handle_update(_update(chat_id=99, text="hello stark what's left"))
+        self.assertEqual(self.agent.users, [self.account.id, other.id])
+
+    def test_a_link_code_is_minted_for_the_account_that_asks(self):
+        # The Connect screen mints a code for the signed-in account, never for
+        # whichever account the bot happens to call its owner.
+        other = test_support.TempAccount()
+        self.addCleanup(other.close)
+        payload = self.adapter.link_code(other.id)
+        self.ids.consume_code(payload["code"], telegram.CHANNEL, "77", "Tunde")
+        self.assertEqual(self.ids.resolve(telegram.CHANNEL, "77"), other.id)
+
+    def test_a_turn_is_logged_against_the_account_that_answered(self):
+        other = test_support.TempAccount()
+        self.addCleanup(other.close)
+        code = self.ids.issue_code(other.id)
+        self.ids.consume_code(code, telegram.CHANNEL, "88", "Tunde")
+        self.adapter.handle_update(_update(chat_id=88, text="hello stark what's left"))
+        self.assertEqual(self.turns[-1]["account_id"], other.id)
 
 
 class TestVoice(AdapterCase):

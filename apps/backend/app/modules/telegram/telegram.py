@@ -71,7 +71,7 @@ VOICE_ASLEEP = "I'm here — say 'stark' first, then your question."
 HELP_TEXT = (
     "Stark pays your household bills inside your limits.\n"
     "Try: 'hello stark how much is left' or 'hello stark pay 5000 for electricity'.\n"
-    "Commands: /whoami, /unlink, /help"
+    "Commands: /pause, /resume, /whoami, /unlink, /help"
 )
 
 
@@ -85,7 +85,14 @@ class TelegramError(Exception):
 
 
 class AgentLike(Protocol):
-    def respond(self, transcript: str, thread: str | None = None) -> Any: ...
+    # `user_id` is the account this chat is linked to, never the bot's owner: the
+    # same rule WhatsApp and SMS follow, so one bot can serve every account.
+    def respond(self, user_id: str, said: str, thread: str) -> Any: ...
+
+
+class ControlsLike(Protocol):
+    def pause(self, account_id: str) -> dict[str, Any]: ...
+    def resume(self, account_id: str) -> dict[str, Any]: ...
 
 
 class IdentityLike(Protocol):
@@ -193,6 +200,8 @@ def send_voice_note(chat_id: int, ogg: bytes, *, bot_token: str,
 class TelegramAdapter:
     agent: AgentLike
     identities: IdentityLike
+    # The off switch, so a linked chat can stop payments without opening the app.
+    controls: ControlsLike | None = None
     bot_token: str | None = None
     secret: str | None = None
     # The account this bot serves. A callable is resolved per use, so the account
@@ -222,19 +231,24 @@ class TelegramAdapter:
         """Both secrets present. Otherwise every update is refused."""
         return bool(self.bot_token and self.secret)
 
-    def link_code(self) -> dict[str, Any]:
-        """Mint one single-use code, plus the deep link that spends it.
+    def link_code(self, account_id: str | None = None) -> dict[str, Any]:
+        """Mint one single-use code for an account, plus the deep link that spends it.
 
         The code is the only thing that binds a chat to this account (see
         `identity_repository.py`), so it is returned exactly once and never logged.
         `deep_link` is None when the bot has no token or Telegram could not be
         reached — the code still works, typed by hand as `link 482913`.
+
+        The account is the one asking, not the bot's owner: a chat speaks for the
+        account whose code it spent, so every new sign-up can bind its own
+        Telegram instead of everyone sharing the owner's wallet.
         """
-        owner = self.owner_user_id() if callable(self.owner_user_id) else self.owner_user_id
-        if not owner:
-            raise TelegramError(409, "not_configured",
-                                "Set STARK_TG_OWNER_EMAIL to the account this bot speaks for.")
-        code = self.identities.issue_code(owner)
+        account = (account_id or "").strip() or (
+            self.owner_user_id() if callable(self.owner_user_id) else self.owner_user_id
+        )
+        if not account:
+            raise TelegramError(409, "not_configured", "No account to link this chat to.")
+        code = self.identities.issue_code(account)
         lookup = self.username_lookup or bot_username
         username = lookup(self.bot_token)
         return {
@@ -292,6 +306,7 @@ class TelegramAdapter:
 
     _last_outcome = "ignored"
     _speak_reply = False       # per-update scratch, reset on every _route
+    _last_user_id: str | None = None
     _last_heard: str | None = None
     _last_said: str | None = None
     _last_result: Any = None
@@ -313,6 +328,7 @@ class TelegramAdapter:
                 "said": self._last_said,
                 "reply": reply,
                 "result": self._last_result,
+                "account_id": self._last_user_id,
             })
         except Exception as err:  # a broken log must not break the reply
             self.log(f"telegram turn log failed: {err}")
@@ -352,6 +368,7 @@ class TelegramAdapter:
     def _route(self, message: dict, text: str, channel_user_id: str,
                display_name: str | None, chat_id: int) -> str | None:
         self._speak_reply = False
+        self._last_user_id = None
         self._last_heard = None
         self._last_said = None
         self._last_result = None
@@ -397,11 +414,12 @@ class TelegramAdapter:
         self._last_outcome = "agent"
         self._last_heard = transcript
         self._last_said = said
+        self._last_user_id = user_id
         self.log(f"telegram user={user_id} transcript={transcript!r}")
         # The chat is the thread: a bare "500" is only an amount because the
         # previous line asked how much. Memory is per chat, so two people
         # messaging the bot cannot answer each other's questions.
-        result = self.agent.respond(said, thread=f"{CHANNEL}:{chat_id}")
+        result = self.agent.respond(user_id, said, thread=f"{CHANNEL}:{chat_id}")
         self._last_result = result
         # Spoken only when the question was a voice note: you spoke to Stark,
         # Stark speaks back. A typed message gets a typed reply.
@@ -465,6 +483,19 @@ class TelegramAdapter:
         if verb == "/whoami":
             user_id = self.identities.resolve(CHANNEL, channel_user_id)
             return f"Linked to {user_id}." if user_id else "Not linked."
+
+        if verb in ("/pause", "/resume"):
+            user_id = self.identities.resolve(CHANNEL, channel_user_id)
+            if user_id is None:
+                return NOT_LINKED_REPLY
+            if self.controls is None:
+                return "Pausing from chat is not set up. Use the app for now."
+            if verb == "/pause":
+                self.controls.pause(user_id)
+                return ("Paused. I will not pay anything until you send /resume. "
+                        "You can still ask me questions.")
+            self.controls.resume(user_id)
+            return "Resumed. I can pay your bills again, inside your limits."
 
         if verb == "/unlink":
             if self.identities.unlink(CHANNEL, channel_user_id):

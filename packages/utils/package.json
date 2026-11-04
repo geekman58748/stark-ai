@@ -16,5 +16,8 @@
   "devDependencies": {
     "@stark/tsconfig": "workspace:*",
     "typescript": "catalog:"
+  },
+  "dependencies": {
+    "date-fns": "^4.4.0"
   }
 }

@@ -1,4 +1,4 @@
-import type { Bill, State } from "@stark/api";
+import type { Bill, State } from "@stark/api/types";
 import { Icons } from "@stark/ui/components/icons";
 import { listRowClass, RowText } from "@stark/ui/components/list-row";
 import { cn } from "@stark/ui/utils/cn";

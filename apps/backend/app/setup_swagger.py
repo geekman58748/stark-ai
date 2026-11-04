@@ -45,10 +45,15 @@ class SwaggerSetup:
         This API never answers 422: bad input is a 400 in the contract's shape
         (`filters/http_exception_filter.py`), so documenting 422 would be a lie.
         """
+
         def openapi() -> dict:
             if app.openapi_schema is None:
-                spec = get_openapi(title=app.title, version=app.version,
-                                   description=app.description, routes=app.routes)
+                spec = get_openapi(
+                    title=app.title,
+                    version=app.version,
+                    description=app.description,
+                    routes=app.routes,
+                )
                 for operations in spec["paths"].values():
                     for operation in operations.values():
                         operation.get("responses", {}).pop("422", None)

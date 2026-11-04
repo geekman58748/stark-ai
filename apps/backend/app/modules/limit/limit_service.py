@@ -6,14 +6,17 @@ from typing import Any
 
 from app.common.api_error import ApiError
 from app.modules.account.account_service import AccountService
+from app.modules.approval.approval_service import ApprovalService
 from app.modules.limit.dtos.update_limits_dto import UpdateLimitsDto
 from app.modules.wallet.wallet_service import WalletService
 
 
 class LimitService:
-    def __init__(self, accounts: AccountService, wallet: WalletService) -> None:
+    def __init__(self, accounts: AccountService, wallet: WalletService,
+                 approvals: ApprovalService) -> None:
         self.accounts = accounts
         self.wallet = wallet
+        self.approvals = approvals
 
     def summary(self, account_id: str) -> dict[str, Any]:
         limits = self.accounts.state(account_id).limits
@@ -23,6 +26,7 @@ class LimitService:
             "per_payment_cap_ngn": limits.per_payment_cap_ngn,
             "spent_ngn": spent,
             "remaining_cap_ngn": max(limits.monthly_cap_ngn - spent, 0),
+            "approval_window_minutes": self.approvals.window_minutes(account_id),
         }
 
     def update(self, account_id: str, dto: UpdateLimitsDto) -> dict[str, Any]:
@@ -37,6 +41,8 @@ class LimitService:
         if effective_per > effective_monthly:
             raise ApiError(400, "bad_limits",
                            "The per-payment limit can't exceed the monthly limit.")
+        if dto.approval_window_minutes is not None:
+            self.approvals.set_window(account_id, dto.approval_window_minutes)
         self.accounts.rebuild_limits(account_id, monthly_cap_ngn=monthly,
                                      per_payment_cap_ngn=per)
         return self.summary(account_id)

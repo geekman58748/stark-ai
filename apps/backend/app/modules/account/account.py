@@ -36,6 +36,9 @@ class AccountState:
 
     bills: dict[str, dict[str, Any]]
     limits: agent_layer.Limits
+    # When the owner paused Stark, or None while it may pay. Written through by
+    # `ControlService`; every payment path refuses while it is set.
+    paused_at: Optional[str] = None
     agent: Any = None
     # Refreshed from the session on every web request; the Telegram bot and the
     # reminder loop have no session of their own, so they greet with the last one.

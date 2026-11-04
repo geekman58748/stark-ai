@@ -42,6 +42,8 @@ export type State = {
   cap_ngn: number;
   spent_ngn: number;
   remaining_cap_ngn: number;
+  /** True while the owner has paused Stark: every payment is refused. */
+  paused: boolean;
   /** null when the user has no electricity bill: hide the block, don't show 0. */
   units_left: number | null;
   /** An estimate from purchase history, not a precise number. */
@@ -71,6 +73,8 @@ export type Receipt = {
   request_id?: string;
   type: ReceiptType;
   source: string | null;
+  /** Why a `declined` entry was stopped, in plain words; null otherwise. */
+  reason: string | null;
 };
 
 export type Plan = {
@@ -88,7 +92,11 @@ export type Limits = {
   per_payment_cap_ngn: number;
   spent_ngn: number;
   remaining_cap_ngn: number;
+  /** How long a payment over a limit waits for approval. */
+  approval_window_minutes: ApprovalWindow;
 };
+
+export type ApprovalWindow = 15 | 30 | 60 | 360 | 1440;
 
 export type Wallet = {
   currency: "NGN";
@@ -165,7 +173,136 @@ export type LinkCode = {
   user_id?: string;
 };
 
-export type LimitsPatch = { monthly_cap_ngn?: number; per_payment_cap_ngn?: number };
+export type LimitsPatch = {
+  monthly_cap_ngn?: number;
+  per_payment_cap_ngn?: number;
+  approval_window_minutes?: ApprovalWindow;
+};
 export type PaymentInput = { bill_id: string; amount_ngn: number };
 /** Test money: there is no payment provider yet, so nothing is collected. */
 export type TopUpInput = { amount_ngn: number; request_id?: string };
+
+export type Controls = {
+  paused: boolean;
+  /** When Stark was paused; null while it may pay. */
+  paused_at: string | null;
+};
+
+/** A payment over a limit, waiting for the owner. Only `pending` can be decided. */
+export type PaymentRequest = {
+  id: string;
+  bill_id: string;
+  bill_label: string;
+  amount_ngn: number;
+  reason: "over_per_payment_cap" | "over_cap";
+  status: "pending" | "approved" | "denied" | "expired";
+  created_at: string;
+  expires_at: string;
+  decided_at: string | null;
+  /** The payment an approval became. */
+  receipt_id: string | null;
+};
+
+export type ApprovedPayment = { request: PaymentRequest; receipt: Receipt };
+
+/** The public sample account. Made up, read-only, and served without a session. */
+export type DemoSnapshot = {
+  state: State;
+  activity: Receipt[];
+  approvals: PaymentRequest[];
+  limits: Pick<Limits, "monthly_cap_ngn" | "per_payment_cap_ngn">;
+};
+
+/** A saved bill seen as somewhere Stark may pay. Only delivered payments count. */
+export type Payee = {
+  bill_id: string;
+  label: string;
+  kind: BillKind;
+  provider: string;
+  reference: string;
+  paid_this_month_ngn: number;
+  paid_total_ngn: number;
+  payments: number;
+  last_paid_at: string | null;
+};
+
+/** Which ways of adding (and taking out) money the server has switched on. */
+export type FundingMethods = {
+  bank: boolean;
+  crypto: boolean;
+  test_money: boolean;
+  withdraw: { bank: boolean; crypto: boolean };
+};
+
+/** Something a crypto deposit can be paid with (NEAR Intents routes it to naira). */
+export type CryptoAsset = { asset_id: string; symbol: string; chain: string };
+
+export type DepositStatus = "open" | "confirming" | "credited" | "expired" | "failed" | "refunded";
+
+type DepositCommon = {
+  id: string;
+  amount_ngn: number;
+  /** What actually landed; null until credited. */
+  credited_ngn: number | null;
+  status: DepositStatus;
+  /** Why it failed or was refunded, when it was. */
+  note: string | null;
+  expires_at: string | null;
+  created_at: string;
+  credited_at: string | null;
+};
+
+/** `bank` pays on Bachs's hosted page; `crypto` is a one-off address for an exact amount. */
+export type Deposit = DepositCommon &
+  (
+    | { method: "bank"; pay: { checkout_url: string } }
+    | {
+        method: "crypto";
+        pay: { asset: string; chain: string; amount: string; address: string; memo: string | null };
+      }
+  );
+
+export type StartDeposit =
+  | { method: "bank"; amount_ngn: number }
+  | { method: "crypto"; amount_ngn: number; asset_id: string };
+
+export type Bank = { name: string; code: string };
+
+export type BankAccount = { bank_code: string; account_number: string };
+
+export type ResolvedAccount = BankAccount & { account_name: string };
+
+export type WithdrawInput = BankAccount & { amount_ngn: number };
+
+/** `asset_id` comes from `cryptoAssets`; `address` is the user's, on that asset's chain. */
+export type CryptoWithdrawInput = { amount_ngn: number; asset_id: string; address: string };
+
+type WithdrawalCommon = {
+  id: string;
+  amount_ngn: number;
+  /** Why it was returned, when it was. */
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * `reviewing`: Bachs is checking a new bank account. `sending`: the transfer for a
+ * crypto withdrawal is going out. `returned`: the money came back to the balance.
+ */
+export type Withdrawal = WithdrawalCommon &
+  (
+    | { method: "bank"; status: "reviewing" | "processing" | "paid" | "returned"; crypto: null }
+    | {
+        method: "crypto";
+        status: "sending" | "processing" | "paid" | "returned";
+        crypto: {
+          asset: string;
+          chain: string;
+          address: string;
+          /** What arrives: the quote until the swap settles, then the settled amount. */
+          amount: string;
+          tx_hash: string | null;
+        };
+      }
+  );

@@ -1,4 +1,4 @@
-import type { BillKind } from "@stark/api";
+import type { BillKind } from "@stark/api/types";
 import { Field, FieldLabel } from "@stark/ui/components/field";
 import {
   Select,

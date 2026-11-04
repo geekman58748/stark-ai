@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 
 # Stable machine codes. The frontend and the agent branch on these, never on the
 # human sentence. These strings are identical to `Rejection::code()` in Rust.
+PAUSED = "paused"
 BAD_AMOUNT = "bad_amount"
 OVER_PER_PAYMENT_CAP = "over_per_payment_cap"
 OVER_CAP = "over_cap"
@@ -25,6 +26,7 @@ METER_NOT_ALLOWED = "meter_not_allowed"
 INSUFFICIENT_BALANCE = "insufficient_balance"
 
 ALL_CODES = (
+    PAUSED,
     BAD_AMOUNT,
     OVER_PER_PAYMENT_CAP,
     OVER_CAP,
@@ -35,6 +37,7 @@ ALL_CODES = (
 # Plain English only. No "vault", no "USDC", no addresses — these lines are
 # spoken out loud by TTS. Identical to `Rejection::as_str()` in Rust.
 MESSAGES = {
+    PAUSED: "Stark is paused right now, so nothing was paid.",
     BAD_AMOUNT: "That amount needs to be above zero.",
     OVER_PER_PAYMENT_CAP: "That's over the most you allow in one go.",
     OVER_CAP: "That would go over your monthly limit.",
@@ -59,6 +62,7 @@ class Rejection:
 
 
 def check_payment(
+    paused: bool,
     monthly_cap_ngn: int,
     per_payment_cap_ngn: int,
     spent_this_period_ngn: int,
@@ -70,6 +74,7 @@ def check_payment(
 
     The order is deliberate and mirrors the Rust contract exactly:
 
+    0. pause            — the owner's off switch beats every other answer
     1. per-payment cap  — cheapest, most specific refusal
     2. monthly cap      — the headline safety guarantee
     3. allowlist        — never pay a meter the owner didn't name
@@ -78,6 +83,8 @@ def check_payment(
     A spend that overflows is treated as over the cap rather than clamped, which
     is what the Rust side does with `checked_add`.
     """
+    if paused:
+        return Rejection(PAUSED)
     if amount_ngn == 0:
         return Rejection(BAD_AMOUNT)
     if amount_ngn > per_payment_cap_ngn:

@@ -1,4 +1,5 @@
-import { errorCopy, useLinkCode } from "@stark/api";
+import { errorCopy } from "@stark/api/errors";
+import { useLinkCode } from "@stark/api/mutations";
 import { Button } from "@stark/ui/components/button";
 import { Card } from "@stark/ui/components/card";
 import { FieldError } from "@stark/ui/components/field";

@@ -1,4 +1,4 @@
-import type { Plan } from "@stark/api";
+import type { Plan } from "@stark/api/types";
 import {
   Select,
   SelectContent,

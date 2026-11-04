@@ -1,14 +1,27 @@
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import { queryKeys } from "./queries";
-import type { BillPatch, LimitsPatch, NewBill, PaymentInput, TopUpInput } from "./types";
+import type {
+  ApprovedPayment,
+  BankAccount,
+  BillPatch,
+  CryptoWithdrawInput,
+  LimitsPatch,
+  NewBill,
+  PaymentInput,
+  PaymentRequest,
+  StartDeposit,
+  TopUpInput,
+  WithdrawInput,
+} from "./types";
 
 // Money moved or a bill changed: balance, caps, units and history can all shift together.
-function invalidateMoney(qc: QueryClient) {
+export function invalidateMoney(qc: QueryClient) {
   return Promise.all([
     qc.invalidateQueries({ queryKey: queryKeys.state }),
     qc.invalidateQueries({ queryKey: queryKeys.bills }),
     qc.invalidateQueries({ queryKey: queryKeys.activity }),
+    qc.invalidateQueries({ queryKey: queryKeys.payees }),
     qc.invalidateQueries({ queryKey: queryKeys.wallet }),
     qc.invalidateQueries({ queryKey: queryKeys.limits }),
     qc.invalidateQueries({ queryKey: queryKeys.suggestions }),
@@ -69,6 +82,31 @@ export function useTopUp() {
   });
 }
 
+/** Nothing moves yet: the balance changes when the deposit reads `credited`. */
+export function useStartDeposit() {
+  return useMutation({ mutationFn: (input: StartDeposit) => api.startDeposit(input) });
+}
+
+export function useResolveBankAccount() {
+  return useMutation({ mutationFn: (input: BankAccount) => api.resolveBankAccount(input) });
+}
+
+export function useWithdraw() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: WithdrawInput) => api.withdraw(input),
+    onSuccess: () => invalidateMoney(qc),
+  });
+}
+
+export function useWithdrawCrypto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CryptoWithdrawInput) => api.withdrawCrypto(input),
+    onSuccess: () => invalidateMoney(qc),
+  });
+}
+
 export function useVoice() {
   const qc = useQueryClient();
   return useMutation({
@@ -101,6 +139,31 @@ export function useVoiceAudio() {
 export function useLinkCode() {
   return useMutation({
     mutationFn: () => api.linkCode(),
+  });
+}
+
+/** An approval pays, so it moves money; a denial adds a declined row to activity. */
+export function useDecideRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      approve,
+    }: {
+      id: string;
+      approve: boolean;
+    }): Promise<ApprovedPayment | PaymentRequest> => (approve ? api.approve(id) : api.deny(id)),
+    onSettled: () =>
+      Promise.all([qc.invalidateQueries({ queryKey: queryKeys.approvals }), invalidateMoney(qc)]),
+  });
+}
+
+/** Pause and resume both change what State reports, so State is refetched. */
+export function useSetPaused() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (paused: boolean) => (paused ? api.pause() : api.resume()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.state }),
   });
 }
 

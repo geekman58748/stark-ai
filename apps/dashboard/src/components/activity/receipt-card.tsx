@@ -1,4 +1,4 @@
-import type { Receipt } from "@stark/api";
+import type { Receipt } from "@stark/api/types";
 import { Card } from "@stark/ui/components/card";
 import { ReceiptAmount } from "@/components/activity/receipt-amount";
 import { ReceiptHeader } from "@/components/activity/receipt-header";

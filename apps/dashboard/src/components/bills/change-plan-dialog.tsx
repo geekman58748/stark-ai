@@ -1,4 +1,4 @@
-import type { Bill } from "@stark/api";
+import type { Bill } from "@stark/api/types";
 import { Dialog, DialogContent } from "@stark/ui/components/dialog";
 import { ChangePlanForm } from "@/components/bills/change-plan-form";
 

@@ -12,6 +12,8 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+from app.shared.services.money_config import MoneyConfig
+
 
 @dataclass(frozen=True)
 class ApiConfigService:
@@ -24,6 +26,7 @@ class ApiConfigService:
     telegram_bot_token: Optional[str]
     telegram_webhook_secret: Optional[str]
     telegram_owner_email: str
+    money: MoneyConfig
 
     @classmethod
     def from_env(cls) -> "ApiConfigService":
@@ -37,4 +40,5 @@ class ApiConfigService:
             telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN"),
             telegram_webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
             telegram_owner_email=(os.environ.get("STARK_TG_OWNER_EMAIL") or "").strip().lower(),
+            money=MoneyConfig.from_env(),
         )

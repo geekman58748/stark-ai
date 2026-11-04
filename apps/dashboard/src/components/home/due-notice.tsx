@@ -1,4 +1,4 @@
-import type { DueBill } from "@stark/api";
+import type { DueBill } from "@stark/api/types";
 import { Notice } from "@stark/ui/components/notice";
 import { BillIcon } from "@/components/bills/bill-icon";
 import { DuePayButton } from "@/components/home/due-pay-button";

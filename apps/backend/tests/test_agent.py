@@ -53,6 +53,8 @@ class FakeToolbox:
         self.bills = list(BILLS if bills is None else bills)
         self.pay_calls: list[tuple[str, int]] = []
         self.receipts: list[dict] = []
+        self.requests: list[tuple[str, int, str]] = []
+        self.refusals: list[tuple[str, int, str]] = []
 
     def get_state(self):
         return {
@@ -68,6 +70,13 @@ class FakeToolbox:
 
     def recent_activity(self):
         return list(self.receipts)
+
+    def request_approval(self, bill_id, amount_ngn, reason):
+        self.requests.append((bill_id, amount_ngn, reason))
+        return {"id": f"req_{len(self.requests)}", "window_minutes": 60}
+
+    def record_refusal(self, bill_id, amount_ngn, reason):
+        self.refusals.append((bill_id, amount_ngn, reason))
 
     def pay(self, bill_id, amount_ngn):
         self.pay_calls.append((bill_id, amount_ngn))
@@ -85,15 +94,6 @@ class FakeToolbox:
         self.balance -= amount_ngn
         self.spent += amount_ngn
         return receipt
-
-
-class RecordingSigner:
-    def __init__(self):
-        self.calls: list[tuple[str, int]] = []
-
-    def sign_pay(self, meter, amount_ngn):
-        self.calls.append((meter, amount_ngn))
-        return {"tx_hash": "cd" * 32}
 
 
 class RecordingModel:
@@ -131,7 +131,7 @@ class ScriptedModel:
         return agent_mod.ModelTurn(content="Understood.")
 
 
-def make_agent(toolbox=None, signer=None, limits=None, model=None, threads=None):
+def make_agent(toolbox=None, limits=None, model=None, threads=None):
     return agent_mod.Agent(
         model=model or agent_mod.FakeModel(),
         toolbox=toolbox or FakeToolbox(),
@@ -141,7 +141,6 @@ def make_agent(toolbox=None, signer=None, limits=None, model=None, threads=None)
             per_payment_cap_ngn=PER_PAYMENT,
             allowed_meters=ALLOWED,
         ),
-        signer=signer,
         threads=threads,
     )
 
@@ -157,11 +156,15 @@ def _snapshot(system_message: dict) -> dict:
 class PolicyTests(unittest.TestCase):
     def ok(self, spent, balance, amount, allowed=True):
         return policy_rules.check_payment(
-            MONTHLY, PER_PAYMENT, spent, balance, amount, allowed
+            False, MONTHLY, PER_PAYMENT, spent, balance, amount, allowed
         )
 
     def test_allows_a_payment_within_every_limit(self):
         self.assertIsNone(self.ok(0, 64_200, 5_000))
+
+    def test_a_pause_beats_every_other_rule(self):
+        rejection = policy_rules.check_payment(True, 30_000, 10_000, 29_000, 0, 50_000, False)
+        self.assertEqual(rejection.code, policy_rules.PAUSED)
 
     def test_rejects_zero_amount(self):
         rejection = self.ok(0, 64_200, 0)
@@ -180,13 +183,13 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(rejection.code, policy_rules.OVER_PER_PAYMENT_CAP)
 
     def test_rejects_over_monthly_cap_within_per_payment(self):
-        rejection = policy_rules.check_payment(30_000, 30_000, 28_000, 64_200, 5_000, True)
+        rejection = policy_rules.check_payment(False, 30_000, 30_000, 28_000, 64_200, 5_000, True)
         self.assertEqual(rejection.code, policy_rules.OVER_CAP)
         self.assertEqual(rejection.detail["remaining_ngn"], 2_000)
 
     def test_allows_exactly_the_monthly_cap(self):
         self.assertIsNone(
-            policy_rules.check_payment(30_000, 30_000, 25_000, 64_200, 5_000, True)
+            policy_rules.check_payment(False, 30_000, 30_000, 25_000, 64_200, 5_000, True)
         )
 
     def test_rejects_an_unlisted_meter(self):
@@ -194,11 +197,11 @@ class PolicyTests(unittest.TestCase):
                          policy_rules.METER_NOT_ALLOWED)
 
     def test_policy_violation_beats_balance(self):
-        rejection = policy_rules.check_payment(30_000, 300_000, 29_000, 100, 9_000, False)
+        rejection = policy_rules.check_payment(False, 30_000, 300_000, 29_000, 100, 9_000, False)
         self.assertEqual(rejection.code, policy_rules.OVER_CAP)
 
     def test_allowlist_beats_balance(self):
-        rejection = policy_rules.check_payment(30_000, 30_000, 0, 100, 1_000, False)
+        rejection = policy_rules.check_payment(False, 30_000, 30_000, 0, 100, 1_000, False)
         self.assertEqual(rejection.code, policy_rules.METER_NOT_ALLOWED)
 
     def test_rejects_when_balance_is_short(self):
@@ -208,7 +211,7 @@ class PolicyTests(unittest.TestCase):
 
     def test_huge_spent_is_refused_not_clamped(self):
         rejection = policy_rules.check_payment(
-            10**30, 10**30, 10**30, 10**30, 1_000, True
+            False, 10**30, 10**30, 10**30, 10**30, 1_000, True
         )
         self.assertEqual(rejection.code, policy_rules.OVER_CAP)
 
@@ -452,7 +455,9 @@ class AgentTests(unittest.TestCase):
         # because a wrong number is worse than a slow one.
         offered = [t["function"]["name"]
                    for t in agent_mod.Agent._tools_for(True, "stark pay my dstv")]
-        self.assertEqual(offered, ["pay_bill"])   # acting, not reading
+        # Acting, not reading. `switch_appliance` is the other tool that changes
+        # the world (a socket, not money), so it belongs in the same list.
+        self.assertEqual(offered, ["pay_bill", "switch_appliance"])
         without = [t["function"]["name"] for t in agent_mod.Agent._tools_for(False)]
         self.assertEqual(without, [t["function"]["name"] for t in agent_mod.TOOLS])
 
@@ -465,7 +470,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(
             [t["function"]["name"]
              for t in agent_mod.Agent._tools_for(True, "stark can you pay my dstv")],
-            ["pay_bill"],
+            ["pay_bill", "switch_appliance"],
         )
 
     def test_a_priced_top_up_defaults_to_the_meter_and_returns_the_token(self):
@@ -610,12 +615,57 @@ class AgentTests(unittest.TestCase):
         make_agent(toolbox).respond("stark top it up with two thousand five hundred")
         self.assertEqual(toolbox.pay_calls, [("bill_home_meter", 2_500)])
 
-    def test_over_per_payment_cap_is_refused_and_never_charged(self):
+    def test_over_per_payment_cap_is_sent_for_approval_and_never_charged(self):
         toolbox = FakeToolbox()
         reply = make_agent(toolbox).respond("stark pay six thousand for the light")
         self.assertEqual(toolbox.pay_calls, [])
         self.assertEqual(reply.code, policy_rules.OVER_PER_PAYMENT_CAP)
-        self.assertEqual(reply.reply, policy_rules.MESSAGES[policy_rules.OVER_PER_PAYMENT_CAP])
+        self.assertTrue(reply.reply.startswith(
+            policy_rules.MESSAGES[policy_rules.OVER_PER_PAYMENT_CAP]))
+        self.assertIn("approve it within an hour", reply.reply)
+        self.assertEqual(toolbox.requests,
+                         [("bill_home_meter", 6_000, policy_rules.OVER_PER_PAYMENT_CAP)])
+        self.assertEqual(toolbox.refusals, [])
+
+    def test_splitting_one_request_to_dodge_the_per_payment_cap_goes_for_approval(self):
+        # The model obeys the cap on each call but splits ₦8,000 into ₦5,000 + ₦3,000
+        # for the same bill. The second call must not be paid.
+        toolbox = FakeToolbox()
+        model = ScriptedModel([
+            agent_mod.ToolCall(id="1", name="pay_bill",
+                               arguments={"bill_id": "bill_home_meter", "amount_ngn": 5_000}),
+            agent_mod.ToolCall(id="2", name="pay_bill",
+                               arguments={"bill_id": "bill_home_meter", "amount_ngn": 3_000}),
+        ])
+        reply = make_agent(toolbox, model=model).respond("stark pay eight thousand for the light")
+        self.assertEqual(toolbox.pay_calls, [("bill_home_meter", 5_000)])
+        self.assertEqual(reply.code, policy_rules.OVER_PER_PAYMENT_CAP)
+        self.assertEqual(toolbox.requests,
+                         [("bill_home_meter", 3_000, policy_rules.OVER_PER_PAYMENT_CAP)])
+
+    def test_two_bills_in_one_request_each_get_their_own_cap(self):
+        office = {**ELECTRICITY, "id": "bill_office_meter", "label": "Office meter"}
+        toolbox = FakeToolbox(bills=[ELECTRICITY, office])
+        model = ScriptedModel([
+            agent_mod.ToolCall(id="1", name="pay_bill",
+                               arguments={"bill_id": "bill_home_meter", "amount_ngn": 5_000}),
+            agent_mod.ToolCall(id="2", name="pay_bill",
+                               arguments={"bill_id": "bill_office_meter", "amount_ngn": 3_000}),
+        ])
+        make_agent(toolbox, model=model).respond("stark top up home with 5000 and office with 3000")
+        self.assertEqual(toolbox.pay_calls,
+                         [("bill_home_meter", 5_000), ("bill_office_meter", 3_000)])
+        self.assertEqual(toolbox.requests, [])
+
+    def test_a_refusal_that_is_not_a_limit_is_logged_not_sent_for_approval(self):
+        toolbox = FakeToolbox(balance=1_000)
+        reply = make_agent(toolbox).respond("stark top it up with two thousand")
+        self.assertEqual(reply.code, policy_rules.INSUFFICIENT_BALANCE)
+        self.assertEqual(toolbox.requests, [])
+        self.assertEqual(toolbox.refusals, [(
+            "bill_home_meter", 2_000,
+            policy_rules.MESSAGES[policy_rules.INSUFFICIENT_BALANCE],
+        )])
 
     def test_over_monthly_cap_is_refused(self):
         toolbox = FakeToolbox(spent=28_000)
@@ -653,18 +703,6 @@ class AgentTests(unittest.TestCase):
         reply = make_agent(toolbox, model=model).respond("stark pay fifty thousand")
         self.assertEqual(toolbox.pay_calls, [])
         self.assertEqual(reply.code, policy_rules.OVER_PER_PAYMENT_CAP)
-
-    def test_signer_is_called_with_meter_and_amount(self):
-        signer = RecordingSigner()
-        reply = make_agent(signer=signer).respond(
-            "stark top it up with five thousand")
-        self.assertEqual(signer.calls, [("04512345678", 5_000)])
-        self.assertEqual(reply.tx_hash, "cd" * 32)
-
-    def test_signer_is_not_called_when_the_gate_refuses(self):
-        signer = RecordingSigner()
-        make_agent(signer=signer).respond("stark pay six thousand")
-        self.assertEqual(signer.calls, [])
 
     def test_pending_payment_is_never_reported_as_paid(self):
         class PendingToolbox(FakeToolbox):
@@ -783,75 +821,6 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(agent_.model.name, "fake")
 
 
-class SignerTests(unittest.TestCase):
-    def test_a_failed_signature_refuses_the_payment(self):
-        class BrokenSigner:
-            def sign_pay(self, meter, amount_ngn):
-                raise RuntimeError("rpc unreachable")
-
-        toolbox = FakeToolbox()
-        reply = make_agent(toolbox, signer=BrokenSigner()).respond(
-            "stark top it up with five thousand")
-        self.assertEqual(toolbox.pay_calls, [])
-        self.assertEqual(reply.code, "authorisation_failed")
-        self.assertIn("Nothing was charged", reply.reply)
-
-    def test_vault_signer_builds_and_does_not_broadcast_by_default(self):
-        from app.modules.chain import vault_signer
-
-        class FakeRpc:
-            def __init__(self):
-                self.broadcasts = 0
-
-            def access_key(self, account_id, public_key_b58):
-                return {"nonce": 9, "block_hash": near_tx.b58encode(b"\x33" * 32)}
-
-            def broadcast(self, signed):
-                self.broadcasts += 1
-                return {"status": {"SuccessValue": ""}}
-
-        rpc = FakeRpc()
-        signer = vault_signer.VaultSigner(
-            key=near_tx.KeyPair.from_secret(bytes(range(32))),
-            signer_id="agent.testnet",
-            receiver_id="vault.testnet",
-            rpc=rpc,
-        )
-        result = signer.sign_pay("04512345678", 5_000)
-        self.assertTrue(result["signed"])
-        self.assertFalse(result["broadcast"])
-        self.assertEqual(rpc.broadcasts, 0)
-        self.assertEqual(len(result["tx_hash"]), 64)
-
-    def test_signer_is_none_without_config(self):
-        from app.modules.chain import vault_signer
-
-        self.assertIsNone(vault_signer.signer_from_env({}))
-        self.assertIsNone(
-            vault_signer.signer_from_env({"STARK_SIGNER_KEY": "ed25519:abc"})
-        )
-
-    def test_signer_config_is_wired_from_env(self):
-        from app.modules.chain import vault_signer
-
-        env = {
-            # The env var must carry a secret, not a public key.
-            "STARK_SIGNER_KEY": "ed25519:"
-            + near_tx.b58encode(
-                bytes(range(32)) + near_tx.ed25519_public(bytes(range(32)))
-            ),
-            "STARK_SIGNER_ACCOUNT": "agent.testnet",
-            "STARK_VAULT_ACCOUNT": "vault.testnet",
-            "STARK_NETWORK": "mainnet",
-            "STARK_BROADCAST": "1",
-        }
-        signer = vault_signer.signer_from_env(env)
-        self.assertEqual(signer.signer_id, "agent.testnet")
-        self.assertEqual(signer.receiver_id, "vault.testnet")
-        self.assertTrue(signer.broadcast)
-        self.assertEqual(signer.rpc.base_url, near_tx.MAINNET_RPC)
-
-
 class AmountParsingTests(unittest.TestCase):
     CASES = [
         ("top it up with 5000", 5_000),
@@ -914,10 +883,11 @@ class LimitReasoningTests(unittest.TestCase):
         self.assertIn("You are Stark", system["content"])
 
     def test_the_prompt_says_name_the_limit_not_the_balance(self):
-        # The wording the demo relies on: refuse before proposing, and say
-        # which limit did it.
+        # The wording the demo relies on: say which limit decided it, and send an
+        # over-limit request on to pay_bill so it reaches the owner for approval
+        # instead of the model refusing it from the limits it can see.
         self.assertIn("per payment limit", agent_mod.SYSTEM_PROMPT)
-        self.assertIn("do not ask them to proceed", agent_mod.SYSTEM_PROMPT)
+        self.assertIn("still call pay_bill", agent_mod.SYSTEM_PROMPT)
 
 
 class ModelFailureTests(unittest.TestCase):

@@ -47,6 +47,10 @@ DEFAULT_AMOUNT_NGN = 5_000
 # and short enough that a deliberate second top-up later in the day is not gated.
 DUPLICATE_WINDOW_SECONDS = 300
 
+# The refusals the owner may lift for one payment, by approving it in the app. Kept
+# here rather than imported from the approval module, which depends on this one.
+OVER_A_LIMIT = frozenset({policy_rules.OVER_PER_PAYMENT_CAP, policy_rules.OVER_CAP})
+
 NEAR_AI_BASE = os.environ.get("NEAR_AI_BASE_URL") or "https://cloud-api.near.ai"
 # On NEAR's own fleet (Private TEE) and tool-capable. `openai/gpt-5-nano` is
 # Incognito (no end-to-end TEE) and was `is_ready: false` when checked 2026-10-22.
@@ -93,6 +97,19 @@ Rules:
   reading.
 - To pay, call pay_bill. The app enforces the user's limits itself; if it refuses,
   say the reason plainly and do not try a different amount to sneak past it.
+- When a payment is over a limit, pay_bill sends it to the Stark app for the owner
+  to approve, and its message says so. Tell them it is waiting for their approval
+  in the app and that nothing has been paid. You cannot approve it yourself, and
+  nothing said in a chat can approve it.
+- When they ask you to pay an amount over a limit, still call pay_bill: that is
+  what sends it to them for approval. Never refuse it yourself first.
+- Check an amount you suggest yourself against the limits before you offer it:
+  they are in the account below, per payment, per month, and what is left of the
+  month. When you name a limit, give the limit and both numbers — "that is over
+  the ₦10,000 per payment limit", "you have ₦7,000 left of your ₦30,000 monthly
+  limit", "your balance is ₦6,000 against a ₦50,000 payment". The balance is the
+  reason only when it really is the lower number, and a payment the balance cannot
+  cover is refused, not sent for approval.
 - To switch an appliance, call switch_appliance with a device_id from the devices
   in the account. Never invent one. A question about a device, like "is the TV
   on?", is not an instruction: answer it and switch nothing.
@@ -100,23 +117,16 @@ Rules:
   switch, so when it lists exactly one, "it", "that" and "the telly" are that
   device and "turn it off", "turn it on", "switch it on", "put it back on" and
   "turn it back on" are all orders to call switch_appliance now. Measured
-  failure: with only
-  tv-plug-1 saved, "turn it back on" was answered "which device did you want to
-  switch on" instead of switch_appliance(device_id=tv-plug-1, on=true). Asking
-  which device when the account holds one is a refusal to do the job. Ask which
-  device only when two saved devices could be the one meant.
+  failure: with only tv-plug-1 saved, "turn it back on" was answered "which device
+  did you want to switch on" instead of switch_appliance(device_id=tv-plug-1,
+  on=true). Asking which device when the account holds one is a refusal to do the
+  job. Ask which device only when two saved devices could be the one meant.
 - Say only what the plug reported. "The TV is on" needs status on and confirmed
   true. Standby means the socket is live but the set is asleep, so say that. If
   the plug did not answer, the TV did not change. When the result says simulated,
   say it was a simulation.
 - The devices list carries last_status only when Stark switched it in this
   session. Null means you do not know, and you say so instead of guessing.
-- Check an amount against the limits *before* you offer to pay: they are in the
-  account below, per payment, per month, and what is left of the month. If a limit
-  would refuse it, do not ask them to proceed. Name the limit and both numbers —
-  "that is over the ₦10,000 per payment limit", "you have ₦7,000 left of your
-  ₦30,000 monthly limit", "your balance is ₦6,000 against a ₦50,000 payment".
-  The balance is the reason only when it really is the lower number.
 - A payment is only done when the tool returns a token or status "delivered".
   "pending" means it is still going through — say so, and never claim it is done.
 - If they name no amount and the bill has no plan price, ask for the figure in one
@@ -551,6 +561,17 @@ _PUT_ON = re.compile(
 _SWITCH_ON = re.compile(r"\b(on|off)\b", re.IGNORECASE)
 
 
+def _window_phrase(minutes: int) -> str:
+    """How long a request waits, said the way a person would say it."""
+    if minutes % 1440 == 0:
+        days = minutes // 1440
+        return "a day" if days == 1 else f"{days} days"
+    if minutes % 60 == 0:
+        hours = minutes // 60
+        return "an hour" if hours == 1 else f"{hours} hours"
+    return f"{minutes} minutes"
+
+
 def _label_match(bills: list[dict], heard: str) -> dict | None:
     for bill in bills:
         labels = (bill.get("label", ""), bill.get("provider", ""), bill.get("kind", ""))
@@ -931,12 +952,11 @@ class ToolBox(Protocol):
     def pay(self, bill_id: str, amount_ngn: int) -> dict: ...
     def list_devices(self) -> list[dict]: ...
     def switch_appliance(self, device_id: str, on: bool) -> dict: ...
-
-
-class PaySigner(Protocol):
-    """Signs `pay(meter, amount_ngn)` with a capped function-call key."""
-
-    def sign_pay(self, meter: str, amount_ngn: int) -> dict: ...
+    # A payment over a limit, filed for the owner to approve in the app. Returns
+    # the request with its `window_minutes`.
+    def request_approval(self, bill_id: str, amount_ngn: int, reason: str) -> dict: ...
+    # An activity row for a payment the rules refused, so the owner can see it.
+    def record_refusal(self, bill_id: str, amount_ngn: int, reason: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -990,14 +1010,12 @@ class Agent:
         model: Model,
         toolbox: ToolBox,
         limits: Limits,
-        signer: PaySigner | None = None,
         max_turns: int = 5,
         threads: memory.Threads | None = None,
     ):
         self.model = model
         self.toolbox = toolbox
         self.limits = limits
-        self.signer = signer
         self.max_turns = max_turns
         # What the last few turns of a chat said, when the caller names one. A
         # caller that passes no thread gets exactly the old one-shot behaviour.
@@ -1443,6 +1461,7 @@ class Agent:
         state = self.toolbox.get_state()
         meter = str(bill.get("reference") or "")
         rejection = policy_rules.check_payment(
+            paused=bool(state.get("paused")),
             monthly_cap_ngn=self.limits.monthly_cap_ngn,
             per_payment_cap_ngn=self.limits.per_payment_cap_ngn,
             spent_this_period_ngn=int(state.get("spent_ngn") or 0),
@@ -1450,34 +1469,41 @@ class Agent:
             amount_ngn=amount,
             meter_allowed=meter in self.limits.allowed_meters,
         )
+        # One request is one payment as far as the per-payment cap goes. Measured
+        # 2026-11-03: asked for ₦15,000 against a ₦10,000 cap, the model paid
+        # ₦10,000 and then ₦5,000 to the same bill. What this request already
+        # paid that bill counts toward the cap, so the split goes for approval.
+        paid_to: dict[str, int] = effect.setdefault("paid_to", {})
+        already = paid_to.get(bill["id"], 0)
+        if (rejection is None and already
+                and already + amount > self.limits.per_payment_cap_ngn):
+            rejection = policy_rules.Rejection(
+                policy_rules.OVER_PER_PAYMENT_CAP,
+                {"amount_ngn": already + amount,
+                 "cap_ngn": self.limits.per_payment_cap_ngn},
+            )
         if rejection is not None:
             effect["code"] = rejection.code
-            return {"ok": False, "error": rejection.as_dict()}
+            error = rejection.as_dict()
+            if rejection.code in OVER_A_LIMIT:
+                request = self.toolbox.request_approval(bill["id"], amount, rejection.code)
+                error["message"] = (
+                    f"{rejection.message} I've sent it to the Stark app for you to "
+                    "approve. Nothing is paid unless you approve it within "
+                    f"{_window_phrase(request['window_minutes'])}."
+                )
+                error["detail"]["request_id"] = request["id"]
+            else:
+                self.toolbox.record_refusal(bill["id"], amount, rejection.message)
+            return {"ok": False, "error": error}
 
-        # Authorise first, then buy. A signed transaction that is never broadcast
-        # costs nothing, but a purchase with no authorisation is a real problem.
-        # Fail closed: if the key cannot sign, nothing is charged.
-        if self.signer is not None:
-            try:
-                signed = self.signer.sign_pay(meter=meter, amount_ngn=amount)
-            except Exception:
-                effect["code"] = "authorisation_failed"
-                return {
-                    "ok": False,
-                    "error": {
-                        "code": "authorisation_failed",
-                        "message": (
-                            "I couldn't authorise that payment just now. "
-                            "Nothing was charged."
-                        ),
-                        "detail": {},
-                    },
-                }
-            effect["tx_hash"] = signed.get("tx_hash")
-
+        # The vault is signed inside the payment path, so the app's own
+        # `POST /v1/payments` is held to the same onchain caps as the agent.
         receipt = self.toolbox.pay(bill["id"], amount)
+        paid_to[bill["id"]] = already + amount
         effect["token"] = receipt.get("token")
         effect["receipt_id"] = receipt.get("id")
+        effect["tx_hash"] = receipt.get("tx_hash")
         return {"ok": True, "data": receipt}
 
     def _switch_appliance(self, arguments: dict, transcript: str = "") -> dict:
@@ -1562,12 +1588,12 @@ class Agent:
         return None
 
 
-def build_agent(toolbox: ToolBox, limits: Limits, signer: PaySigner | None = None) -> Agent:
+def build_agent(toolbox: ToolBox, limits: Limits) -> Agent:
     """Real model when a key is configured, deterministic model otherwise.
 
     The server calls this, so the key stays a config value and a checkout with no
     key still runs — the same way `vtpass.py` is dry-run by default.
     """
     if os.environ.get("NEAR_AI_API_KEY"):
-        return Agent(model=NearAiModel(), toolbox=toolbox, limits=limits, signer=signer)
-    return Agent(model=FakeModel(), toolbox=toolbox, limits=limits, signer=signer)
+        return Agent(model=NearAiModel(), toolbox=toolbox, limits=limits)
+    return Agent(model=FakeModel(), toolbox=toolbox, limits=limits)

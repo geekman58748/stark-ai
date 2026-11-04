@@ -1,22 +1,37 @@
 import { ApiError } from "./errors";
 import type {
+  ApprovedPayment,
+  Bank,
+  BankAccount,
   Bill,
   BillKind,
   BillPatch,
+  Controls,
+  CryptoAsset,
+  CryptoWithdrawInput,
+  DemoSnapshot,
+  Deposit,
+  FundingMethods,
   Limits,
   LimitsPatch,
   LinkCode,
   NewBill,
+  Payee,
   PaymentInput,
+  PaymentRequest,
   Plan,
   Receipt,
+  ResolvedAccount,
   SpeakReply,
+  StartDeposit,
   State,
   Suggestion,
   TopUpInput,
   VoiceReply,
   Wallet,
   WalletMovement,
+  Withdrawal,
+  WithdrawInput,
 } from "./types";
 
 let baseUrl = "";
@@ -59,7 +74,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     if (authToken) headers.Authorization = `Bearer ${authToken}`;
     res = await fetch(`${baseUrl}${path}`, {
       method,
-      headers: Object.keys(headers).length ? headers : undefined,
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
@@ -99,7 +114,26 @@ export const api = {
   updateLimits: (patch: LimitsPatch) => request<Limits>("PATCH", "/v1/limits", patch),
   wallet: () => request<Wallet>("GET", "/v1/wallet"),
   topUp: (input: TopUpInput) => request<WalletMovement>("POST", "/v1/wallet/topup", input),
+  fundingMethods: () => request<FundingMethods>("GET", "/v1/wallet/methods"),
+  cryptoAssets: () => request<CryptoAsset[]>("GET", "/v1/wallet/crypto-assets"),
+  startDeposit: (input: StartDeposit) => request<Deposit>("POST", "/v1/wallet/deposits", input),
+  deposit: (id: string) => request<Deposit>("GET", `/v1/wallet/deposits/${encodeURIComponent(id)}`),
+  banks: () => request<Bank[]>("GET", "/v1/wallet/banks"),
+  resolveBankAccount: (input: BankAccount) =>
+    request<ResolvedAccount>("POST", "/v1/wallet/bank-accounts/resolve", input),
+  withdraw: (input: WithdrawInput) => request<Withdrawal>("POST", "/v1/wallet/withdraw", input),
+  withdrawCrypto: (input: CryptoWithdrawInput) =>
+    request<Withdrawal>("POST", "/v1/wallet/withdraw/crypto", input),
   suggestions: () => request<Suggestion[]>("GET", "/v1/suggestions"),
+  approvals: () => request<PaymentRequest[]>("GET", "/v1/approvals"),
+  demo: () => request<DemoSnapshot>("GET", "/v1/demo"),
+  payees: () => request<Payee[]>("GET", "/v1/payees"),
+  approve: (id: string) =>
+    request<ApprovedPayment>("POST", `/v1/approvals/${encodeURIComponent(id)}/approve`, {}),
+  deny: (id: string) =>
+    request<PaymentRequest>("POST", `/v1/approvals/${encodeURIComponent(id)}/deny`, {}),
+  pause: () => request<Controls>("POST", "/v1/controls/pause", {}),
+  resume: () => request<Controls>("POST", "/v1/controls/resume", {}),
   /**
    * Ends the session server-side as well as locally: the provider's session row
    * is deleted, so the token this tab was holding cannot be replayed.

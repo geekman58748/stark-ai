@@ -1,4 +1,5 @@
-import { useVoice, useVoiceAudio, type VoiceReply } from "@stark/api";
+import { useVoice, useVoiceAudio } from "@stark/api/mutations";
+import type { VoiceReply } from "@stark/api/types";
 import { useEffect, useRef, useState } from "react";
 import { useClipRecorder } from "@/components/talk/use-clip-recorder";
 import { useSpeaker } from "@/components/talk/use-speaker";

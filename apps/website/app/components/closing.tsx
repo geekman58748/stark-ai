@@ -37,7 +37,7 @@ const floaters = [
 ];
 
 /** Three true things, one at a time. The first line is the one reduced motion keeps. */
-const statuses = ["Voice ready · Daniel", "Dry-run · nothing charged", "Built on NEAR"];
+const statuses = ["Pause it in one tap", "Asks you before it goes over", "Built on NEAR"];
 
 export function Closing() {
   const ref = useRef<HTMLElement>(null);

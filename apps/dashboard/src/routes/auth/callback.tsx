@@ -1,4 +1,4 @@
-import { setAuthToken } from "@stark/api";
+import { setAuthToken } from "@stark/api/client";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { CallbackBrand } from "@/components/auth/callback-brand";
@@ -62,7 +62,7 @@ function AuthCallback() {
       className="grid min-h-dvh w-full place-items-center px-6"
       style={{ backgroundColor: AUTH_CARD }}
     >
-      <div className="w-full max-w-[400px]">
+      <div className="w-full max-w-100">
         <CallbackBrand />
         <CallbackTitle error={error} />
         {error ? <CallbackError error={error} /> : <CallbackPending pending={pending} />}

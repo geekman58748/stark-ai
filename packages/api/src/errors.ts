@@ -14,7 +14,19 @@ export type ApiErrorCode =
   | "bill_in_flight"
   | "bad_limits"
   | "vendor_failed"
+  | "paused"
+  | "request_closed"
+  | "unknown_request"
   | "no_route"
+  | "not_available"
+  | "provider_failed"
+  | "bad_asset"
+  | "bad_account"
+  | "bad_address"
+  | "over_limit"
+  | "daily_limit"
+  | "float_low"
+  | "authorisation_failed"
   | "network";
 
 /** Every non-2xx response. Branch on `code`; `message` is copy and may change. */
@@ -46,6 +58,10 @@ export function errorCopy(error: unknown): string {
       return "There isn’t enough in your wallet for that.";
     case "unknown_bill":
       return "That bill no longer exists.";
+    case "paused":
+      return "Stark is paused. Resume it to pay.";
+    case "request_closed":
+      return "That request was already decided or has expired.";
     case "bad_amount":
       return "Enter an amount in whole naira.";
     case "vendor_failed":
@@ -63,6 +79,17 @@ export function errorCopy(error: unknown): string {
     case "plan_required":
     case "unknown_plan":
       return "Pick a plan first.";
+    case "not_available":
+    case "provider_failed":
+    case "bad_account":
+    case "bad_address":
+    case "over_limit":
+    case "daily_limit":
+    case "float_low":
+    case "authorisation_failed":
+      return error.message;
+    case "bad_asset":
+      return "Pick what you’re paying with.";
     case "network":
       return "Can’t reach Stark right now. Check your connection.";
     default:

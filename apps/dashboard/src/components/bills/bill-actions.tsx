@@ -1,4 +1,4 @@
-import type { Bill } from "@stark/api";
+import type { Bill } from "@stark/api/types";
 import { Button } from "@stark/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { type BillEdit, BillEditMenu } from "@/components/bills/bill-edit-menu";
