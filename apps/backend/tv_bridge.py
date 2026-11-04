@@ -29,7 +29,9 @@ Run it from `apps/backend` with the backend's own interpreter:
 
     .venv/bin/python tv_bridge.py          # 127.0.0.1:9762 by default
 
-It binds the loopback: only the tunnel on this machine should reach it.
+It binds the loopback: only the tunnel on this machine should reach it. Note
+that a quick tunnel's hostname changes every restart; when that happens,
+update `STARK_TV_BRIDGE_URL` on Brimble and rebuild stark-api anew.
 """
 
 from __future__ import annotations
