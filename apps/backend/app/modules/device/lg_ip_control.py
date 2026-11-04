@@ -256,7 +256,7 @@ class LgTvPlug:
 
 
 def plug_from_env():
-    """The TV when its IP control is configured, a Shelly, or the stub."""
+    """The TV when its IP control is configured, the bridge, a Shelly, or the stub."""
     host = (os.environ.get("STARK_TV_IP") or "").strip()
     code = (os.environ.get("STARK_TV_IP_CONTROL_KEY") or "").strip()
     if host and code:
@@ -266,7 +266,13 @@ def plug_from_env():
             mac=(os.environ.get("STARK_TV_MAC") or "").strip() or None,
             broadcast=(os.environ.get("STARK_TV_BROADCAST") or "").strip() or None,
         )
-    from app.modules.device.devices import ShellyPlug, SimulatedPlug
+    from app.modules.device.devices import BridgeTvPlug, ShellyPlug, SimulatedPlug
+
+    bridge = (os.environ.get("STARK_TV_BRIDGE_URL") or "").strip()
+    if bridge:
+        # A backend outside the LAN reaches the set only through the bridge next
+        # to it, so the bridge outranks a bare plug URL.
+        return BridgeTvPlug(bridge, os.environ.get("STARK_TV_BRIDGE_TOKEN") or "")
 
     url = (os.environ.get("STARK_TV_PLUG_URL") or "").strip()
     if not url:

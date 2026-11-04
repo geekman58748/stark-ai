@@ -11,16 +11,19 @@ device, the endpoint still answers, and the agent still runs the whole path, so
 everything is exercised without hardware. The reply says it was simulated; a
 simulation must never be spoken as a real socket moving.
 
-Two real paths exist, chosen by env in `plug_from_env`:
+Three real paths exist, chosen by env in `plug_from_env`:
 
   * `STARK_TV_IP` + `STARK_TV_IP_CONTROL_KEY` — the TV's own IP Control channel
     (port 9761), in `lg_ip_control.py`. Verified against the real set on
     2026-11-03; it reports the *screen*, not the socket.
+  * `STARK_TV_BRIDGE_URL` — the TV through `apps/backend/tv_bridge.py`, a small
+    HTTP server running on the set's own LAN that calls the same IP-control
+    code there. For the deployed backend, which cannot open a LAN socket from
+    a data centre and therefore reaches the television only over a tunnel.
   * `STARK_TV_PLUG_URL` — a Shelly Gen2+ plug over HTTP (`/rpc/Switch.Set`,
     `/rpc/Switch.GetStatus`), a Plus Plug UK, 13 A, local API on by default.
 
-`STARK_TV_PLUG_URL` unset and no IP control means a simulated plug, described
-above.
+None of them set means a simulated plug, described above.
 """
 
 from __future__ import annotations
@@ -65,6 +68,62 @@ class SimulatedPlug:
             watts=self._watts_on if self._on else 0.0,
             read_back=True,
             simulated=True,
+        )
+
+
+class BridgeTvPlug:
+    """The TV, driven through a bridge that lives on the TV's own LAN.
+
+    The backend never sees the LAN: it answers HTTP to a bridge process that
+    runs beside the TV and owns the IP-control socket and the wake packets.
+    This exists because a deployed backend has no route into a home network —
+    the honest alternative is a simulated plug, and a simulated plug is a
+    sentence that must be spoken ("That was the simulated plug."). With the
+    bridge, the live site can say "TV is off" because the set really turned
+    off; but if the bridge or the tunnel is down, the same honesty rules
+    apply: an unanswered bridge is `device_unreachable`, never a confident
+    claim.
+
+    Address and token come from `STARK_TV_BRIDGE_URL` and
+    `STARK_TV_BRIDGE_TOKEN`; never from a client.
+    """
+
+    def __init__(self, base_url: str, token: str = "", timeout: float = 90.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.token = token.strip()
+        self.timeout = timeout
+
+    def set(self, on: bool) -> SwitchResult:
+        body = self._call(f"/{'on' if on else 'off'}")
+        return self._result(body)
+
+    def status(self) -> SwitchResult:
+        return self._result(self._call("/status"))
+
+    def _call(self, path: str) -> dict:
+        # `/status` is a read; `/on` and `/off` are the writes. One Request per
+        # call, tagged with the method, and the bridge returns JSON either way.
+        write = path in ("/on", "/off")
+        request = urllib.request.Request(
+            f"{self.base_url}{path}", data=b"" if write else None,
+            method="POST" if write else "GET",
+        )
+        if self.token:
+            request.add_header("Authorization", f"Bearer {self.token}")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read() or b"{}")
+        except (urllib.error.URLError, OSError, ValueError) as error:
+            raise DeviceUnreachable(str(error)) from error
+
+    def _result(self, body: dict) -> SwitchResult:
+        output = bool(body.get("output"))
+        watts = body.get("watts")
+        return SwitchResult(
+            output=output,
+            watts=float(watts) if isinstance(watts, (int, float)) else None,
+            read_back=bool(body.get("read_back")),
+            simulated=bool(body.get("simulated")),
         )
 
 
@@ -120,11 +179,12 @@ class ShellyPlug:
 
 
 def plug_from_env():
-    """The TV's own IP control, a Shelly plug, or the simulated stub.
+    """The TV's own IP control, the LAN bridge, a Shelly, or the simulated stub.
 
     Kept as one function so nothing else has to know which hardware is present.
     The selector lives in `lg_ip_control` because that module knows the order
-    (TV first, plug second) and imports the plug classes lazily to stay acyclic.
+    (TV first, bridge second, plug third) and imports the plug classes lazily
+    to stay acyclic.
     """
     from app.modules.device.lg_ip_control import plug_from_env as choose
 

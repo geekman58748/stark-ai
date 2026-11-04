@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import os
 import unittest
+import urllib.error
 from unittest import mock
 
+from app.common.api_error import ApiError
 from app.modules.device import aes, lg_ip_control as lg
 from app.modules.device import devices as device_layer
 from app.modules.device.device_service import DeviceService
@@ -243,10 +245,76 @@ class SelectionTests(unittest.TestCase):
             plug = device_layer.plug_from_env()
         self.assertIsInstance(plug, device_layer.ShellyPlug)
 
+    def test_the_bridge_outranks_a_shelly_when_both_are_configured(self):
+        # A backend outside the LAN has no way to a Shelly's LAN address, so the
+        # bridge is the only path that can actually work there.
+        env = {"STARK_TV_BRIDGE_URL": "https://tv.tunnel.example",
+               "STARK_TV_PLUG_URL": "http://192.168.1.50"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            plug = device_layer.plug_from_env()
+        self.assertIsInstance(plug, device_layer.BridgeTvPlug)
+        self.assertEqual(plug.base_url, "https://tv.tunnel.example")
+        self.assertEqual(plug.token, "")
+
     def test_nothing_configured_is_still_the_stub(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             plug = device_layer.plug_from_env()
         self.assertIsInstance(plug, device_layer.SimulatedPlug)
+
+
+class BridgeTests(unittest.TestCase):
+    """The plug's half of the tunnel: HTTP in, SwitchResult out, honest or silent."""
+
+    URL = "https://tv.tunnel.example"
+
+    def _plug(self) -> device_layer.BridgeTvPlug:
+        return device_layer.BridgeTvPlug(self.URL, "s3cret")
+
+    @staticmethod
+    def _respond(body: bytes):
+        response = mock.MagicMock()
+        response.read.return_value = body
+        response.__enter__.return_value = response
+        return mock.MagicMock(return_value=response)
+
+    def test_on_is_a_post_that_credits_a_read_back(self):
+        body = b'{"output": true, "watts": null, "read_back": true, "simulated": false}'
+        with mock.patch("urllib.request.urlopen", side_effect=self._respond(body)) as open_call:
+            result = self._plug().set(True)
+        request = open_call.call_args[0][0]
+        self.assertTrue(request.full_url.startswith(self.URL + "/on"))
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Authorization"), "Bearer s3cret")
+        self.assertTrue(result.output)
+        self.assertTrue(result.read_back)
+        self.assertFalse(result.simulated)
+
+    def test_off_is_a_post_off(self):
+        body = b'{"output": false, "watts": null, "read_back": true, "simulated": false}'
+        with mock.patch("urllib.request.urlopen", side_effect=self._respond(body)) as open_call:
+            self._plug().set(False)
+        request = open_call.call_args[0][0]
+        self.assertTrue(request.full_url.startswith(self.URL + "/off"))
+
+    def test_a_503_bridge_is_device_unreachable_never_a_claim(self):
+        error = urllib.error.HTTPError(self.URL, 503, "bridge busy", {}, None)
+        with mock.patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaises(device_layer.DeviceUnreachable):
+                self._plug().set(False)
+
+    def test_a_non_json_answer_is_unreachable(self):
+        with mock.patch("urllib.request.urlopen", side_effect=self._respond(b"gateway junk")):
+            with self.assertRaises(device_layer.DeviceUnreachable):
+                self._plug().set(True)
+
+    def test_the_service_reports_an_unreachable_bridge_as_a_503(self):
+        service = DeviceService(self._plug())
+        error = urllib.error.HTTPError(self.URL, 503, "bridge busy", {}, None)
+        with mock.patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaises(ApiError) as caught:
+                service.switch("acct", "tv-plug-1", False)
+        self.assertEqual(caught.exception.status, 503)
+        self.assertEqual(caught.exception.code, "device_unreachable")
 
 
 if __name__ == "__main__":
